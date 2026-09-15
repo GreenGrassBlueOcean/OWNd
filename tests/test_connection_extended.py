@@ -358,7 +358,7 @@ class TestOWNEventSession:
         session._stream_reader.readuntil.side_effect = mock_readuntil
         
         with patch('asyncio.sleep', return_value=None):
-            with patch.object(session, 'close', new_callable=AsyncMock) as mock_close:
+            with patch.object(session, '_close_streams', new_callable=AsyncMock) as mock_close:
                 with patch.object(session, 'connect', new_callable=AsyncMock) as mock_connect:
                     msg = await session.get_next()
                     assert msg is None
@@ -1041,8 +1041,62 @@ class TestOWNEventAndCommandSessionRemainingCoverage:
         await session.close()
         assert session.is_open is False
         assert session._stream_reader is None and session._stream_writer is None
-        # The negotiated flag is a separate concern (see is_connected).
+        # The explicit close() is a real teardown: the flag follows.
+        assert session.is_connected is False
+
+    @pytest.mark.asyncio
+    async def test_close_resets_is_connected_but_reconnect_does_not_flap(self):
+        """close() notifies the consumer; an internal recycle keeps the flag."""
+        session = OWNSession(gateway=MagicMock(), logger=MagicMock())
+        state_changes = []
+        session._on_state_change = lambda c: state_changes.append(c)
+
+        def open_streams():
+            writer = MagicMock()
+            writer.wait_closed = AsyncMock()
+            session._stream_reader, session._stream_writer = MagicMock(), writer
+
+        open_streams()
+        session._set_connected(True)
+        assert state_changes == [True]
+
+        # A routine reconnect recycles the socket without touching the flag.
+        async def fake_connect():
+            open_streams()
+            session._set_connected(True)
+            return {"Success": True}
+
+        with patch.object(session, "connect", new=AsyncMock(side_effect=fake_connect)):
+            await session._reconnect()
+        assert session.is_open is True
         assert session.is_connected is True
+        assert state_changes == [True]
+
+        # The explicit teardown is the only thing that flips it.
+        await session.close()
+        assert session.is_open is False
+        assert session.is_connected is False
+        assert state_changes == [True, False]
+
+        # Closing an already-closed session stays quiet (transitions only).
+        await session.close()
+        assert state_changes == [True, False]
+
+    @pytest.mark.asyncio
+    async def test_event_session_close_and_recycle_both_stop_keepalive(self, event_session):
+        """The keepalive never outlives the socket, whichever path drops it."""
+        with patch.object(event_session, "_stop_keepalive", new_callable=AsyncMock) as stop:
+            await event_session.close()
+            stop.assert_awaited_once()
+            assert event_session.is_connected is False
+
+        with (
+            patch.object(event_session, "_stop_keepalive", new_callable=AsyncMock) as stop,
+            patch.object(event_session, "connect", new_callable=AsyncMock, return_value=None),
+        ):
+            await event_session._reconnect()
+            # From _close_streams(); connect() (which also stops it) is mocked out.
+            stop.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_event_session_is_connected_and_connect_failure(self, event_session):

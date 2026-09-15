@@ -140,7 +140,7 @@ class TestConnectionFaults:
         with (
             patch("asyncio.open_connection", new=AsyncMock(return_value=(MagicMock(), MagicMock()))),
             patch.object(session, "_negotiate", new=AsyncMock(return_value={"Success": False, "Message": "password_error"})),
-            patch.object(session, "close", new=AsyncMock()) as mock_close,
+            patch.object(session, "_close_streams", new=AsyncMock()) as mock_close,
         ):
             result = await session.connect()
             assert result == {"Success": False, "Message": "password_error"}
