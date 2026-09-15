@@ -1024,6 +1024,27 @@ class TestOWNEventAndCommandSessionRemainingCoverage:
         assert session.is_connected is True
 
     @pytest.mark.asyncio
+    async def test_own_session_is_open_tracks_the_streams_not_the_flag(self):
+        """is_open follows the socket; close() drops it without touching is_connected."""
+        session = OWNSession(gateway=MagicMock(), logger=MagicMock())
+        assert session.is_open is False
+
+        # Only one stream set is not "open": send() needs both to write and read.
+        session._stream_reader = MagicMock()
+        assert session.is_open is False
+        mock_writer = MagicMock()
+        mock_writer.wait_closed = AsyncMock()
+        session._stream_writer = mock_writer
+        assert session.is_open is True
+
+        session._set_connected(True)
+        await session.close()
+        assert session.is_open is False
+        assert session._stream_reader is None and session._stream_writer is None
+        # The negotiated flag is a separate concern (see is_connected).
+        assert session.is_connected is True
+
+    @pytest.mark.asyncio
     async def test_event_session_is_connected_and_connect_failure(self, event_session):
         state_changes = []
         event_session._on_state_change = lambda c: state_changes.append(c)

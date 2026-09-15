@@ -261,6 +261,18 @@ class OWNSession:
         return self._connected
 
     @property
+    def is_open(self) -> bool:
+        """True while the session holds an open socket (both streams set).
+
+        This is the transport view, distinct from ``is_connected``: ``close()``
+        drops the streams but leaves the negotiated flag as ``connect()`` last
+        set it, so after an explicit close ``is_connected`` may still read
+        ``True`` while ``is_open`` is ``False``. The streams are what ``send()``
+        checks before deciding to reopen the session.
+        """
+        return self._stream_reader is not None and self._stream_writer is not None
+
+    @property
     def _log_id(self) -> str:
         """Log prefix; safe also on a session created without a gateway."""
         # NB: must go through the *gateway*'s log_id — returning self._log_id
