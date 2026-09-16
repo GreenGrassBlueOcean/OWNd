@@ -984,16 +984,10 @@ class OWNSession:
         return None
 
     def _int_string_to_hex_string(self, int_string: str) -> str:
-        hex_string = ""
-        for i in range(0, len(int_string), 2):
-            hex_string += f"{int(int_string[i : i + 2]):x}"
-        return hex_string
+        return "".join(f"{int(int_string[i:i+2]):x}" for i in range(0, len(int_string), 2))
 
     def _hex_string_to_int_string(self, hex_string: str) -> str:
-        int_string = ""
-        for i in range(0, len(hex_string), 1):
-            int_string += f"{int(hex_string[i : i + 1], 16):0>2d}"
-        return int_string
+        return "".join(f"{int(c, 16):0>2d}" for c in hex_string)
 
 
 class OWNEventSession(OWNSession):
