@@ -5,6 +5,8 @@
 [![CI](https://github.com/OpenWebNet-HA/OWNd/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenWebNet-HA/OWNd/actions/workflows/ci.yml)
 [![License: LGPL-3.0](https://img.shields.io/badge/License-LGPL--3.0-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![mypy: strict](https://img.shields.io/badge/mypy-strict-blue.svg)](https://mypy.readthedocs.io/en/stable/getting_started.html#strict-mode-and-configuration)
+[![Typed: PEP 561](https://img.shields.io/badge/typed-PEP%20561-informational.svg)](https://peps.python.org/pep-0561/)
 [![Coverage](coverage.svg)](https://app.codecov.io/github/OpenWebNet-HA/OWNd)
 [![Codecov](https://codecov.io/gh/OpenWebNet-HA/OWNd/branch/master/graph/badge.svg)](https://app.codecov.io/github/OpenWebNet-HA/OWNd)
 
@@ -14,6 +16,9 @@ It powers the [Home Assistant MyHOME integration](https://github.com/OpenWebNet-
 
 > [!TIP]
 > **🚀 V2 Phase 2 Architecture Now Live**: Phase 2 architecture is active across **OWNd** and **MyHOME**! Featuring strongly typed CEN / CEN+ scenario command builders and device triggers (**P2**), Thermoregulation Central Unit (3550 / 4695) master mode and zone coordination (**P4**), Multi-Gateway routing and plant isolation (**P6**), DALI Tunable White support, and 100.0% test coverage verified against the OpenWebNet Golden Corpus.
+
+> [!NOTE]
+> **🔒 Full `mypy --strict` compliance (2.0.0-b7)**: every module now passes strict static typing with zero suppressions, and the package ships a [PEP 561](https://peps.python.org/pep-0561/) `py.typed` marker so type checkers pick up OWNd's types in consuming projects (this is what unblocks the Home Assistant Platinum `strict-typing` quality-scale rule for MyHOME). Also in this release: a public `OWNSession.is_open` property, one canonical line ending across the repository, and a CI gate that replays [MyHOME](https://github.com/OpenWebNet-HA/MyHOME)'s golden corpus and test suite against every OWNd change before it ships.
 
 ---
 
