@@ -358,7 +358,7 @@ class TestOWNEventSession:
         session._stream_reader.readuntil.side_effect = mock_readuntil
         
         with patch('asyncio.sleep', return_value=None):
-            with patch.object(session, 'close', new_callable=AsyncMock) as mock_close:
+            with patch.object(session, '_close_streams', new_callable=AsyncMock) as mock_close:
                 with patch.object(session, 'connect', new_callable=AsyncMock) as mock_connect:
                     msg = await session.get_next()
                     assert msg is None
@@ -450,6 +450,90 @@ class TestOWNCommandSession:
                     alive = await OWNCommandSession.probe_gateway(gw)
                     assert alive is True
                     mock_send.assert_called_once_with("*#13**15##", is_status_request=True)
+
+
+    # -- send() retry vs. consumer-facing state -----------------------------
+    #
+    # A transport error during send() is recoverable for a status request
+    # (idempotent) and for a command that was not yet written. Recovering
+    # must look like the routine reconnect: the consumer never hears
+    # "offline". Only a loss that is not retried is reported.
+
+    @staticmethod
+    def _wire(session, state_changes, *, first_write=None, first_read=None, ack=True):
+        """Give the session live-looking streams and record state transitions."""
+        session._on_state_change = lambda c: state_changes.append(c)
+
+        def open_streams(write_side_effect=None, read_side_effect=None):
+            writer = MagicMock()
+            writer.drain = AsyncMock()
+            writer.wait_closed = AsyncMock()
+            if write_side_effect is not None:
+                writer.write.side_effect = write_side_effect
+            reader = AsyncMock()
+            if read_side_effect is not None:
+                reader.readuntil.side_effect = read_side_effect
+            else:
+                reader.readuntil.return_value = b"*#*1##" if ack else b"*#*0##"
+            session._stream_reader, session._stream_writer = reader, writer
+
+        open_streams(first_write, first_read)
+        session._set_connected(True)
+        return open_streams
+
+    @pytest.mark.asyncio
+    async def test_send_status_request_reset_then_retry_success_does_not_flap(self, session):
+        """Transport reset on a status request, retry succeeds: no offline/online pair."""
+        state_changes = []
+        open_streams = self._wire(session, state_changes, first_write=ConnectionResetError)
+        assert state_changes == [True]
+
+        async def reconnect():
+            open_streams()
+            session._set_connected(True)
+            return {"Success": True}
+
+        with patch.object(session, "connect", new=AsyncMock(side_effect=reconnect)) as connect:
+            result = await session.send("*#1*12##", is_status_request=True)
+
+        assert result is True
+        connect.assert_awaited_once()
+        assert session.is_connected is True
+        assert state_changes == [True], "a successful retry must not notify offline"
+
+    @pytest.mark.asyncio
+    async def test_send_status_request_reset_twice_reports_disconnection_once(self, session):
+        """Both attempts lose the transport: the consumer hears offline exactly once."""
+        state_changes = []
+        open_streams = self._wire(session, state_changes, first_write=ConnectionResetError)
+
+        async def reconnect_to_broken_socket():
+            open_streams(write_side_effect=ConnectionResetError)
+            session._set_connected(True)
+            return {"Success": True}
+
+        with patch.object(session, "connect", new=AsyncMock(side_effect=reconnect_to_broken_socket)):
+            result = await session.send("*#1*12##", is_status_request=True)
+
+        assert result is None
+        assert session.is_open is False
+        assert session.is_connected is False
+        assert state_changes == [True, False]
+
+    @pytest.mark.asyncio
+    async def test_send_written_command_lost_ack_reports_disconnection(self, session):
+        """A command lost after it was written is never replayed, and the loss is reported."""
+        state_changes = []
+        self._wire(session, state_changes, first_read=asyncio.IncompleteReadError(b"", None))
+
+        with patch.object(session, "connect", new=AsyncMock()) as connect:
+            result = await session.send("*1*1*12##")
+
+        assert result is None
+        connect.assert_not_awaited()
+        assert session.is_open is False
+        assert session.is_connected is False
+        assert state_changes == [True, False]
 
 
 class TestOpenWebNet4jHardening:
@@ -1022,6 +1106,81 @@ class TestOWNEventAndCommandSessionRemainingCoverage:
         session._on_state_change = failing_cb
         session._set_connected(True)
         assert session.is_connected is True
+
+    @pytest.mark.asyncio
+    async def test_own_session_is_open_tracks_the_streams_not_the_flag(self):
+        """is_open follows the socket; close() drops it without touching is_connected."""
+        session = OWNSession(gateway=MagicMock(), logger=MagicMock())
+        assert session.is_open is False
+
+        # Only one stream set is not "open": send() needs both to write and read.
+        session._stream_reader = MagicMock()
+        assert session.is_open is False
+        mock_writer = MagicMock()
+        mock_writer.wait_closed = AsyncMock()
+        session._stream_writer = mock_writer
+        assert session.is_open is True
+
+        session._set_connected(True)
+        await session.close()
+        assert session.is_open is False
+        assert session._stream_reader is None and session._stream_writer is None
+        # The explicit close() is a real teardown: the flag follows.
+        assert session.is_connected is False
+
+    @pytest.mark.asyncio
+    async def test_close_resets_is_connected_but_reconnect_does_not_flap(self):
+        """close() notifies the consumer; an internal recycle keeps the flag."""
+        session = OWNSession(gateway=MagicMock(), logger=MagicMock())
+        state_changes = []
+        session._on_state_change = lambda c: state_changes.append(c)
+
+        def open_streams():
+            writer = MagicMock()
+            writer.wait_closed = AsyncMock()
+            session._stream_reader, session._stream_writer = MagicMock(), writer
+
+        open_streams()
+        session._set_connected(True)
+        assert state_changes == [True]
+
+        # A routine reconnect recycles the socket without touching the flag.
+        async def fake_connect():
+            open_streams()
+            session._set_connected(True)
+            return {"Success": True}
+
+        with patch.object(session, "connect", new=AsyncMock(side_effect=fake_connect)):
+            await session._reconnect()
+        assert session.is_open is True
+        assert session.is_connected is True
+        assert state_changes == [True]
+
+        # The explicit teardown is the only thing that flips it.
+        await session.close()
+        assert session.is_open is False
+        assert session.is_connected is False
+        assert state_changes == [True, False]
+
+        # Closing an already-closed session stays quiet (transitions only).
+        await session.close()
+        assert state_changes == [True, False]
+
+    @pytest.mark.asyncio
+    async def test_event_session_close_and_recycle_both_stop_keepalive(self, event_session):
+        """The keepalive never outlives the socket, whichever path drops it."""
+        with patch.object(event_session, "_stop_keepalive", new_callable=AsyncMock) as stop:
+            await event_session.close()
+            stop.assert_awaited_once()
+            assert event_session.is_connected is False
+
+        with (
+            patch.object(event_session, "_stop_keepalive", new_callable=AsyncMock) as stop,
+            patch.object(event_session, "connect", new_callable=AsyncMock, return_value=None),
+        ):
+            await event_session._reconnect()
+            # From _close_streams(); connect() (which also stops it) is mocked out.
+            stop.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_event_session_is_connected_and_connect_failure(self, event_session):

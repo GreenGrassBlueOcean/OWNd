@@ -261,6 +261,19 @@ class OWNSession:
         return self._connected
 
     @property
+    def is_open(self) -> bool:
+        """True while the session holds an open socket (both streams set).
+
+        This is the transport view, distinct from ``is_connected``, which is
+        the consumer-facing negotiated state and deliberately does not flap
+        while an internal reconnect recycles the socket. So ``is_connected``
+        may read ``True`` with ``is_open`` ``False`` mid-reconnect, and the
+        other way round during negotiation. The streams are what ``send()``
+        checks before deciding to reopen the session.
+        """
+        return self._stream_reader is not None and self._stream_writer is not None
+
+    @property
     def _log_id(self) -> str:
         """Log prefix; safe also on a session created without a gateway."""
         # NB: must go through the *gateway*'s log_id — returning self._log_id
@@ -470,7 +483,7 @@ class OWNSession:
                     # The TCP connection survived the rejected negotiation:
                     # release it, it will not be used.
                     with contextlib.suppress(Exception):
-                        await self.close()
+                        await self._close_streams()
                     return result
                 reason = f"negotiation failed ({result.get('Message')})"
                 wait = max(1, retry_count * 2)
@@ -491,9 +504,10 @@ class OWNSession:
             # A failed attempt can leave a half-open socket behind (e.g. TCP
             # connected but negotiation failed or was reset): release it before
             # retrying or giving up, so retries never accumulate leaked
-            # descriptors.
+            # descriptors. Only the streams: the connected flag is decided
+            # below, so a retry that succeeds never flaps the consumer.
             with contextlib.suppress(Exception):
-                await self.close()
+                await self._close_streams()
             if retry_count >= MAX_CONNECT_ATTEMPTS:
                 self._logger.warning(
                     "%s %s session could not be established after %d attempts; "
@@ -521,15 +535,29 @@ class OWNSession:
         Connection state is intentionally NOT flipped to False here: a routine
         reconnect (the gateway recycles the session ~hourly) recovers in well
         under a second and must not flap entity availability. State only goes
-        False when connect() definitively gives up (see below).
+        False when connect() definitively gives up (see below), which is why
+        this recycles the streams instead of calling close().
         """
         # Closing a broken socket may itself fail; we don't care here.
         with contextlib.suppress(Exception):
-            await self.close()
+            await self._close_streams()
         return await self.connect()
 
     async def close(self) -> None:
-        """Closes the connection to the OpenWebNet gateway."""
+        """Closes the connection to the OpenWebNet gateway.
+
+        This is the explicit teardown: the socket is released and the session
+        is no longer connected, so ``is_connected`` goes ``False`` and the
+        ``on_state_change`` consumer is notified. Internal recycling
+        (``_reconnect()``, the retry loop in ``connect()``) deliberately uses
+        ``_close_streams()`` instead so a transient reconnect does not flap
+        the consumer-facing state.
+        """
+        await self._close_streams()
+        self._set_connected(False)
+
+    async def _close_streams(self) -> None:
+        """Release the socket without touching the connected flag."""
 
         # May be invoked on an empty instance, or on an already-broken socket:
         # be robust against Nones and against wait_closed() re-raising.
@@ -1015,9 +1043,11 @@ class OWNEventSession(OWNSession):
             if self._stream_writer is not None:
                 self._stream_writer.close()
 
-    async def close(self) -> None:
+    async def _close_streams(self) -> None:
+        # Both the explicit close() and an internal recycle go through here,
+        # so the keepalive can never outlive the socket it writes to.
         await self._stop_keepalive()
-        await super().close()
+        await super()._close_streams()
 
     @classmethod
     async def connect_to_gateway(cls, gateway: OWNGateway):
@@ -1370,7 +1400,10 @@ class OWNCommandSession(OWNSession):
                 asyncio.LimitOverrunError,
                 OSError,
             ) as error:
-                await self.close()
+                # Release the broken socket without deciding the connected
+                # state yet: a retry that succeeds is an internal recycle and
+                # must not flap the consumer (offline, then online again).
+                await self._close_streams()
                 if attempt < max_attempts and (is_status_request or not written):
                     self._logger.debug(
                         "%s Command session connection lost (%s), retrying once...",
@@ -1378,6 +1411,8 @@ class OWNCommandSession(OWNSession):
                         error,
                     )
                     continue
+                # No retry: this is a definitive loss, and the consumer hears it.
+                self._set_connected(False)
                 self._logger.warning(
                     "%s Connection lost before acknowledgement of `%s`; "
                     "message will not be replayed.",
