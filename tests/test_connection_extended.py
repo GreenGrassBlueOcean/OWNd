@@ -452,6 +452,90 @@ class TestOWNCommandSession:
                     mock_send.assert_called_once_with("*#13**15##", is_status_request=True)
 
 
+    # -- send() retry vs. consumer-facing state -----------------------------
+    #
+    # A transport error during send() is recoverable for a status request
+    # (idempotent) and for a command that was not yet written. Recovering
+    # must look like the routine reconnect: the consumer never hears
+    # "offline". Only a loss that is not retried is reported.
+
+    @staticmethod
+    def _wire(session, state_changes, *, first_write=None, first_read=None, ack=True):
+        """Give the session live-looking streams and record state transitions."""
+        session._on_state_change = lambda c: state_changes.append(c)
+
+        def open_streams(write_side_effect=None, read_side_effect=None):
+            writer = MagicMock()
+            writer.drain = AsyncMock()
+            writer.wait_closed = AsyncMock()
+            if write_side_effect is not None:
+                writer.write.side_effect = write_side_effect
+            reader = AsyncMock()
+            if read_side_effect is not None:
+                reader.readuntil.side_effect = read_side_effect
+            else:
+                reader.readuntil.return_value = b"*#*1##" if ack else b"*#*0##"
+            session._stream_reader, session._stream_writer = reader, writer
+
+        open_streams(first_write, first_read)
+        session._set_connected(True)
+        return open_streams
+
+    @pytest.mark.asyncio
+    async def test_send_status_request_reset_then_retry_success_does_not_flap(self, session):
+        """Transport reset on a status request, retry succeeds: no offline/online pair."""
+        state_changes = []
+        open_streams = self._wire(session, state_changes, first_write=ConnectionResetError)
+        assert state_changes == [True]
+
+        async def reconnect():
+            open_streams()
+            session._set_connected(True)
+            return {"Success": True}
+
+        with patch.object(session, "connect", new=AsyncMock(side_effect=reconnect)) as connect:
+            result = await session.send("*#1*12##", is_status_request=True)
+
+        assert result is True
+        connect.assert_awaited_once()
+        assert session.is_connected is True
+        assert state_changes == [True], "a successful retry must not notify offline"
+
+    @pytest.mark.asyncio
+    async def test_send_status_request_reset_twice_reports_disconnection_once(self, session):
+        """Both attempts lose the transport: the consumer hears offline exactly once."""
+        state_changes = []
+        open_streams = self._wire(session, state_changes, first_write=ConnectionResetError)
+
+        async def reconnect_to_broken_socket():
+            open_streams(write_side_effect=ConnectionResetError)
+            session._set_connected(True)
+            return {"Success": True}
+
+        with patch.object(session, "connect", new=AsyncMock(side_effect=reconnect_to_broken_socket)):
+            result = await session.send("*#1*12##", is_status_request=True)
+
+        assert result is None
+        assert session.is_open is False
+        assert session.is_connected is False
+        assert state_changes == [True, False]
+
+    @pytest.mark.asyncio
+    async def test_send_written_command_lost_ack_reports_disconnection(self, session):
+        """A command lost after it was written is never replayed, and the loss is reported."""
+        state_changes = []
+        self._wire(session, state_changes, first_read=asyncio.IncompleteReadError(b"", None))
+
+        with patch.object(session, "connect", new=AsyncMock()) as connect:
+            result = await session.send("*1*1*12##")
+
+        assert result is None
+        connect.assert_not_awaited()
+        assert session.is_open is False
+        assert session.is_connected is False
+        assert state_changes == [True, False]
+
+
 class TestOpenWebNet4jHardening:
     """Test suite specifically validating openwebnet4j protocol hardening from Massimo Valla (@mvalla)."""
 

@@ -1400,7 +1400,10 @@ class OWNCommandSession(OWNSession):
                 asyncio.LimitOverrunError,
                 OSError,
             ) as error:
-                await self.close()
+                # Release the broken socket without deciding the connected
+                # state yet: a retry that succeeds is an internal recycle and
+                # must not flap the consumer (offline, then online again).
+                await self._close_streams()
                 if attempt < max_attempts and (is_status_request or not written):
                     self._logger.debug(
                         "%s Command session connection lost (%s), retrying once...",
@@ -1408,6 +1411,8 @@ class OWNCommandSession(OWNSession):
                         error,
                     )
                     continue
+                # No retry: this is a definitive loss, and the consumer hears it.
+                self._set_connected(False)
                 self._logger.warning(
                     "%s Connection lost before acknowledgement of `%s`; "
                     "message will not be replayed.",
