@@ -121,8 +121,9 @@ def validate_corpus() -> int:
             print(f"  - {e}", file=sys.stderr)
         return 1
 
-    # Synchronize corpus.json
-    with open(CORPUS_JSON_PATH, "w", encoding="utf-8") as f:
+    # Synchronize corpus.json. Explicit LF so a Windows checkout does not
+    # rewrite the file with CRLF on every run (see .gitattributes).
+    with open(CORPUS_JSON_PATH, "w", encoding="utf-8", newline="\n") as f:
         json.dump(all_valid_records, f, indent=2)
 
     print("Status        : ALL FIXTURES VALID (PASS)")

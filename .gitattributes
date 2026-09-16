@@ -1,0 +1,21 @@
+# One line ending for the whole repository, whatever the contributor's OS.
+#
+# Every text file is stored with LF and checked out with LF. Without this,
+# master carried six CRLF files next to an LF majority, two of them (the
+# connection and discovery modules) mixed within the file, and an edit from
+# a different editor rewrote whole files: a 40-line change became a 400-line
+# diff that no reviewer could read. tests/test_line_endings.py keeps it so.
+* text=auto eol=lf
+
+# Keep Windows-native files as Windows expects them.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Never touch binaries.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.whl binary
+*.pdf binary
