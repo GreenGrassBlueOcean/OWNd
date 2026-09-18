@@ -371,6 +371,13 @@ async def test_rejected_status_request_is_logged_at_debug() -> None:
 
     assert result is None
     assert writer.written == [b"*#16*0##", b"*#16*0##"]
+    logger.error.assert_not_called()
+    logger.debug.assert_any_call(
+        "%s Status request `%s` not acknowledged (NACK). Retrying (%d)...",
+        session._log_id,
+        "*#16*0##",
+        1,
+    )
     logger.debug.assert_any_call(
         "%s Gateway rejected status request %s (NACK, %s response(s)). Subsystem or device may not be present.",
         session._log_id,

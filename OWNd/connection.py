@@ -1389,12 +1389,20 @@ class OWNCommandSession(OWNSession):
                                 message,
                             )
                         return None
-                    self._logger.error(
-                        "%s Could not send message `%s`. Retrying (%d)...",
-                        self._log_id,
-                        message,
-                        attempt,
-                    )
+                    if is_status_request:
+                        self._logger.debug(
+                            "%s Status request `%s` not acknowledged (NACK). Retrying (%d)...",
+                            self._log_id,
+                            message,
+                            attempt,
+                        )
+                    else:
+                        self._logger.error(
+                            "%s Could not send message `%s`. Retrying (%d)...",
+                            self._log_id,
+                            message,
+                            attempt,
+                        )
                     continue
 
                 self._logger.warning(
