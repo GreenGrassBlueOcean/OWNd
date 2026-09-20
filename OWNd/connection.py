@@ -1132,7 +1132,9 @@ class OWNEventSession(OWNSession):
         ):
             # Covers EOF, RST (ConnectionResetError), aborted connections,
             # over-long frames and other socket errors: reconnect in all cases.
-            self._logger.warning(
+            # Routine drops (e.g. MH200/MH201 hourly session recycling) are logged
+            # at DEBUG so healthy reconnects do not alarm downstream consumers.
+            self._logger.debug(
                 "%s Event connection lost, reconnecting...", self._log_id
             )
             await self._reconnect()

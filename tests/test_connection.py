@@ -387,6 +387,29 @@ async def test_rejected_status_request_is_logged_at_debug() -> None:
 
 
 @pytest.mark.asyncio
+async def test_event_connection_loss_is_logged_at_debug() -> None:
+    """Routine event session drops are logged at DEBUG to avoid HA log spam."""
+    session, _ = make_session(OWNEventSession)
+    assert isinstance(session, OWNEventSession)
+    logger = MagicMock()
+    session._logger = logger
+    session._stream_reader = AsyncMock()
+    session._stream_reader.readuntil = AsyncMock(
+        side_effect=asyncio.IncompleteReadError(b"", 0)
+    )
+    session._reconnect = AsyncMock(return_value={"Success": True})
+
+    result = await session.get_next()
+
+    assert result is None
+    session._reconnect.assert_awaited_once()
+    logger.warning.assert_not_called()
+    logger.debug.assert_any_call(
+        "%s Event connection lost, reconnecting...", session._log_id
+    )
+
+
+@pytest.mark.asyncio
 async def test_probe_gateway_uses_read_only_model_request() -> None:
     gateway = OWNGateway({"address": "192.0.2.1", "port": 20000})
 
