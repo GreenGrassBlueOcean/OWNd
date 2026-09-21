@@ -410,6 +410,71 @@ async def test_event_connection_loss_is_logged_at_debug() -> None:
 
 
 @pytest.mark.asyncio
+async def test_event_connection_loss_oversized_frame_is_warning() -> None:
+    session, _ = make_session(OWNEventSession)
+    logger = MagicMock()
+    session._logger = logger
+    session._stream_reader = AsyncMock()
+    session._stream_reader.readuntil = AsyncMock(
+        side_effect=asyncio.LimitOverrunError("overrun", 0)
+    )
+    session._reconnect = AsyncMock(return_value={"Success": True})
+
+    result = await session.get_next()
+
+    assert result is None
+    session._reconnect.assert_awaited_once()
+    logger.warning.assert_any_call(
+        "%s Received oversized or garbage frame, dropping connection and reconnecting...",
+        session._log_id,
+    )
+
+
+@pytest.mark.asyncio
+async def test_event_connection_drops_clustering() -> None:
+    session, _ = make_session(OWNEventSession)
+    logger = MagicMock()
+    session._logger = logger
+    session._stream_reader = AsyncMock()
+    session._stream_reader.readuntil = AsyncMock(
+        side_effect=asyncio.IncompleteReadError(b"", 0)
+    )
+    session._reconnect = AsyncMock(return_value={"Success": True})
+
+    # Drop 1 (DEBUG)
+    await session.get_next()
+    logger.warning.assert_not_called()
+    logger.debug.assert_any_call(
+        "%s Event connection lost, reconnecting...", session._log_id
+    )
+    logger.debug.reset_mock()
+
+    # Drop 2 (DEBUG)
+    await session.get_next()
+    logger.warning.assert_not_called()
+    logger.debug.assert_any_call(
+        "%s Event connection lost, reconnecting...", session._log_id
+    )
+    logger.debug.reset_mock()
+
+    # Drop 3 within 10 minutes (WARNING)
+    await session.get_next()
+    logger.warning.assert_any_call(
+        "%s Event connection dropped %d times in 10 minutes; network may be unstable. Reconnecting...",
+        session._log_id,
+        3,
+    )
+    logger.warning.reset_mock()
+
+    # Drop 4 right away (DEBUG because we already warned in the last hour)
+    await session.get_next()
+    logger.warning.assert_not_called()
+    logger.debug.assert_any_call(
+        "%s Event connection lost, reconnecting...", session._log_id
+    )
+
+
+@pytest.mark.asyncio
 async def test_probe_gateway_uses_read_only_model_request() -> None:
     gateway = OWNGateway({"address": "192.0.2.1", "port": 20000})
 

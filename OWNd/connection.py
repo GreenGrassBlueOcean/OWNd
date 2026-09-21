@@ -10,6 +10,7 @@ import logging
 import secrets
 import socket
 import string
+import time
 from collections.abc import Callable, Mapping
 from typing import Any
 from urllib.parse import urlparse
@@ -1014,6 +1015,8 @@ class OWNEventSession(OWNSession):
             gateway.profile.event_keepalive_interval if gateway is not None else None
         )
         self._keepalive_task: asyncio.Task[None] | None = None
+        self._recent_drops: list[float] = []
+        self._last_drop_warning: float = 0.0
 
     async def connect(self) -> dict[str, Any] | None:
         await self._stop_keepalive()
@@ -1124,19 +1127,37 @@ class OWNEventSession(OWNSession):
             )
             await self._reconnect()
             return None
+        except asyncio.LimitOverrunError:
+            self._logger.warning(
+                "%s Received oversized or garbage frame, dropping connection and reconnecting...",
+                self._log_id,
+            )
+            await self._reconnect()
+            return None
         except (
             asyncio.IncompleteReadError,
-            asyncio.LimitOverrunError,
             ConnectionError,
             OSError,
         ):
-            # Covers EOF, RST (ConnectionResetError), aborted connections,
-            # over-long frames and other socket errors: reconnect in all cases.
-            # Routine drops (e.g. MH200/MH201 hourly session recycling) are logged
-            # at DEBUG so healthy reconnects do not alarm downstream consumers.
-            self._logger.debug(
-                "%s Event connection lost, reconnecting...", self._log_id
-            )
+            now = time.monotonic()
+            self._recent_drops = [t for t in self._recent_drops if now - t < 600]
+            self._recent_drops.append(now)
+
+            if len(self._recent_drops) >= 3 and (now - self._last_drop_warning) >= 3600:
+                self._logger.warning(
+                    "%s Event connection dropped %d times in 10 minutes; network may be unstable. Reconnecting...",
+                    self._log_id,
+                    len(self._recent_drops),
+                )
+                self._last_drop_warning = now
+            else:
+                # Covers EOF, RST (ConnectionResetError), aborted connections,
+                # and other socket errors: reconnect in all cases.
+                # Routine drops (e.g. MH200/MH201 hourly session recycling) are logged
+                # at DEBUG so healthy reconnects do not alarm downstream consumers.
+                self._logger.debug(
+                    "%s Event connection lost, reconnecting...", self._log_id
+                )
             await self._reconnect()
             return None
         except Exception:  # pylint: disable=broad-except
