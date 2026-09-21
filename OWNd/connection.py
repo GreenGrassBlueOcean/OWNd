@@ -73,6 +73,14 @@ RECONNECT_PAUSE = 10
 # Longer pause when the failure was fatal (e.g. a genuinely wrong password):
 # retrying fast cannot help, and every attempt costs the gateway a session.
 RECONNECT_PAUSE_FATAL = 60
+# Routine event-session drops (e.g. the MH200/MH201 hourly session recycle)
+# recover transparently and are logged at DEBUG. Only a *burst* of drops is
+# worth a WARNING: DROP_BURST_COUNT drops within DROP_BURST_WINDOW seconds,
+# repeated at most once every DROP_WARNING_INTERVAL seconds so a flapping
+# link does not turn into a log flood.
+DROP_BURST_COUNT = 3
+DROP_BURST_WINDOW = 600  # 10 minutes
+DROP_WARNING_INTERVAL = 3600  # 1 hour
 
 
 def _first_scalar(value: Any, default: Any = None) -> Any:
@@ -1016,7 +1024,7 @@ class OWNEventSession(OWNSession):
         )
         self._keepalive_task: asyncio.Task[None] | None = None
         self._recent_drops: list[float] = []
-        self._last_drop_warning: float = 0.0
+        self._last_drop_warning: float | None = None
 
     async def connect(self) -> dict[str, Any] | None:
         await self._stop_keepalive()
@@ -1139,22 +1147,29 @@ class OWNEventSession(OWNSession):
             ConnectionError,
             OSError,
         ):
+            # Covers EOF, RST (ConnectionResetError), aborted connections and
+            # other socket errors: reconnect in all cases. A single drop is
+            # routine (MH200/MH201 recycle the session every hour) and is
+            # logged at DEBUG so healthy reconnects do not alarm downstream
+            # consumers; only a burst of drops is escalated to WARNING.
             now = time.monotonic()
-            self._recent_drops = [t for t in self._recent_drops if now - t < 600]
+            self._recent_drops = [
+                t for t in self._recent_drops if now - t < DROP_BURST_WINDOW
+            ]
             self._recent_drops.append(now)
-
-            if len(self._recent_drops) >= 3 and (now - self._last_drop_warning) >= 3600:
+            if len(self._recent_drops) >= DROP_BURST_COUNT and (
+                self._last_drop_warning is None
+                or now - self._last_drop_warning >= DROP_WARNING_INTERVAL
+            ):
                 self._logger.warning(
-                    "%s Event connection dropped %d times in 10 minutes; network may be unstable. Reconnecting...",
+                    "%s Event connection dropped %d times in %ss; "
+                    "network may be unstable. Reconnecting...",
                     self._log_id,
                     len(self._recent_drops),
+                    DROP_BURST_WINDOW,
                 )
                 self._last_drop_warning = now
             else:
-                # Covers EOF, RST (ConnectionResetError), aborted connections,
-                # and other socket errors: reconnect in all cases.
-                # Routine drops (e.g. MH200/MH201 hourly session recycling) are logged
-                # at DEBUG so healthy reconnects do not alarm downstream consumers.
                 self._logger.debug(
                     "%s Event connection lost, reconnecting...", self._log_id
                 )
