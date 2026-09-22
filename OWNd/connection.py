@@ -1161,12 +1161,15 @@ class OWNEventSession(OWNSession):
                 self._last_drop_warning is None
                 or now - self._last_drop_warning >= DROP_WARNING_INTERVAL
             ):
+                # Report the span the drops actually covered, not the window
+                # they were measured in: three drops five seconds apart is a
+                # very different symptom from three spread over ten minutes.
                 self._logger.warning(
-                    "%s Event connection dropped %d times in %ss; "
+                    "%s Event connection dropped %d times in %.0fs; "
                     "network may be unstable. Reconnecting...",
                     self._log_id,
                     len(self._recent_drops),
-                    DROP_BURST_WINDOW,
+                    now - self._recent_drops[0],
                 )
                 self._last_drop_warning = now
             else:

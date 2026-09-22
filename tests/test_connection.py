@@ -459,7 +459,7 @@ def _dropping_event_session() -> tuple[OWNEventSession, MagicMock]:
     return session, logger
 
 
-BURST_WARNING = "%s Event connection dropped %d times in %ss; network may be unstable. Reconnecting..."
+BURST_WARNING = "%s Event connection dropped %d times in %.0fs; network may be unstable. Reconnecting..."
 
 
 @pytest.mark.asyncio
@@ -478,8 +478,10 @@ async def test_event_connection_drop_burst_is_warning_on_fresh_host() -> None:
             logger.debug.reset_mock()
 
         await session.get_next()
+        # Drops at 100.0 / 100.5 / 101.0: the reported span is the real 1.0s,
+        # not the 600s window they were measured in.
         logger.warning.assert_called_once_with(
-            BURST_WARNING, session._log_id, DROP_BURST_COUNT, DROP_BURST_WINDOW
+            BURST_WARNING, session._log_id, DROP_BURST_COUNT, 1.0
         )
         logger.warning.reset_mock()
 
@@ -491,6 +493,26 @@ async def test_event_connection_drop_burst_is_warning_on_fresh_host() -> None:
         )
 
     assert session._reconnect.await_count == DROP_BURST_COUNT + 1
+
+
+@pytest.mark.asyncio
+async def test_event_connection_drop_burst_reports_real_span() -> None:
+    """A slow burst reports its own span, distinguishing it from a fast one."""
+    session, logger = _dropping_event_session()
+    t0 = 5000.0
+    spread = 200.0
+    # Spread over most of DROP_BURST_WINDOW, but still inside it.
+    assert spread * (DROP_BURST_COUNT - 1) < DROP_BURST_WINDOW
+    with _fake_clock(*(t0 + i * spread for i in range(DROP_BURST_COUNT))):
+        for _ in range(DROP_BURST_COUNT):
+            await session.get_next()
+
+    logger.warning.assert_called_once_with(
+        BURST_WARNING,
+        session._log_id,
+        DROP_BURST_COUNT,
+        spread * (DROP_BURST_COUNT - 1),
+    )
 
 
 @pytest.mark.asyncio
@@ -537,7 +559,7 @@ async def test_event_connection_drop_tracker_survives_reconnect() -> None:
             await session.get_next()
 
     logger.warning.assert_called_once_with(
-        BURST_WARNING, session._log_id, DROP_BURST_COUNT, DROP_BURST_WINDOW
+        BURST_WARNING, session._log_id, DROP_BURST_COUNT, 1.0
     )
 
 
