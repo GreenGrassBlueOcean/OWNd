@@ -7,6 +7,7 @@ raw frame uniqueness, and schema conformity.
 """
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -25,6 +26,9 @@ GOLDEN_DIR = REPO_ROOT / "tests" / "golden"
 SCHEMA_PATH = GOLDEN_DIR / "schema.json"
 FRAMES_DIR = GOLDEN_DIR / "frames"
 CORPUS_JSON_PATH = GOLDEN_DIR / "corpus.json"
+PRIVATE_IP = re.compile(r"\b(10\.\d+|172\.(1[6-9]|2\d|3[01])|192\.168)\.\d+\.\d+\b")
+SOURCE_PATH = GOLDEN_DIR / "SOURCE.yaml"
+
 
 
 def validate_corpus() -> int:
@@ -105,9 +109,24 @@ def validate_corpus() -> int:
                 else:
                     seen_frames[raw_frame] = f"{rel_path} [{rec_id}]"
 
+            # Privacy first: verify no private LAN addresses are leaked in fixtures
+            rec_str = json.dumps(rec)
+            if PRIVATE_IP.search(rec_str):
+                errors.append(
+                    f"{rel_path} [{rec_id}]: Privacy violation - private LAN IP address leaked in fixture"
+                )
+
             record_copy = dict(rec)
             record_copy["_file"] = yf.name
             all_valid_records.append(record_copy)
+
+    # Privacy first: check provenance manifest SOURCE.yaml
+    if SOURCE_PATH.is_file():
+        source_text = SOURCE_PATH.read_text(encoding="utf-8")
+        if PRIVATE_IP.search(source_text):
+            errors.append(
+                f"{SOURCE_PATH.relative_to(REPO_ROOT)}: Privacy violation - private LAN IP address leaked in manifest"
+            )
 
     print("=" * 60)
     print("OpenWebNet Golden Corpus Validation Summary")

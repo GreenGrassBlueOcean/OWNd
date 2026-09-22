@@ -729,6 +729,166 @@
     "_file": "who02_automation.yaml"
   },
   {
+    "id": "cover.req.status.ptp.01",
+    "frame": "*#2*01##",
+    "direction": "status_request",
+    "who": 2,
+    "what": null,
+    "where": "01",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Automation (Covers & Shutters): Query status at address '01' with leading zero",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "status",
+      "args": [
+        "01"
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.up.ptp.01",
+    "frame": "*2*1*01##",
+    "direction": "command",
+    "who": 2,
+    "what": 1,
+    "where": "01",
+    "source": "public-readme",
+    "mcp_valid": true,
+    "mcp_notes": "Automation (Covers & Shutters): UP (Open shutter) at address '01' with leading zero",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "raise_shutter",
+      "args": [
+        "01"
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.down.ptp.01",
+    "frame": "*2*2*01##",
+    "direction": "command",
+    "who": 2,
+    "what": 2,
+    "where": "01",
+    "source": "public-readme",
+    "mcp_valid": true,
+    "mcp_notes": "Automation (Covers & Shutters): DOWN (Close shutter) at address '01' with leading zero",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "lower_shutter",
+      "args": [
+        "01"
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.stop.ptp.01",
+    "frame": "*2*0*01##",
+    "direction": "command",
+    "who": 2,
+    "what": 0,
+    "where": "01",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Automation (Covers & Shutters): STOP movement at address '01' with leading zero",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "stop_shutter",
+      "args": [
+        "01"
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.req.status.ptp.11",
+    "frame": "*#2*11##",
+    "direction": "status_request",
+    "who": 2,
+    "what": null,
+    "where": "11",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Automation (Covers & Shutters): Query status at two-digit address '11'",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "status",
+      "args": [
+        "11"
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.up.ptp.11",
+    "frame": "*2*1*11##",
+    "direction": "command",
+    "who": 2,
+    "what": 1,
+    "where": "11",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Automation (Covers & Shutters): UP (Open shutter) at two-digit address '11'",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "raise_shutter",
+      "args": [
+        "11"
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.down.ptp.11",
+    "frame": "*2*2*11##",
+    "direction": "command",
+    "who": 2,
+    "what": 2,
+    "where": "11",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Automation (Covers & Shutters): DOWN (Close shutter) at two-digit address '11'",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "lower_shutter",
+      "args": [
+        "11"
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
+    "id": "cover.cmd.stop.ptp.11",
+    "frame": "*2*0*11##",
+    "direction": "command",
+    "who": 2,
+    "what": 0,
+    "where": "11",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Automation (Covers & Shutters): STOP movement at two-digit address '11'",
+    "roundtrip": true,
+    "builder": {
+      "class": "OWNAutomationCommand",
+      "method": "stop_shutter",
+      "args": [
+        "11"
+      ]
+    },
+    "_file": "who02_automation.yaml"
+  },
+  {
     "id": "thermo.req.temp.zone1",
     "frame": "*#4*1*0##",
     "direction": "dimension_request",
