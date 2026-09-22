@@ -184,7 +184,7 @@
   who: 2
   what: 1
   where: "01"
-  source: community-plant-capture
+  source: public-readme
   mcp_valid: true
   mcp_notes: "Automation (Covers & Shutters): UP (Open shutter) at address '01' with leading zero"
   roundtrip: true
@@ -199,7 +199,7 @@
   who: 2
   what: 2
   where: "01"
-  source: community-plant-capture
+  source: public-readme
   mcp_valid: true
   mcp_notes: "Automation (Covers & Shutters): DOWN (Close shutter) at address '01' with leading zero"
   roundtrip: true
@@ -282,4 +282,3 @@
     class: OWNAutomationCommand
     method: stop_shutter
     args: ["11"]
-

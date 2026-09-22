@@ -18,7 +18,6 @@ GOLDEN_DIR = REPO_ROOT / "tests" / "golden"
 FRAMES_DIR = GOLDEN_DIR / "frames"
 
 PRIVATE_IP = re.compile(r"\b(10\.\d+|172\.(1[6-9]|2\d|3[01])|192\.168)\.\d+\.\d+\b")
-IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 MAC = re.compile(r"\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b")
 LOCAL_PATH = re.compile(r"[A-Za-z]:[\\/]|/home/|/Users/", re.IGNORECASE)
 
@@ -44,9 +43,10 @@ def test_golden_corpus_carries_no_private_ips() -> None:
 def test_golden_corpus_mac_addresses_are_synthetic() -> None:
     """Verify that any MAC addresses in the golden test corpus use synthetic prefixes."""
     files_to_check = list(FRAMES_DIR.glob("*.yaml"))
-    corpus_json = GOLDEN_DIR / "corpus.json"
-    if corpus_json.is_file():
-        files_to_check.append(corpus_json)
+    for extra in ("corpus.json", "SOURCE.yaml"):
+        extra_path = GOLDEN_DIR / extra
+        if extra_path.is_file():
+            files_to_check.append(extra_path)
 
     for file_path in files_to_check:
         text = file_path.read_text(encoding="utf-8")
