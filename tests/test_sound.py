@@ -33,10 +33,36 @@ def test_sound_commands_validate_ranges() -> None:
     assert str(OWNSoundCommand.set_volume("21", 40)) == "*#16*21*#1*40##"
     assert [str(command) for command in OWNSoundCommand.select_source("21", 2)] == [
         "*16*3*102##",
-        "*16*3*121##",
+        "*16*3*122##",
     ]
 
     with pytest.raises(ValueError):
         OWNSoundCommand.set_volume("21", 101)
     with pytest.raises(ValueError):
         OWNSoundCommand.select_source("21", 0)
+
+
+def test_select_source_uses_environment_of_the_amplifier_address() -> None:
+    """Routing is addressed by environment, not by amplifier.
+
+    Amplifier addresses are `EA`: the first digit is the environment, the
+    second the amplifier within it. The matrix is routed with `1ES`, so both
+    amplifiers 21 and 23 route through environment 2.
+    """
+    assert [str(command) for command in OWNSoundCommand.select_source("23", 2)] == [
+        "*16*3*102##",
+        "*16*3*122##",
+    ]
+    assert [str(command) for command in OWNSoundCommand.select_source("23", 1)] == [
+        "*16*3*101##",
+        "*16*3*121##",
+    ]
+    assert [str(command) for command in OWNSoundCommand.select_source("41", 3)] == [
+        "*16*3*103##",
+        "*16*3*143##",
+    ]
+    # A single-digit address is taken to be the environment itself.
+    assert [str(command) for command in OWNSoundCommand.select_source("2", 2)] == [
+        "*16*3*102##",
+        "*16*3*122##",
+    ]
