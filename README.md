@@ -210,17 +210,18 @@ asyncio.run(main())
 ```python
 from OWNd.message import OWNCenCommand, OWNCenPlusCommand, OWNHeatingCommand
 
-# CEN (WHO=15): Button 2 short press on scenario controller 12 -> *15*02#2*12##
-frame_cen = OWNCenCommand.short_press(where="12", button=2)
+# CEN (WHO=15): Button 2 short press on scenario controller 12
+frame_cen_press = OWNCenCommand.press(where="12", button=2)                # *15*02*12##
+frame_cen_release = OWNCenCommand.release_short_press(where="12", button=2)  # *15*02#1*12##
 
-# CEN+ (WHO=25): Button 5 start pressure on keypad 01 -> *25*21#5*01##
-frame_cenplus_press = OWNCenPlusCommand.start_pressure(where="01", button=5)
+# CEN+ (WHO=25): Button 5 short press on virtual object 21 -> *25*21#5*21##
+frame_cenplus_press = OWNCenPlusCommand.press(where="21", button=5)
 
-# CEN+ (WHO=25): Button 5 still held event -> *25*23#5*01##
-frame_cenplus_held = OWNCenPlusCommand.still_held(where="01", button=5)
+# CEN+ (WHO=25): Button 5 still held event -> *25*23#5*21##
+frame_cenplus_held = OWNCenPlusCommand.still_held(where="21", button=5)
 
-# CEN+ (WHO=25): Button 5 short release -> *25*24#5*01##
-frame_cenplus_rel = OWNCenPlusCommand.release_from_short(where="01", button=5)
+# CEN+ (WHO=25): Button 5 release after a long press -> *25*24#5*21##
+frame_cenplus_rel = OWNCenPlusCommand.release(where="21", button=5)
 
 # Central Unit (WHO=4): Set 3550 (#0) master mode to Heating at 21.5°C -> *4*1#0215*#0##
 frame_heat = OWNHeatingCommand.set_central_mode(where="#0", mode="heating", temperature=21.5)

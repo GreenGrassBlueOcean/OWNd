@@ -683,6 +683,7 @@ class OWNAutomationEvent(OWNEvent):
 
         self._state = None
         self._position = None
+        self._position_unknown = False
         self._priority = None
         self._info = None
         self._is_opening = None
@@ -704,6 +705,10 @@ class OWNAutomationEvent(OWNEvent):
                     if len(self._dimension_value) > 1 and self._dimension_value[1]
                     else None
                 )
+                # shutterLevel 255 means "unknown position", not a level.
+                if self._position == 255:
+                    self._position = None
+                    self._position_unknown = True
                 self._priority = (
                     int(self._dimension_value[2])
                     if len(self._dimension_value) > 2 and self._dimension_value[2]
@@ -726,7 +731,9 @@ class OWNAutomationEvent(OWNEvent):
         elif self._state == 10:
             self._is_opening = False
             self._is_closing = False
-            if self._position == 0:
+            if self._position_unknown:
+                self._human_readable_log = f"Cover {self._where}{self._interface_log_text} is stopped at an unknown position."  # pylint: disable=line-too-long
+            elif self._position == 0:
                 self._human_readable_log = (
                     f"Cover {self._where}{self._interface_log_text} is closed."
                 )
@@ -776,6 +783,11 @@ class OWNAutomationEvent(OWNEvent):
     @property
     def current_position(self) -> int | None:
         return self._position
+
+    @property
+    def is_position_unknown(self) -> bool:
+        """True when the shutter reported level 255 (unknown position)."""
+        return self._position_unknown
 
 
 class OWNHeatingEvent(OWNEvent):
@@ -2677,7 +2689,8 @@ class OWNSoundCommand(OWNCommand):
 
     @classmethod
     def volume_down(cls, where: str | int) -> OWNSoundCommand:
-        message = cls(f"*16*1000*{where}##")
+        # 1101 = volume down by one step (1101..1115); 1000 is not a WHO 16 WHAT.
+        message = cls(f"*16*1101*{where}##")
         message._human_readable_log = f"Decreasing audio zone {where} volume."
         return message
 
@@ -2702,35 +2715,59 @@ class OWNDryContactCommand(OWNCommand):
 
 
 class OWNCenCommand(OWNCommand):
-    """Command builder for WHO=15 CEN scenario pushbuttons."""
+    """Command builder for WHO=15 CEN scenario pushbuttons.
+
+    The button (00..31) is the WHAT and the phase is a WHAT parameter:
+    ``*15*BUTTON[#PHASE]*WHERE##``. A short press is ``press`` followed by
+    ``release_short_press``; a long press is ``press``, one or more
+    ``start_long_press``/``still_held``, then ``release``.
+    """
+
+    @staticmethod
+    def _button(button: int | str) -> str:
+        value = int(button)
+        if not 0 <= value <= 31:
+            raise ValueError("CEN button must be between 0 and 31")
+        return f"{value:02d}"
 
     @classmethod
     def press(cls, where: str, button: int | str = 1) -> OWNCenCommand:
-        """Short pressure on CEN button (*15*1*<where>#<button>##)."""
-        target = f"{where}#{button}" if button is not None and "#" not in str(where) else str(where)
-        message = cls(f"*15*1*{target}##")
+        """Pressure on CEN button (*15*<button>*<where>##)."""
+        message = cls(f"*15*{cls._button(button)}*{where}##")
         message._human_readable_log = (
-            f"Short press on button {button} of CEN object {where}."
+            f"Press on button {button} of CEN object {where}."
+        )
+        return message
+
+    @classmethod
+    def release_short_press(cls, where: str, button: int | str = 1) -> OWNCenCommand:
+        """Release after short pressure on CEN button (*15*<button>#1*<where>##)."""
+        message = cls(f"*15*{cls._button(button)}#1*{where}##")
+        message._human_readable_log = (
+            f"Release after short press on button {button} of CEN object {where}."
         )
         return message
 
     @classmethod
     def start_long_press(cls, where: str, button: int | str = 1) -> OWNCenCommand:
-        """Start of long pressure on CEN button (*15*0*<where>#<button>##)."""
-        target = f"{where}#{button}" if button is not None and "#" not in str(where) else str(where)
-        message = cls(f"*15*0*{target}##")
+        """Extended pressure on CEN button (*15*<button>#3*<where>##)."""
+        message = cls(f"*15*{cls._button(button)}#3*{where}##")
         message._human_readable_log = (
-            f"Start long press on button {button} of CEN object {where}."
+            f"Long press on button {button} of CEN object {where}."
         )
         return message
 
     @classmethod
+    def still_held(cls, where: str, button: int | str = 1) -> OWNCenCommand:
+        """Extended pressure repeated while held (*15*<button>#3*<where>##)."""
+        return cls.start_long_press(where, button)
+
+    @classmethod
     def release(cls, where: str, button: int | str = 1) -> OWNCenCommand:
-        """Release after long pressure on CEN button (*15*2*<where>#<button>##)."""
-        target = f"{where}#{button}" if button is not None and "#" not in str(where) else str(where)
-        message = cls(f"*15*2*{target}##")
+        """Release after extended pressure on CEN button (*15*<button>#2*<where>##)."""
+        message = cls(f"*15*{cls._button(button)}#2*{where}##")
         message._human_readable_log = (
-            f"Release button {button} of CEN object {where}."
+            f"Release after long press on button {button} of CEN object {where}."
         )
         return message
 
