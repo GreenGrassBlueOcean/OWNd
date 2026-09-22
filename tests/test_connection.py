@@ -1,11 +1,20 @@
 """Regression tests for session negotiation and command responses."""
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway, OWNSession
+from OWNd.connection import (
+    DROP_BURST_COUNT,
+    DROP_BURST_WINDOW,
+    DROP_WARNING_INTERVAL,
+    OWNCommandSession,
+    OWNEventSession,
+    OWNGateway,
+    OWNSession,
+)
 from OWNd.message import OWNLightingEvent
 
 
@@ -383,6 +392,174 @@ async def test_rejected_status_request_is_logged_at_debug() -> None:
         session._log_id,
         "*#16*0##",
         0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_event_connection_loss_is_logged_at_debug() -> None:
+    """Routine event session drops are logged at DEBUG to avoid HA log spam."""
+    session, _ = make_session(OWNEventSession)
+    assert isinstance(session, OWNEventSession)
+    logger = MagicMock()
+    session._logger = logger
+    session._stream_reader = AsyncMock()
+    session._stream_reader.readuntil = AsyncMock(
+        side_effect=asyncio.IncompleteReadError(b"", 0)
+    )
+    session._reconnect = AsyncMock(return_value={"Success": True})
+
+    result = await session.get_next()
+
+    assert result is None
+    session._reconnect.assert_awaited_once()
+    logger.warning.assert_not_called()
+    logger.debug.assert_any_call(
+        "%s Event connection lost, reconnecting...", session._log_id
+    )
+
+
+@pytest.mark.asyncio
+async def test_event_connection_loss_oversized_frame_is_warning() -> None:
+    """An over-long frame is a protocol signal, not a session recycle."""
+    session, _ = make_session(OWNEventSession)
+    logger = MagicMock()
+    session._logger = logger
+    session._stream_reader = AsyncMock()
+    session._stream_reader.readuntil = AsyncMock(
+        side_effect=asyncio.LimitOverrunError("overrun", 0)
+    )
+    session._reconnect = AsyncMock(return_value={"Success": True})
+
+    result = await session.get_next()
+
+    assert result is None
+    session._reconnect.assert_awaited_once()
+    logger.warning.assert_any_call(
+        "%s Received oversized or garbage frame, dropping connection and reconnecting...",
+        session._log_id,
+    )
+
+
+def _fake_clock(*times: float):
+    """Patch only the module's ``time`` so asyncio's own loop clock is untouched."""
+    it = iter(times)
+    return patch("OWNd.connection.time", SimpleNamespace(monotonic=lambda: next(it)))
+
+
+def _dropping_event_session() -> tuple[OWNEventSession, MagicMock]:
+    session, _ = make_session(OWNEventSession)
+    assert isinstance(session, OWNEventSession)
+    logger = MagicMock()
+    session._logger = logger
+    session._stream_reader = AsyncMock()
+    session._stream_reader.readuntil = AsyncMock(
+        side_effect=asyncio.IncompleteReadError(b"", 0)
+    )
+    session._reconnect = AsyncMock(return_value={"Success": True})
+    return session, logger
+
+
+BURST_WARNING = "%s Event connection dropped %d times in %.0fs; network may be unstable. Reconnecting..."
+
+
+@pytest.mark.asyncio
+async def test_event_connection_drop_burst_is_warning_on_fresh_host() -> None:
+    """A burst warns even when monotonic() is small (host up < 1 h)."""
+    session, logger = _dropping_event_session()
+    # Fresh boot: monotonic() well below DROP_WARNING_INTERVAL. A 0.0 sentinel
+    # for "never warned" would silently suppress the warning here.
+    with _fake_clock(100.0, 100.5, 101.0, 101.5):
+        for _ in range(DROP_BURST_COUNT - 1):
+            await session.get_next()
+            logger.warning.assert_not_called()
+            logger.debug.assert_any_call(
+                "%s Event connection lost, reconnecting...", session._log_id
+            )
+            logger.debug.reset_mock()
+
+        await session.get_next()
+        # Drops at 100.0 / 100.5 / 101.0: the reported span is the real 1.0s,
+        # not the 600s window they were measured in.
+        logger.warning.assert_called_once_with(
+            BURST_WARNING, session._log_id, DROP_BURST_COUNT, 1.0
+        )
+        logger.warning.reset_mock()
+
+        # Another drop right after the warning stays quiet (hourly rate limit).
+        await session.get_next()
+        logger.warning.assert_not_called()
+        logger.debug.assert_any_call(
+            "%s Event connection lost, reconnecting...", session._log_id
+        )
+
+    assert session._reconnect.await_count == DROP_BURST_COUNT + 1
+
+
+@pytest.mark.asyncio
+async def test_event_connection_drop_burst_reports_real_span() -> None:
+    """A slow burst reports its own span, distinguishing it from a fast one."""
+    session, logger = _dropping_event_session()
+    t0 = 5000.0
+    spread = 200.0
+    # Spread over most of DROP_BURST_WINDOW, but still inside it.
+    assert spread * (DROP_BURST_COUNT - 1) < DROP_BURST_WINDOW
+    with _fake_clock(*(t0 + i * spread for i in range(DROP_BURST_COUNT))):
+        for _ in range(DROP_BURST_COUNT):
+            await session.get_next()
+
+    logger.warning.assert_called_once_with(
+        BURST_WARNING,
+        session._log_id,
+        DROP_BURST_COUNT,
+        spread * (DROP_BURST_COUNT - 1),
+    )
+
+
+@pytest.mark.asyncio
+async def test_event_connection_drops_outside_window_stay_debug() -> None:
+    """Hourly session recycling never accumulates into a burst."""
+    session, logger = _dropping_event_session()
+    with _fake_clock(*(float(i * 3460) for i in range(10))):
+        for _ in range(10):
+            await session.get_next()
+
+    logger.warning.assert_not_called()
+    assert logger.debug.call_count == 10
+    assert len(session._recent_drops) == 1
+
+
+@pytest.mark.asyncio
+async def test_event_connection_drop_burst_warns_again_after_interval() -> None:
+    """A persistent flap is re-reported once per DROP_WARNING_INTERVAL."""
+    session, logger = _dropping_event_session()
+    t0 = 5000.0
+    # Burst one at t0, burst two well after the warning interval has elapsed.
+    times = [t0, t0 + 1, t0 + 2]
+    t1 = t0 + DROP_WARNING_INTERVAL + 5
+    times += [t1, t1 + 1, t1 + 2]
+    with _fake_clock(*times):
+        for _ in times:
+            await session.get_next()
+
+    assert logger.warning.call_count == 2
+    assert session._last_drop_warning == t1 + 2
+
+
+@pytest.mark.asyncio
+async def test_event_connection_drop_tracker_survives_reconnect() -> None:
+    """_reconnect() goes through connect(); that must not wipe the burst tracker."""
+    session, logger = _dropping_event_session()
+    session._reconnect = AsyncMock(side_effect=session.connect)
+
+    with (
+        patch.object(OWNSession, "connect", AsyncMock(return_value=None)),
+        _fake_clock(100.0, 100.5, 101.0),
+    ):
+        for _ in range(DROP_BURST_COUNT):
+            await session.get_next()
+
+    logger.warning.assert_called_once_with(
+        BURST_WARNING, session._log_id, DROP_BURST_COUNT, 1.0
     )
 
 
