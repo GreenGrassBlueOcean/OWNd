@@ -491,5 +491,5 @@ class TestMessageExhaustiveCoverage:
         assert gw_cmd22._datetime is not None
 
         # Sound command status
-        assert str(OWNSoundCommand.status("21")) == "*#16*21##"
+        assert str(OWNSoundCommand.status("21")) == "*#16*21*5##"
 

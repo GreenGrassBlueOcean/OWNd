@@ -17,6 +17,8 @@ def test_sound_source_and_zone_events_are_distinct() -> None:
     assert "Audio Source 2 is switched ON" in source.human_readable_log
     assert isinstance(zone, OWNSoundEvent)
     assert zone.is_off
+    assert not zone.is_source_event
+    assert not zone.is_routing_event
     assert "Audio Zone 21 is switched OFF" in zone.human_readable_log
     assert isinstance(volume, OWNSoundEvent)
     assert volume.volume == 37
@@ -68,3 +70,88 @@ def test_select_source_uses_environment_of_the_amplifier_address() -> None:
         OWNSoundCommand.select_source("01", 2)
     with pytest.raises(ValueError, match="two-digit amplifier address"):
         OWNSoundCommand.select_source("#1", 2)
+    with pytest.raises(ValueError, match="two-digit amplifier address"):
+        OWNSoundCommand.select_source("20", 2)
+    # Non-ASCII digits pass str.isdigit() but are not an address
+    with pytest.raises(ValueError, match="two-digit amplifier address"):
+        OWNSoundCommand.select_source("٢٣", 2)
+
+
+def test_status_request_uses_dimension_5() -> None:
+    """WHO 16 status is `*#16*WHERE*5##`; an MH201 NACKs `*#16*WHERE##`."""
+    status = OWNSoundCommand.status("22")
+
+    assert str(status) == "*#16*22*5##"
+    assert status._message_type == "DIMENSION_REQUEST"
+    assert status.dimension == 5
+    assert str(OWNSoundCommand.status("0")) == "*#16*0*5##"
+
+
+def test_routing_event_exposes_environment_and_source() -> None:
+    routing = OWNMessage.parse("*16*3*122##")
+
+    assert isinstance(routing, OWNSoundEvent)
+    assert routing.is_routing_event
+    assert not routing.is_source_event
+    assert routing.environment == "2"
+    assert routing.routed_source == "2"
+    assert routing.source_id is None
+    assert (
+        "Routing of environment 2 to source 2 is switched ON"
+        in routing.human_readable_log
+    )
+    assert routing.is_on
+
+    # A routing frame keeps its address as `zone`: MyHOME parses routing from
+    # it, and a None there turned every matrix re-broadcast into a zone ON.
+    assert routing.zone == "122"
+
+
+@pytest.mark.parametrize(
+    ("frame", "environment", "source", "log"),
+    [
+        ("*16*3*111##", "1", "1", "is switched ON"),
+        ("*16*3*141##", "4", "1", "is switched ON"),
+        ("*16*3*181##", "8", "1", "is switched ON"),
+        ("*16*3*199##", "9", "9", "is switched ON"),
+        ("*16*13*122##", "2", "2", "is switched OFF"),
+        # Source 0 is not a matrix input, but the frame is still routing and
+        # must not surface as amplifier `1E0`.
+        ("*16*3*120##", "2", "0", "is switched ON"),
+        ("*16*13*190##", "9", "0", "is switched OFF"),
+    ],
+)
+def test_routing_event_decomposes_every_environment(
+    frame: str, environment: str, source: str, log: str
+) -> None:
+    event = OWNMessage.parse(frame)
+
+    assert isinstance(event, OWNSoundEvent)
+    assert event.is_routing_event
+    assert event.zone == frame.split("*")[3].rstrip("#")
+    assert event.environment == environment
+    assert event.routed_source == source
+    assert (
+        f"Routing of environment {environment} to source {source} {log}"
+        in event.human_readable_log
+    )
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "*16*3*102##",  # source 2 powering on
+        "*16*13*21##",  # amplifier 21
+        "*16*3*100##",  # general source
+        "*16*3*1٢٢##",  # non-ASCII digits
+        "*16*3*0##",  # general amplifiers
+    ],
+)
+def test_non_routing_events_have_no_environment(frame: str) -> None:
+    event = OWNMessage.parse(frame)
+
+    assert isinstance(event, OWNSoundEvent)
+    assert not event.is_routing_event
+    assert event.environment is None
+    assert event.routed_source is None
+    assert event.zone == event.where
