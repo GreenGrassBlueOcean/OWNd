@@ -189,8 +189,27 @@ def test_shutter_level_255_is_an_unknown_position() -> None:
     assert "unknown position" in stopped.human_readable_log
     assert moving.current_position is None
     assert moving.is_opening is True
+    assert "from an unknown position" in moving.human_readable_log
+    assert "None" not in moving.human_readable_log
     assert known.current_position == 100
     assert known.is_position_unknown is False
+
+
+def test_shutter_level_outside_0_100_is_an_unknown_position() -> None:
+    # Same rule as MyHOME#430: anything outside 0-100 is not a level.
+    stopped = OWNAutomationEvent("*#2*0112*10*10*150*001*0##")
+    closing = OWNAutomationEvent("*#2*0112*10*12*101*001*0##")
+    closed = OWNAutomationEvent("*#2*0112*10*10*0*001*0##")
+
+    assert stopped.current_position is None
+    assert stopped.is_position_unknown is True
+    assert "unknown position" in stopped.human_readable_log
+    assert closing.current_position is None
+    assert closing.is_closing is True
+    assert "closing from an unknown position" in closing.human_readable_log
+    assert closed.current_position == 0
+    assert closed.is_closed is True
+    assert closed.is_position_unknown is False
 
 
 def test_sound_volume_down_uses_documented_step_what() -> None:
