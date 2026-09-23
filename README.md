@@ -36,7 +36,7 @@ It powers the [Home Assistant MyHOME integration](https://github.com/OpenWebNet-
   - Periodic application-level keepalives and passive watchdogs.
   - Non-blocking bounded timeouts on handshakes and commands to prevent event loop stalls.
   - Multi-frame response collection for large bus status sweeps (up to 256 frames).
-- **Declarative Hardware Profiles**: Tailored queue pacing, session concurrency, and subsystem limits for known Legrand/BTicino hardware (F454, F455, MH200N, MH201, MH202, MyHomeServer1, and conservative generic fallbacks).
+- **Declarative Hardware Profiles**: Tailored queue pacing, session concurrency, and subsystem limits for known Legrand/BTicino hardware (F454, F455, MH200, MH200N, MH201, MH202, MyHomeServer1, and conservative generic fallbacks).
 - **Modern Python & Strict 100% Test Coverage**: Designed for Python **3.11+**, tested continuously against Python 3.11, 3.12, 3.13, and 3.14 with strict **100.0% line coverage** unconditionally enforced across all core modules.
 
 ---
@@ -98,6 +98,7 @@ Gateways have varying processing limitations, socket budgets, and pacing require
 | **F454 / F455** | 4 sessions | 50 ms | 90 s | HMAC-SHA2, Native transitions, Extended frames |
 | **MH202** | 2 sessions | 100 ms | Profile | HMAC-SHA2, Extended frames |
 | **MH201** | 1 session | 100 ms | Profile | Extended frames, Clock diagnostics |
+| **MH200** | 1 session | 150 ms | 90 s | Safe pacing, Legacy password auth, Sound system (WHO 16) |
 | **MH200N** | 1 session | 150 ms | 90 s | Safe pacing, Legacy password auth |
 | **Generic Gateway** | 1 session | 50 ms | Profile | Conservative fallback |
 
@@ -309,7 +310,7 @@ OWNd maintains an automated test suite with strict **100.0% line coverage** (3,0
 | [`OWNd/connection.py`](OWNd/connection.py) | **100%** | Hardened dual-session TCP engine, SHA-1/HMAC auth, keepalives & bounded read loops |
 | [`OWNd/discovery.py`](OWNd/discovery.py) | **100%** | SSDP multicast and UPnP XML gateway discovery and descriptor parsing |
 | [`OWNd/message.py`](OWNd/message.py) | **100%** | OpenWebNet frame parsers, encoders, and WHO dimension decoders |
-| [`OWNd/profiles.py`](OWNd/profiles.py) | **100%** | Declarative hardware gateway models (F454, MH200N, MH201, MH202, MyHomeServer1) |
+| [`OWNd/profiles.py`](OWNd/profiles.py) | **100%** | Declarative hardware gateway models (F454, MH200, MH200N, MH201, MH202, MyHomeServer1) |
 | [`OWNd/transport/__init__.py`](OWNd/transport/__init__.py) | **100%** | Transport subpackage exports |
 | [`OWNd/transport/base.py`](OWNd/transport/base.py) | **100%** | Abstract transport layer and event listener notification contracts |
 | [`OWNd/transport/serial.py`](OWNd/transport/serial.py) | **100%** | Async Serial/USB transport for Legrand 3578 interface with in-band demux |
