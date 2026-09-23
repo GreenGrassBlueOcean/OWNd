@@ -1885,9 +1885,10 @@ class OWNSoundEvent(OWNEvent):
         )
         # `1ES` routes the amplifiers of environment E to matrix source S.
         # Environment 0 would be `10S`, the source itself, so E starts at 1.
-        # A routing frame keeps its `zone` and ON/OFF state; only these
-        # properties tell it apart from an amplifier.
-        self._is_routing_event = bool(re.fullmatch(r"1[1-9][1-9]", self._zone))
+        # S is kept as sent, `0` included: whatever it names, `1E0` is not
+        # amplifier 1E0 either. A routing frame has no `zone`, so a consumer
+        # discovering amplifiers by zone cannot mistake it for one.
+        self._is_routing_event = bool(re.fullmatch(r"1[1-9][0-9]", self._zone))
         self._environment = self._zone[1] if self._is_routing_event else None
         self._routed_source = self._zone[2] if self._is_routing_event else None
         self._volume: int | None = None
@@ -1948,8 +1949,9 @@ class OWNSoundEvent(OWNEvent):
         return self._routed_source
 
     @property
-    def zone(self) -> str:
-        return self._zone
+    def zone(self) -> str | None:
+        """Amplifier or source address; None for a `1ES` routing frame."""
+        return None if self._is_routing_event else self._zone
 
     @property
     def volume(self) -> int | None:

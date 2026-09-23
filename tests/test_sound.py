@@ -96,15 +96,17 @@ def test_routing_event_exposes_environment_and_source() -> None:
     assert routing.environment == "2"
     assert routing.routed_source == "2"
     assert routing.source_id is None
-    assert routing.zone == "122"
     assert (
         "Routing of environment 2 to source 2 is switched ON"
         in routing.human_readable_log
     )
-
-    # A routing frame keeps its zone and ON/OFF state: consumers that want to
-    # tell it apart from an amplifier must check is_routing_event.
     assert routing.is_on
+
+    # A routing frame is not an amplifier: `zone` is None, so a consumer that
+    # discovers amplifiers by zone skips it without checking is_routing_event.
+    # The address itself stays available as `where`.
+    assert routing.zone is None
+    assert routing.where == "122"
 
 
 @pytest.mark.parametrize(
@@ -115,6 +117,10 @@ def test_routing_event_exposes_environment_and_source() -> None:
         ("*16*3*181##", "8", "1", "is switched ON"),
         ("*16*3*199##", "9", "9", "is switched ON"),
         ("*16*13*122##", "2", "2", "is switched OFF"),
+        # Source 0 is not a matrix input, but the frame is still routing and
+        # must not surface as amplifier `1E0`.
+        ("*16*3*120##", "2", "0", "is switched ON"),
+        ("*16*13*190##", "9", "0", "is switched OFF"),
     ],
 )
 def test_routing_event_decomposes_every_environment(
@@ -124,6 +130,7 @@ def test_routing_event_decomposes_every_environment(
 
     assert isinstance(event, OWNSoundEvent)
     assert event.is_routing_event
+    assert event.zone is None
     assert event.environment == environment
     assert event.routed_source == source
     assert (
@@ -138,7 +145,7 @@ def test_routing_event_decomposes_every_environment(
         "*16*3*102##",  # source 2 powering on
         "*16*13*21##",  # amplifier 21
         "*16*3*100##",  # general source
-        "*16*3*120##",  # no source 0
+        "*16*3*1٢٢##",  # non-ASCII digits
         "*16*3*0##",  # general amplifiers
     ],
 )
@@ -149,3 +156,4 @@ def test_non_routing_events_have_no_environment(frame: str) -> None:
     assert not event.is_routing_event
     assert event.environment is None
     assert event.routed_source is None
+    assert event.zone == event.where
