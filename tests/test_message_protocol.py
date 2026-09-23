@@ -10,7 +10,9 @@ from OWNd.message import (
     OWNAlarmCommand,
     OWNAutomationCommand,
     OWNAutomationEvent,
+    OWNCENEvent,
     OWNCENPlusEvent,
+    OWNCenCommand,
     OWNCommand,
     OWNDryContactCommand,
     OWNDryContactEvent,
@@ -23,6 +25,7 @@ from OWNd.message import (
     OWNLightingCommand,
     MESSAGE_TYPE_FAN_SPEED,
     OWNMessage,
+    OWNSoundCommand,
     OWNStatusRequest,
 )
 
@@ -171,6 +174,59 @@ def test_shutter_dimension_10_supports_short_and_full_replies() -> None:
     assert short_reply.current_position == 75
     assert full_reply.current_position == 75
     assert str(OWNAutomationCommand.get_shutter_status("21")) == "*#2*21*10##"
+
+
+def test_shutter_level_255_is_an_unknown_position() -> None:
+    # Encyclopedia who-2-automation/dimensions.md: 255 = "Unknown position".
+    stopped = OWNAutomationEvent("*#2*21*10*10*255*0*0##")
+    moving = OWNAutomationEvent("*#2*21*10*11*255*0*0##")
+    known = OWNAutomationEvent("*#2*21*10*10*100*0*0##")
+
+    assert stopped.current_position is None
+    assert stopped.is_position_unknown is True
+    assert stopped.is_closed is None
+    assert stopped.is_opening is False
+    assert "unknown position" in stopped.human_readable_log
+    assert moving.current_position is None
+    assert moving.is_opening is True
+    assert known.current_position == 100
+    assert known.is_position_unknown is False
+
+
+def test_sound_volume_down_uses_documented_step_what() -> None:
+    # Encyclopedia who-16-sound-system: up = 1001..1015, down = 1101..1115.
+    assert str(OWNSoundCommand.volume_up("21")) == "*16*1001*21##"
+    assert str(OWNSoundCommand.volume_down("21")) == "*16*1101*21##"
+
+
+@pytest.mark.parametrize(
+    ("method", "frame"),
+    [
+        ("press", "*15*02*11##"),
+        ("release_short_press", "*15*02#1*11##"),
+        ("start_long_press", "*15*02#3*11##"),
+        ("still_held", "*15*02#3*11##"),
+        ("release", "*15*02#2*11##"),
+    ],
+)
+def test_cen_builders_put_the_button_in_what(method: str, frame: str) -> None:
+    built = getattr(OWNCenCommand, method)("11", 2)
+    assert str(built) == frame
+
+    # What OWNd sends must read back as the same button on the same source.
+    event = OWNCENEvent(str(built))
+    assert int(event.push_button) == 2
+    assert event.object == "11"
+
+
+def test_cen_builder_keeps_local_bus_where() -> None:
+    assert str(OWNCenCommand.press("36#4#01", 6)) == "*15*06*36#4#01##"
+
+
+@pytest.mark.parametrize("button", [-1, 32])
+def test_cen_builder_rejects_buttons_outside_00_31(button: int) -> None:
+    with pytest.raises(ValueError, match="between 0 and 31"):
+        OWNCenCommand.press("11", button)
 
 
 def test_stop_and_go_energy_addresses_are_supported() -> None:

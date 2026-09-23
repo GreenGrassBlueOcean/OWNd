@@ -1409,8 +1409,8 @@ def test_phase2_coverage_edges():
     from OWNd.message import OWNCenPlusCommand, OWNHeatingCommand
 
     # OWNCenPlusCommand.still_held
-    cmd = OWNCenPlusCommand.still_held("12", 1)
-    assert str(cmd) == "*25*23#1*12##"
+    cmd = OWNCenPlusCommand.still_held("21", 1)
+    assert str(cmd) == "*25*23#1*21##"
     assert "still held" in cmd.human_readable_log
 
     # Unsupported central unit mode ValueError

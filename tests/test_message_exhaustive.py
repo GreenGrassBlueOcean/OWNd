@@ -364,7 +364,7 @@ class TestMessageExhaustiveCoverage:
         assert str(cmd_vol_up) == "*16*1001*21##"
 
         cmd_vol_down = OWNSoundCommand.volume_down("21")
-        assert str(cmd_vol_down) == "*16*1000*21##"
+        assert str(cmd_vol_down) == "*16*1101*21##"
 
         # Zone validation error (where must not be empty)
         with pytest.raises(ValueError, match="where must identify an audio zone"):
