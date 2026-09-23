@@ -116,6 +116,20 @@ def test_where_zero_actuator_is_a_pump_not_a_zone() -> None:
     assert pump.zone == 0
     assert pump.is_active()
     assert pump.human_readable_log == "Zone 0's actuator 2 is on."
+    assert pump.unique_id == "4-#0"
     assert call.zone == 0
     assert zone_actuator.zone == 1
     assert central_zone.zone == 1
+    assert central_zone.unique_id == "4-1"
+
+
+def test_where_zero_with_parameter_stays_zone_zero() -> None:
+    """No unhashed ``0#<p>`` parameter becomes the zone; ``#0`` is the central unit."""
+    for frame in (
+        "*#4*0#0*20*0##",  # all actuators
+        "*#4*0#4#01*20*1##",  # 0#4 was read as zone 4 (F422 form in MyHOME#432)
+        "*4*1*#0##",  # central unit
+    ):
+        event = OWNHeatingEvent(frame)
+        assert event.zone == 0, frame
+        assert event.unique_id == "4-#0", frame
