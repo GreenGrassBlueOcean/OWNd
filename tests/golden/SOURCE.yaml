@@ -74,6 +74,15 @@ authorities:
     devices: "DALI DT8 Tunable White and RGB Ballasts"
     role: "Provides authentic on-wire bus frames and status replies captured from live physical hardware."
 
+  community_capture_cen_plus:
+    name: "Physical Bus Capture (MH201, CEN+ pushbuttons)"
+    reference: "https://github.com/OpenWebNet-HA/MyHOME/issues/418#issuecomment-5753691792"
+    author: "@fedem95"
+    date: "2026-09-21"
+    gateway: "BTicino MH201, firmware 3.6.27"
+    devices: "CEN+ pushbuttons 1 and 2 on Object 1 (WHERE 21)"
+    role: "Debug-log trace of a short press and a hold: 21 alone for a short press; 22, then 23 every 0.48-0.51 s, then 24 for a hold."
+
   encyclopedia:
     name: "OpenWebNet Encyclopedia"
     repository: "https://github.com/OpenWebNet-HA/OpenWebNet-Encyclopedia"
