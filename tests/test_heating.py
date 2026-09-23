@@ -103,3 +103,19 @@ def test_probe_temperature_command() -> None:
     cmd = OWNHeatingCommand.get_probe_temperature("100")
     assert str(cmd) == "*#4*100*15##"
     assert "probe temperature" in cmd.human_readable_log
+
+
+def test_where_zero_actuator_is_a_pump_not_a_zone() -> None:
+    """``0#N`` is actuator N of zone 0 (a pump), not zone N (OpenWebNet-HA/MyHOME#431)."""
+    pump = OWNHeatingEvent("*#4*0#2*20*1##")
+    call = OWNHeatingEvent("*4*4001#1*0#3##")
+    zone_actuator = OWNHeatingEvent("*#4*1#2*20*1##")
+    central_zone = OWNHeatingEvent("*4*101*#0#1##")
+
+    assert pump.message_type == MESSAGE_TYPE_ACTION
+    assert pump.zone == 0
+    assert pump.is_active()
+    assert pump.human_readable_log == "Zone 0's actuator 2 is on."
+    assert call.zone == 0
+    assert zone_actuator.zone == 1
+    assert central_zone.zone == 1
