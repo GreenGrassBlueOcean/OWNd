@@ -17,6 +17,8 @@ def test_sound_source_and_zone_events_are_distinct() -> None:
     assert "Audio Source 2 is switched ON" in source.human_readable_log
     assert isinstance(zone, OWNSoundEvent)
     assert zone.is_off
+    assert not zone.is_source_event
+    assert not zone.is_routing_event
     assert "Audio Zone 21 is switched OFF" in zone.human_readable_log
     assert isinstance(volume, OWNSoundEvent)
     assert volume.volume == 37
@@ -77,7 +79,11 @@ def test_select_source_uses_environment_of_the_amplifier_address() -> None:
 
 def test_status_request_uses_dimension_5() -> None:
     """WHO 16 status is `*#16*WHERE*5##`; an MH201 NACKs `*#16*WHERE##`."""
-    assert str(OWNSoundCommand.status("21")) == "*#16*21*5##"
+    status = OWNSoundCommand.status("22")
+
+    assert str(status) == "*#16*22*5##"
+    assert status._message_type == "DIMENSION_REQUEST"
+    assert status.dimension == 5
     assert str(OWNSoundCommand.status("0")) == "*#16*0*5##"
 
 
@@ -96,9 +102,34 @@ def test_routing_event_exposes_environment_and_source() -> None:
         in routing.human_readable_log
     )
 
-    other = OWNMessage.parse("*16*3*141##")
-    assert other.environment == "4"
-    assert other.routed_source == "1"
+    # A routing frame keeps its zone and ON/OFF state: consumers that want to
+    # tell it apart from an amplifier must check is_routing_event.
+    assert routing.is_on
+
+
+@pytest.mark.parametrize(
+    ("frame", "environment", "source", "log"),
+    [
+        ("*16*3*111##", "1", "1", "is switched ON"),
+        ("*16*3*141##", "4", "1", "is switched ON"),
+        ("*16*3*181##", "8", "1", "is switched ON"),
+        ("*16*3*199##", "9", "9", "is switched ON"),
+        ("*16*13*122##", "2", "2", "is switched OFF"),
+    ],
+)
+def test_routing_event_decomposes_every_environment(
+    frame: str, environment: str, source: str, log: str
+) -> None:
+    event = OWNMessage.parse(frame)
+
+    assert isinstance(event, OWNSoundEvent)
+    assert event.is_routing_event
+    assert event.environment == environment
+    assert event.routed_source == source
+    assert (
+        f"Routing of environment {environment} to source {source} {log}"
+        in event.human_readable_log
+    )
 
 
 @pytest.mark.parametrize(

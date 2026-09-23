@@ -1879,24 +1879,15 @@ class OWNSoundEvent(OWNEvent):
 
         self._state = self._what
         self._zone = self._where or ""
-        self._is_source_event = (
-            len(self._zone) == 3
-            and self._zone.startswith("10")
-            and self._zone != "100"
-        )
+        self._is_source_event = bool(re.fullmatch(r"10[1-9]", self._zone))
         self._source_id = (
             str(int(self._zone) - 100) if self._is_source_event else None
         )
         # `1ES` routes the amplifiers of environment E to matrix source S.
         # Environment 0 would be `10S`, the source itself, so E starts at 1.
-        self._is_routing_event = (
-            len(self._zone) == 3
-            and self._zone.isascii()
-            and self._zone.isdigit()
-            and self._zone[0] == "1"
-            and self._zone[1] != "0"
-            and self._zone[2] != "0"
-        )
+        # A routing frame keeps its `zone` and ON/OFF state; only these
+        # properties tell it apart from an amplifier.
+        self._is_routing_event = bool(re.fullmatch(r"1[1-9][1-9]", self._zone))
         self._environment = self._zone[1] if self._is_routing_event else None
         self._routed_source = self._zone[2] if self._is_routing_event else None
         self._volume: int | None = None
@@ -2658,7 +2649,7 @@ class OWNSoundCommand(OWNCommand):
     def status(cls, where: str | int) -> OWNSoundCommand:
         # WHO 16 status is dimension 5: gateways NACK the bare `*#16*WHERE##`.
         message = cls(f"*#16*{where}*5##")
-        message._human_readable_log = f"Requesting audio zone {where} status."
+        message._human_readable_log = f"Requesting sound system status of {where}."
         return message
 
     @classmethod
@@ -2682,7 +2673,9 @@ class OWNSoundCommand(OWNCommand):
         `where` is the two-digit amplifier address `EA`, where `E` (1–9) is
         the environment and `A` (1–9) the amplifier within it. Single-digit,
         environment 0, amplifier 0, and non-numeric addresses cannot be routed
-        to a matrix source and raise ValueError.
+        to a matrix source and raise ValueError. Only routing rejects
+        amplifier 0: the other builders pass any `WHERE` from the published
+        `01`-`99` range through.
 
         Two frames are returned:
 
@@ -2698,12 +2691,7 @@ class OWNSoundCommand(OWNCommand):
         zone = str(where).strip()
         if not zone:
             raise ValueError("where must identify an audio zone")
-        if not (
-            len(zone) == 2
-            and zone.isascii()
-            and zone.isdigit()
-            and "0" not in zone
-        ):
+        if not re.fullmatch(r"[1-9]{2}", zone):
             raise ValueError(
                 f"where must be a two-digit amplifier address with environment and amplifier 1-9, got '{where}'"
             )
