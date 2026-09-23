@@ -2645,18 +2645,37 @@ class OWNSoundCommand(OWNCommand):
     def select_source(
         cls, where: str | int, source_id: int | str
     ) -> list[OWNSoundCommand]:
+        """Build the frames routing an amplifier zone to a source.
+
+        `where` is the two-digit amplifier address `EA`, where `E` (1–9) is
+        the environment and `A` (1–9) the amplifier within it. Single-digit,
+        environment 0, and non-numeric addresses cannot be routed to a matrix
+        source and raise ValueError.
+
+        Two frames are returned:
+
+        * `*16*3*10S##` activates source `S` on the bus;
+        * `*16*3*1ES##` routes environment `E` of the matrix to source `S`.
+
+        For example, amplifier `23` (environment 2) on source 2 yields
+        `*16*3*102##` followed by `*16*3*122##`.
+        """
         source = int(source_id)
         if not 1 <= source <= 9:
             raise ValueError("source_id must be between 1 and 9")
-        zone = str(where)
+        zone = str(where).strip()
         if not zone:
             raise ValueError("where must identify an audio zone")
+        if not (len(zone) == 2 and zone.isdigit() and zone[0] != "0"):
+            raise ValueError(
+                f"where must be a two-digit amplifier address in environment 1-9, got '{where}'"
+            )
 
         source_address = 100 + source
         activate = cls(f"*16*3*{source_address}##")
         activate._human_readable_log = f"Activating audio source {source}."
 
-        route_address = f"{10 + source}{zone[-1]}"
+        route_address = f"1{zone[0]}{source}"
         route = cls(f"*16*3*{route_address}##")
         route._human_readable_log = (
             f"Routing audio zone {where} to source {source}."
