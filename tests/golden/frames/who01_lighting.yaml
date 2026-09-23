@@ -127,6 +127,7 @@
   who: 1
   what: 1
   where: "#25"
+  scope: group
   source: openwebnet4j
   mcp_valid: true
   mcp_notes: "Lighting: Turn ON for group #25"
