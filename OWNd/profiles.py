@@ -120,7 +120,45 @@ class F461Profile(GatewayProfile):
         )
 
 
+class MH200Profile(GatewayProfile):
+    """The original MH200 (WHO=13 device type 4).
+
+    WHO 16 is verified: on a live MH200 (``*#13**15*4##``, firmware
+    ``*#13**16*2*1*0##`` = 2.1.0, 2026-09-23) ``*#16*0*5##`` returned a
+    state frame for every amplifier and source within 0.6 s, and the bare
+    ``*#16*0##`` returned none (#53). Pacing, queue size, keepalive and the other
+    subsystems are copied from the MH200N profile and have not been
+    measured on an MH200.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            model_name="MH200",
+            command_queue_delay=0.15,
+            max_queue_size=100,
+            event_keepalive_interval=90,
+            supports_energy_instant_power=False,
+            supported_who=(
+                WHO_LIGHTING,
+                WHO_AUTOMATION,
+                WHO_HEATING,
+                WHO_CEN,
+                WHO_SOUND,
+                WHO_SCENARIO,
+                WHO_CEN_PLUS,
+            ),
+        )
+
+
 class MH200NProfile(GatewayProfile):
+    """The MH200N.
+
+    No audio is unverified. The flag predates any MH200N capture, and a
+    real MH200N relays WHO 16 events together with WHO 22 mirrors of them
+    (MyHOME#422). Whether it answers ``*#16*0*5##`` has not been checked
+    (#53); until it has, startup discovery skips WHO 16 here.
+    """
+
     def __init__(self) -> None:
         super().__init__(
             model_name="MH200N",
@@ -186,6 +224,7 @@ _PROFILES = {
     "f454": F454Profile(),
     "f455": F455Profile(),
     "f461": F461Profile(),
+    "mh200": MH200Profile(),
     "mh200n": MH200NProfile(),
     "mh201": MH201Profile(),
     "mh202": MH202Profile(),
@@ -193,7 +232,6 @@ _PROFILES = {
 }
 
 _ALIASES = {
-    "mh200": "mh200n",
     "mhs1": "myhomeserver1",
 }
 
