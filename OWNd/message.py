@@ -797,8 +797,8 @@ class OWNHeatingEvent(OWNEvent):
             self._sensor = int(str(self._zone)[:1])
             self._zone = int(str(self._zone)[1:])
         self._actuator: int | None = None
-        # WHERE ``0#N`` (unhashed) is actuator N of zone 0, the pump the zones
-        # share; ``#0#N`` is zone N of a 4-zone central unit (handled above).
+        # Unhashed WHERE ``Z#N`` is actuator N of zone Z (``0#N``: the pump the
+        # zones share); ``#0#N`` is zone N of a 4-zone central unit (above).
         if self._where_param and not where.startswith("#") and self._where_param[0].isdigit():
             self._actuator = int(self._where_param[0])
         self._calling_zone: int | None = None
