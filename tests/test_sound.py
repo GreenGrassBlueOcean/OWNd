@@ -102,11 +102,9 @@ def test_routing_event_exposes_environment_and_source() -> None:
     )
     assert routing.is_on
 
-    # A routing frame is not an amplifier: `zone` is None, so a consumer that
-    # discovers amplifiers by zone skips it without checking is_routing_event.
-    # The address itself stays available as `where`.
-    assert routing.zone is None
-    assert routing.where == "122"
+    # A routing frame keeps its address as `zone`: MyHOME parses routing from
+    # it, and a None there turned every matrix re-broadcast into a zone ON.
+    assert routing.zone == "122"
 
 
 @pytest.mark.parametrize(
@@ -130,7 +128,7 @@ def test_routing_event_decomposes_every_environment(
 
     assert isinstance(event, OWNSoundEvent)
     assert event.is_routing_event
-    assert event.zone is None
+    assert event.zone == frame.split("*")[3].rstrip("#")
     assert event.environment == environment
     assert event.routed_source == source
     assert (
