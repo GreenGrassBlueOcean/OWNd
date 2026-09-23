@@ -705,8 +705,9 @@ class OWNAutomationEvent(OWNEvent):
                     if len(self._dimension_value) > 1 and self._dimension_value[1]
                     else None
                 )
-                # shutterLevel 255 means "unknown position", not a level.
-                if self._position == 255:
+                # shutterLevel is 0-100; 255 means "unknown position" and
+                # anything else out of range is treated the same way.
+                if self._position is not None and not 0 <= self._position <= 100:
                     self._position = None
                     self._position_unknown = True
                 self._priority = (
@@ -748,7 +749,7 @@ class OWNAutomationEvent(OWNEvent):
             self._is_opening = True
             self._is_closing = False
         elif self._state == 11 or self._state == 13:
-            self._human_readable_log = f"Cover {self._where}{self._interface_log_text} is opening from initial position {self._position}."  # pylint: disable=line-too-long
+            self._human_readable_log = f"Cover {self._where}{self._interface_log_text} is opening from {self._initial_position_text}."  # pylint: disable=line-too-long
             self._is_opening = True
             self._is_closing = False
             self._is_closed = False
@@ -759,10 +760,16 @@ class OWNAutomationEvent(OWNEvent):
             self._is_closing = True
             self._is_opening = False
         elif self._state == 12 or self._state == 14:
-            self._human_readable_log = f"Cover {self._where}{self._interface_log_text} is closing from initial position {self._position}."  # pylint: disable=line-too-long
+            self._human_readable_log = f"Cover {self._where}{self._interface_log_text} is closing from {self._initial_position_text}."  # pylint: disable=line-too-long
             self._is_closing = True
             self._is_opening = False
             self._is_closed = False
+
+    @property
+    def _initial_position_text(self) -> str:
+        if self._position_unknown:
+            return "an unknown position"
+        return f"initial position {self._position}"
 
     @property
     def state(self) -> int | None:
@@ -786,7 +793,7 @@ class OWNAutomationEvent(OWNEvent):
 
     @property
     def is_position_unknown(self) -> bool:
-        """True when the shutter reported level 255 (unknown position)."""
+        """True when the shutter level is 255 (unknown) or outside 0-100."""
         return self._position_unknown
 
 
@@ -2759,7 +2766,12 @@ class OWNCenCommand(OWNCommand):
 
     @classmethod
     def still_held(cls, where: str, button: int | str = 1) -> OWNCenCommand:
-        """Extended pressure repeated while held (*15*<button>#3*<where>##)."""
+        """Extended pressure repeated while held (*15*<button>#3*<where>##).
+
+        Same frame as start_long_press: WHO 15 has no separate first-held
+        frame, and the first frame of a hold is the plain press. Only CEN+
+        (WHO 25) distinguishes start (22) from still held (23).
+        """
         return cls.start_long_press(where, button)
 
     @classmethod
