@@ -2647,9 +2647,10 @@ class OWNSoundCommand(OWNCommand):
     ) -> list[OWNSoundCommand]:
         """Build the frames routing an amplifier zone to a source.
 
-        `where` is the amplifier address `EA`, where `E` is the environment
-        and `A` the amplifier within it. A single-digit `where` is taken to be
-        the environment itself.
+        `where` is the two-digit amplifier address `EA`, where `E` (1–9) is
+        the environment and `A` (1–9) the amplifier within it. Single-digit,
+        environment 0, and non-numeric addresses cannot be routed to a matrix
+        source and raise ValueError.
 
         Two frames are returned:
 
@@ -2662,16 +2663,19 @@ class OWNSoundCommand(OWNCommand):
         source = int(source_id)
         if not 1 <= source <= 9:
             raise ValueError("source_id must be between 1 and 9")
-        zone = str(where)
+        zone = str(where).strip()
         if not zone:
             raise ValueError("where must identify an audio zone")
+        if not (len(zone) == 2 and zone.isdigit() and zone[0] != "0"):
+            raise ValueError(
+                f"where must be a two-digit amplifier address in environment 1-9, got '{where}'"
+            )
 
         source_address = 100 + source
         activate = cls(f"*16*3*{source_address}##")
         activate._human_readable_log = f"Activating audio source {source}."
 
-        environment = zone[0] if len(zone) > 1 else zone
-        route_address = f"1{environment}{source}"
+        route_address = f"1{zone[0]}{source}"
         route = cls(f"*16*3*{route_address}##")
         route._human_readable_log = (
             f"Routing audio zone {where} to source {source}."

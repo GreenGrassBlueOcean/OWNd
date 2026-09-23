@@ -61,8 +61,10 @@ def test_select_source_uses_environment_of_the_amplifier_address() -> None:
         "*16*3*103##",
         "*16*3*143##",
     ]
-    # A single-digit address is taken to be the environment itself.
-    assert [str(command) for command in OWNSoundCommand.select_source("2", 2)] == [
-        "*16*3*102##",
-        "*16*3*122##",
-    ]
+    # Single-digit, environment 0, and non-numeric addresses cannot be routed to a matrix source.
+    with pytest.raises(ValueError, match="two-digit amplifier address"):
+        OWNSoundCommand.select_source("2", 2)
+    with pytest.raises(ValueError, match="two-digit amplifier address"):
+        OWNSoundCommand.select_source("01", 2)
+    with pytest.raises(ValueError, match="two-digit amplifier address"):
+        OWNSoundCommand.select_source("#1", 2)
