@@ -788,7 +788,9 @@ class OWNHeatingEvent(OWNEvent):
         self._zone = (
             int(where[1:]) if where.startswith("#") else int(where)
         )
-        if self._zone == 0 and self._where_param:
+        # ``#0#N`` is zone N of a 4-zone central unit; ``0#N`` is actuator N
+        # of zone 0 (a pump the zones share), not zone N.
+        if self._zone == 0 and self._where_param and where.startswith("#"):
             self._zone = int(self._where_param[0])
         self._sensor = None
         if self._zone > 99:
