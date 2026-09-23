@@ -796,7 +796,12 @@ class OWNHeatingEvent(OWNEvent):
         if self._zone > 99:
             self._sensor = int(str(self._zone)[:1])
             self._zone = int(str(self._zone)[1:])
-        self._actuator = None
+        self._actuator: int | None = None
+        # WHERE ``0#N`` (unhashed) is actuator N of zone 0, the pump the zones
+        # share; ``#0#N`` is zone N of a 4-zone central unit (handled above).
+        if self._where_param and not where.startswith("#") and self._where_param[0].isdigit():
+            self._actuator = int(self._where_param[0])
+        self._calling_zone: int | None = None
 
         self._mode = None
         self._mode_name = None
@@ -869,6 +874,21 @@ class OWNHeatingEvent(OWNEvent):
                 self._human_readable_log = (
                     f"Zone {self._zone}'s remote control is enabled"
                 )
+            elif self._mode in (4001, 4002):
+                # ``*4*4001#<zone>*0#<n>##``: zone <zone> calls pump <n> (4002
+                # releases it). The calling zone is the WHAT parameter; WHERE
+                # names the pump, so ``zone`` stays 0 (OpenWebNet-HA/MyHOME#431).
+                self._mode_name = None
+                if self._what_param and self._what_param[0].isdigit():
+                    self._calling_zone = int(self._what_param[0])
+                _caller = (
+                    self._calling_zone if self._calling_zone is not None else self._zone
+                )
+                _pump = (
+                    f"pump {self._actuator}" if self._actuator is not None else "the pump"
+                )
+                _verb = "calls" if self._mode == 4001 else "stops calling"
+                self._human_readable_log = f"Zone {_caller} {_verb} {_pump}"
             else:
                 self._mode_name = None
                 self._human_readable_log = f"Zone {self._zone}'s mode is unknown"
@@ -1050,9 +1070,13 @@ class OWNHeatingEvent(OWNEvent):
         elif self._dimension == 20:  # Actuator status
             self._type = MESSAGE_TYPE_ACTION
             self._is_active = self._dimension_value[0] in _actuator_active_states
-            self._actuator = (
-                self._where_param[0] if self._where_param[0] is not None else 1
-            )
+            if self._actuator is None:
+                # ``Z#N`` names actuator N of zone Z; a bare zone is its actuator 1.
+                self._actuator = (
+                    int(self._where_param[0])
+                    if self._where_param and self._where_param[0].isdigit()
+                    else 1
+                )
             _value = int(self._dimension_value[0])
             if _value == 0:
                 self._human_readable_log = (
@@ -1114,6 +1138,16 @@ class OWNHeatingEvent(OWNEvent):
     @property
     def zone(self) -> int:
         return self._zone
+
+    @property
+    def actuator(self) -> int | None:
+        """Actuator N of WHERE ``Z#N`` (``0#N`` is a pump), or ``None``."""
+        return self._actuator
+
+    @property
+    def calling_zone(self) -> int | None:
+        """The zone that calls (4001) or releases (4002) a pump, from the WHAT parameter."""
+        return self._calling_zone
 
     @property
     def mode(self) -> str | None:

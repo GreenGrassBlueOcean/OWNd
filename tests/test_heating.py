@@ -133,3 +133,50 @@ def test_where_zero_with_parameter_stays_zone_zero() -> None:
         event = OWNHeatingEvent(frame)
         assert event.zone == 0, frame
         assert event.unique_id == "4-#0", frame
+
+
+def test_zone_calls_pump_names_the_calling_zone_and_the_pump() -> None:
+    """``*4*4001#Z*0#N##``: zone Z calls pump N; 4002 releases it (OpenWebNet-HA/MyHOME#431)."""
+    call = OWNHeatingEvent("*4*4001#1*0#3##")
+    release = OWNHeatingEvent("*4*4002#6*0#3##")
+
+    assert call.calling_zone == 1
+    assert call.actuator == 3
+    assert call.zone == 0
+    assert call.unique_id == "4-#0"
+    assert call.mode is None
+    assert call.human_readable_log == "Zone 1 calls pump 3."
+    assert release.calling_zone == 6
+    assert release.actuator == 3
+    assert release.human_readable_log == "Zone 6 stops calling pump 3."
+
+
+def test_zone_calls_pump_without_a_pump_or_zone_parameter() -> None:
+    """Captured ``*4*4002*1##`` and ``*4*4001#5*0##`` name no pump; the log still reads."""
+    bare = OWNHeatingEvent("*4*4002*1##")
+    general = OWNHeatingEvent("*4*4001#5*0##")
+    no_zone = OWNHeatingEvent("*4*4001*0#3##")
+
+    assert bare.calling_zone is None
+    assert bare.actuator is None
+    assert bare.human_readable_log == "Zone 1 stops calling the pump."
+    assert general.calling_zone == 5
+    assert general.actuator is None
+    assert general.human_readable_log == "Zone 5 calls the pump."
+    assert no_zone.calling_zone is None
+    assert no_zone.actuator == 3
+    assert no_zone.human_readable_log == "Zone 0 calls pump 3."
+
+
+def test_actuator_status_names_the_actuator() -> None:
+    """``Z#N`` is actuator N of zone Z; a bare zone reports its actuator 1."""
+    pump = OWNHeatingEvent("*#4*0#3*20*1##")
+    zone_actuator = OWNHeatingEvent("*#4*1#2*20*0##")
+    bare_zone = OWNHeatingEvent("*#4*1*20*1##")
+
+    assert pump.actuator == 3
+    assert zone_actuator.actuator == 2
+    assert zone_actuator.human_readable_log == "Zone 1's actuator 2 is off."
+    assert bare_zone.actuator == 1
+    assert bare_zone.zone == 1
+    assert bare_zone.human_readable_log == "Zone 1's actuator 1 is on."
