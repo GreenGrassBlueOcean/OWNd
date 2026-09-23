@@ -92,6 +92,12 @@ authorities:
         date: "2026-09-23"
         gateway: "BTicino MH200"
         devices: "Covers 11-16, 18, 19 behind F422 interface 02 (logical #4# addressing): area status request answered per object; area commands on the main bus (*2*2*1##) and on the private bus (*2*1*1#4#02##) moved none of them; point commands did"
+      - name: "Physical Plant Fixture (BTicino MH201, Automation WHO 2 group run)"
+        reference: "https://github.com/OpenWebNet-HA/MyHOME/pull/390"
+        author: "@fedem95"
+        date: "2026-09-16"
+        gateway: "BTicino MH201"
+        devices: "Position-reporting covers 19, 0110-0115 in group 1 (MyHOME tests/fixtures/plants/mh201_physical_plant): a group stop and DOWN (*2*0*#1##, *2*2*#1##) echoed per object within 1.6 s, then one end-of-run stop per actuator 5.4-24.3 s later and none for #1"
     role: "Provides authentic on-wire bus frames and status replies captured from live physical hardware."
 
   sut:

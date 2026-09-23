@@ -392,3 +392,42 @@
   mcp_valid: true
   mcp_notes: "Automation: MH200 echo of a point UP behind interface 02, 500 ms after *2*0*11#4#02##; the actuator reported its own stop 60.9 s later (its run-time cutoff)"
   roundtrip: true
+
+# MH201 plant fixture (MyHOME tests/fixtures/plants/mh201_physical_plant, from
+# MyHOME#378): a group-1 run on position-reporting actuators 19, 0110-0115. A
+# stop to the group, then DOWN 0.59 s later; within 0.2-1.6 s every actuator
+# echoed its own stop and DOWN (*2*2*0113## ...), and 5.4-24.3 s later each
+# reported its own end-of-run stop. Nothing more arrived for #1 - the same
+# WHO_2.pdf 3.0.1 rule as a general or area command. Unlike the MyHOME#433
+# general UP, the per-object frames come right away as well as at the end.
+- id: cover.evt.stop.group.1
+  frame: "*2*0*#1##"
+  direction: event
+  who: 2
+  what: 0
+  where: "#1"
+  scope: group
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: STOP to group 1 (every actuator programmed into it); within 0.55 s actuators 0110, 0112, 0113, 0115 echoed their own *2*0*APL## (MH201 plant fixture)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: stop_shutter
+    args: ["#1"]
+
+- id: cover.evt.down.group.1
+  frame: "*2*2*#1##"
+  direction: event
+  who: 2
+  what: 2
+  where: "#1"
+  scope: group
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: DOWN to group 1, 0.59 s after *2*0*#1##; all seven actuators echoed their own *2*2*APL## within 1 s and their own end-of-run *2*0*APL## 5.4-24.3 s after the group stop, none for #1 (MH201 plant fixture)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: lower_shutter
+    args: ["#1"]
