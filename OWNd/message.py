@@ -1887,13 +1887,29 @@ class OWNSoundEvent(OWNEvent):
         self._source_id = (
             str(int(self._zone) - 100) if self._is_source_event else None
         )
+        # `1ES` routes the amplifiers of environment E to matrix source S.
+        # Environment 0 would be `10S`, the source itself, so E starts at 1.
+        self._is_routing_event = (
+            len(self._zone) == 3
+            and self._zone.isascii()
+            and self._zone.isdigit()
+            and self._zone[0] == "1"
+            and self._zone[1] != "0"
+            and self._zone[2] != "0"
+        )
+        self._environment = self._zone[1] if self._is_routing_event else None
+        self._routed_source = self._zone[2] if self._is_routing_event else None
         self._volume: int | None = None
 
-        subject = (
-            f"Audio Source {self._source_id}"
-            if self._is_source_event
-            else f"Audio Zone {self._zone}"
-        )
+        if self._is_source_event:
+            subject = f"Audio Source {self._source_id}"
+        elif self._is_routing_event:
+            subject = (
+                f"Routing of environment {self._environment} "
+                f"to source {self._routed_source}"
+            )
+        else:
+            subject = f"Audio Zone {self._zone}"
         if self._state in (0, 3):
             self._human_readable_log = f"{subject} is switched ON."
         elif self._state in (10, 13):
@@ -1924,6 +1940,21 @@ class OWNSoundEvent(OWNEvent):
     @property
     def source_id(self) -> str | None:
         return self._source_id
+
+    @property
+    def is_routing_event(self) -> bool:
+        """True for a `1ES` matrix routing frame."""
+        return self._is_routing_event
+
+    @property
+    def environment(self) -> str | None:
+        """Environment `E` of a `1ES` routing frame, otherwise None."""
+        return self._environment
+
+    @property
+    def routed_source(self) -> str | None:
+        """Matrix source `S` of a `1ES` routing frame, otherwise None."""
+        return self._routed_source
 
     @property
     def zone(self) -> str:
@@ -2625,7 +2656,8 @@ class OWNSoundCommand(OWNCommand):
 
     @classmethod
     def status(cls, where: str | int) -> OWNSoundCommand:
-        message = cls(f"*#16*{where}##")
+        # WHO 16 status is dimension 5: gateways NACK the bare `*#16*WHERE##`.
+        message = cls(f"*#16*{where}*5##")
         message._human_readable_log = f"Requesting audio zone {where} status."
         return message
 
@@ -2649,8 +2681,8 @@ class OWNSoundCommand(OWNCommand):
 
         `where` is the two-digit amplifier address `EA`, where `E` (1–9) is
         the environment and `A` (1–9) the amplifier within it. Single-digit,
-        environment 0, and non-numeric addresses cannot be routed to a matrix
-        source and raise ValueError.
+        environment 0, amplifier 0, and non-numeric addresses cannot be routed
+        to a matrix source and raise ValueError.
 
         Two frames are returned:
 
@@ -2666,9 +2698,14 @@ class OWNSoundCommand(OWNCommand):
         zone = str(where).strip()
         if not zone:
             raise ValueError("where must identify an audio zone")
-        if not (len(zone) == 2 and zone.isdigit() and zone[0] != "0"):
+        if not (
+            len(zone) == 2
+            and zone.isascii()
+            and zone.isdigit()
+            and "0" not in zone
+        ):
             raise ValueError(
-                f"where must be a two-digit amplifier address in environment 1-9, got '{where}'"
+                f"where must be a two-digit amplifier address with environment and amplifier 1-9, got '{where}'"
             )
 
         source_address = 100 + source

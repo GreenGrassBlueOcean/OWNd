@@ -68,3 +68,53 @@ def test_select_source_uses_environment_of_the_amplifier_address() -> None:
         OWNSoundCommand.select_source("01", 2)
     with pytest.raises(ValueError, match="two-digit amplifier address"):
         OWNSoundCommand.select_source("#1", 2)
+    with pytest.raises(ValueError, match="two-digit amplifier address"):
+        OWNSoundCommand.select_source("20", 2)
+    # Non-ASCII digits pass str.isdigit() but are not an address
+    with pytest.raises(ValueError, match="two-digit amplifier address"):
+        OWNSoundCommand.select_source("٢٣", 2)
+
+
+def test_status_request_uses_dimension_5() -> None:
+    """WHO 16 status is `*#16*WHERE*5##`; an MH201 NACKs `*#16*WHERE##`."""
+    assert str(OWNSoundCommand.status("21")) == "*#16*21*5##"
+    assert str(OWNSoundCommand.status("0")) == "*#16*0*5##"
+
+
+def test_routing_event_exposes_environment_and_source() -> None:
+    routing = OWNMessage.parse("*16*3*122##")
+
+    assert isinstance(routing, OWNSoundEvent)
+    assert routing.is_routing_event
+    assert not routing.is_source_event
+    assert routing.environment == "2"
+    assert routing.routed_source == "2"
+    assert routing.source_id is None
+    assert routing.zone == "122"
+    assert (
+        "Routing of environment 2 to source 2 is switched ON"
+        in routing.human_readable_log
+    )
+
+    other = OWNMessage.parse("*16*3*141##")
+    assert other.environment == "4"
+    assert other.routed_source == "1"
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "*16*3*102##",  # source 2 powering on
+        "*16*13*21##",  # amplifier 21
+        "*16*3*100##",  # general source
+        "*16*3*120##",  # no source 0
+        "*16*3*0##",  # general amplifiers
+    ],
+)
+def test_non_routing_events_have_no_environment(frame: str) -> None:
+    event = OWNMessage.parse(frame)
+
+    assert isinstance(event, OWNSoundEvent)
+    assert not event.is_routing_event
+    assert event.environment is None
+    assert event.routed_source is None
