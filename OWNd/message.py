@@ -987,14 +987,16 @@ class OWNHeatingEvent(OWNEvent):
         elif self._dimension == 7 and self._dimension_value:  # Zone state
             # MyHomeServer1 / Home+Control plants carry the zone's operating
             # state and setpoint here, and never in the reply to *#4*Z##.
-            self._zone_context, self._zone_state, temperature = _zone_state(
-                self._dimension_value
-            )
+            # The zone_* properties are only set with the message type, so a
+            # half-known frame never looks like a valid state.
+            context, state, temperature = _zone_state(self._dimension_value)
             text = _zone_state_text(self._dimension_value)
             if text is None:
                 self._human_readable_log = f"Zone {self._zone} reports an unknown zone state {'*'.join(self._dimension_value)}."  # pylint: disable=line-too-long
             else:
                 self._type = MESSAGE_TYPE_ZONE_STATE
+                self._zone_context = context
+                self._zone_state = state
                 self._set_temperature = temperature
                 self._human_readable_log = f"Zone {self._zone} is in {text}."
 
@@ -1227,6 +1229,9 @@ class OWNHeatingEvent(OWNEvent):
         """DIMENSION 7 operating state (ZONE_STATE_*), else None.
 
         For ZONE_STATE_SETPOINT the temperature is in set_temperature.
+        ZONE_STATE_PROTECTION is the wire name for both cases: MyHOME_Suite
+        calls it antifreeze in the heating context (the zone also reports
+        *4*102*Z##) and thermal protection in cooling (*4*202*Z##).
         """
         return self._zone_state
 

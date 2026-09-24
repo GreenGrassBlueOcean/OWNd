@@ -159,10 +159,12 @@ def test_where_zero_with_parameter_stays_zone_zero() -> None:
     [
         ("*#4*2*7*1*1*0170##", 2, ZONE_CONTEXT_HEATING, ZONE_STATE_SETPOINT, 17.0,
          "Zone 2 is in heating setpoint at 17.0°C."),
-        ("*#4*1*7*2*1*0225##", 1, ZONE_CONTEXT_COOLING, ZONE_STATE_SETPOINT, 22.5,
-         "Zone 1 is in cooling setpoint at 22.5°C."),
+        ("*#4*2*7*2*1*0260##", 2, ZONE_CONTEXT_COOLING, ZONE_STATE_SETPOINT, 26.0,
+         "Zone 2 is in cooling setpoint at 26.0°C."),
         ("*#4*4*7*1*2##", 4, ZONE_CONTEXT_HEATING, ZONE_STATE_PROTECTION, None,
          "Zone 4 is in heating protection."),
+        ("*#4*2*7*1*2##", 2, ZONE_CONTEXT_HEATING, ZONE_STATE_PROTECTION, None,
+         "Zone 2 is in heating protection."),
     ],
 )
 def test_dimension_7_zone_state_captures(
@@ -186,19 +188,20 @@ def test_dimension_7_zone_state_captures(
 )
 @pytest.mark.parametrize(
     ("raw_state", "state"),
-    [("2", ZONE_STATE_PROTECTION), ("3", ZONE_STATE_COMFORT),
-     ("4", ZONE_STATE_ECO), ("5", ZONE_STATE_OFF)],
+    [("1", ZONE_STATE_SETPOINT), ("2", ZONE_STATE_PROTECTION),
+     ("3", ZONE_STATE_COMFORT), ("4", ZONE_STATE_ECO), ("5", ZONE_STATE_OFF)],
 )
 def test_dimension_7_follows_the_scenario_devices_table(
     raw: str, context: str, raw_state: str, state: str
 ) -> None:
     # Encyclopedia who-4-temperature-control/dimensions.md, MyHOME_Suite
     # ScenarioDevices DIMENSION 7 templates.
-    event = OWNHeatingEvent(f"*#4*3*7*{raw}*{raw_state}##")
+    temperature = "*0200" if state == ZONE_STATE_SETPOINT else ""
+    event = OWNHeatingEvent(f"*#4*3*7*{raw}*{raw_state}{temperature}##")
 
     assert event.message_type == MESSAGE_TYPE_ZONE_STATE
     assert (event.zone_context, event.zone_state) == (context, state)
-    assert event.set_temperature is None
+    assert event.set_temperature == (20.0 if state == ZONE_STATE_SETPOINT else None)
 
 
 @pytest.mark.parametrize("frame", ["*#4*3*7*9*1*0200##", "*#4*3*7*1*9##", "*#4*3*7*1##"])
@@ -206,6 +209,8 @@ def test_dimension_7_unknown_values_have_no_message_type(frame: str) -> None:
     event = OWNHeatingEvent(frame)
 
     assert event.message_type is None
+    assert event.zone_context is None
+    assert event.zone_state is None
     assert event.set_temperature is None
     assert "unknown zone state" in event.human_readable_log
 

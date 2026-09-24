@@ -1451,6 +1451,55 @@
     "_file": "who04_thermo.yaml"
   },
   {
+    "id": "thermo.capture.dim7.heating_protection.z2",
+    "frame": "*#4*2*7*1*2##",
+    "direction": "dimension_response",
+    "who": 4,
+    "what": null,
+    "where": "2",
+    "dimension": 7,
+    "dimension_values": [
+      "1",
+      "2"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Zone 2 heating protection on a heating-only plant: the zone was switched OFF in Home+Control; MyHOME_Suite calls this antifreeze in the heating context (xtimmy86x capture 23:39:43.745, MyHOME#429 comment 5803483452)",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.capture.what102.antifreeze.z2",
+    "frame": "*4*102*2##",
+    "direction": "event",
+    "who": 4,
+    "what": 102,
+    "where": "2",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Zone 2 antifreeze, 46 ms after *#4*2*7*1*2## (xtimmy86x capture 23:39:43.791, MyHOME#429)",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
+    "id": "thermo.capture.dim12.antifreeze_target.z2",
+    "frame": "*#4*2*12*0070*3##",
+    "direction": "dimension_response",
+    "who": 4,
+    "what": null,
+    "where": "2",
+    "dimension": 12,
+    "dimension_values": [
+      "0070",
+      "3"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Zone 2 target 7.0 \u00b0C, the antifreeze value, 47 ms after *4*102*2## (xtimmy86x capture 23:39:43.838, MyHOME#429)",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
     "id": "alarm.req.status.zone2",
     "frame": "*#5*2##",
     "direction": "status_request",
