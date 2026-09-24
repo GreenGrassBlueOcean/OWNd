@@ -1,5 +1,8 @@
 """Regression tests for WHO 4 heating messages."""
 
+import json
+from pathlib import Path
+
 import pytest
 
 from OWNd.message import (
@@ -241,3 +244,28 @@ def test_dimension_5_status_and_write_have_a_log() -> None:
 
 def test_heating_builders_keep_their_own_log() -> None:
     assert OWNHeatingCommand.status("2").human_readable_log == "Requesting climate status update for 2."
+
+
+def _golden_dimension_7_status_captures() -> list[str]:
+    corpus = json.loads((Path(__file__).parent / "golden" / "corpus.json").read_text(encoding="utf-8"))
+    records = corpus["frames"] if isinstance(corpus, dict) else corpus
+    return [
+        r["frame"] for r in records
+        if r.get("who") == 4 and r.get("dimension") == 7
+        and r.get("direction") == "dimension_response" and r.get("source") == "community-plant-capture"
+    ]
+
+
+def test_golden_corpus_has_dimension_7_captures() -> None:
+    assert len(_golden_dimension_7_status_captures()) >= 5
+
+
+@pytest.mark.parametrize("frame", _golden_dimension_7_status_captures())
+def test_every_golden_dimension_7_capture_is_a_zone_state(frame: str) -> None:
+    event = OWNMessage.parse(frame)
+
+    assert isinstance(event, OWNHeatingEvent)
+    assert event.message_type == MESSAGE_TYPE_ZONE_STATE
+    assert event.zone_context in (ZONE_CONTEXT_HEATING, ZONE_CONTEXT_COOLING)
+    assert event.zone_state in (ZONE_STATE_SETPOINT, ZONE_STATE_PROTECTION)
+    assert (event.set_temperature is not None) == (event.zone_state == ZONE_STATE_SETPOINT)
