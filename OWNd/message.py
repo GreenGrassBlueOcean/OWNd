@@ -430,6 +430,7 @@ class OWNLightingEvent(OWNEvent):
 
         self._type: str | None = None
         self._state: int | None = None
+        self._unknown_state: int | None = None
         self._brightness: int | None = None
         self._brightness_preset: int | None = None
         self._transition: int | None = None
@@ -492,10 +493,20 @@ class OWNLightingEvent(OWNEvent):
             elif self._state >= 20 and self._state <= 29:  # Light blinking
                 self._blinker = 0.5 * (self._state - 19)
                 self._human_readable_log = f"Light {self._where}{self._interface_log_text} is blinking every {self._blinker}s."
+            elif self._state == 30 or self._state == 31:  # One level up/down
+                direction = "up" if self._state == 30 else "down"
+                self._human_readable_log = f"Light {self._where}{self._interface_log_text} is dimmed {direction} one level."  # pylint: disable=line-too-long
             elif self._state == 34:  # Motion detected
                 self._type = MESSAGE_TYPE_MOTION
                 self._motion = True
                 self._human_readable_log = f"Light/motion sensor {self._where}{self._interface_log_text} detected motion"
+            else:
+                # Not in the WHO 1 WHAT table (e.g. 19, which an MH200 actuator
+                # with a WHO 1001 autodiagnostic fault reports): the on/off
+                # state is unknown, not "on".
+                self._unknown_state = self._state
+                self._state = None
+                self._human_readable_log = f"Light {self._where}{self._interface_log_text} reports fault/unknown state {self._unknown_state}."  # pylint: disable=line-too-long
 
         if self._dimension is not None and self._dimension_value:
             if self._dimension == 1 or self._dimension == 4:  # Brightness value
@@ -593,10 +604,20 @@ class OWNLightingEvent(OWNEvent):
     @property
     def is_on(self) -> bool | None:
         """True/False when the on/off state is known, None otherwise (e.g. a
-        reply carrying only a dimension such as illuminance or a timer)."""
+        reply carrying only a dimension such as illuminance or a timer, or a
+        WHAT outside the published table; see unknown_state)."""
         if self._state is None:
             return None
         return 0 < self._state < 32
+
+    @property
+    def unknown_state(self) -> int | None:
+        """The raw WHAT when it is not in the WHO 1 WHAT table, else None.
+
+        An MH200 actuator answers *1*19*WHERE## together with a WHO 1001
+        DIMENSION 11 autodiagnostic mask, so treat it as a fault report.
+        """
+        return self._unknown_state
 
     @property
     def is_sensor(self) -> bool:
