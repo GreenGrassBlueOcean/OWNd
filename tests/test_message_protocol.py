@@ -221,7 +221,7 @@ def test_lighting_what_19_is_an_unknown_state() -> None:
     assert isinstance(msg, OWNLightingEvent)
     assert msg.is_on is None
     assert msg.unknown_state == 19
-    assert msg.human_readable_log == "Light 74 reports fault/unknown state 19."
+    assert msg.human_readable_log == "Light 74 reports unknown lighting WHAT 19."
 
 
 @pytest.mark.parametrize("what", [19, 32, 33, 35, 39, 99])
@@ -231,24 +231,54 @@ def test_lighting_what_outside_the_table_is_an_unknown_state(what: int) -> None:
     assert msg.is_on is None
     assert msg.unknown_state == what
     assert msg.is_sensor is False
-    assert f"fault/unknown state {what}" in msg.human_readable_log
+    assert f"unknown lighting WHAT {what}" in msg.human_readable_log
 
 
 @pytest.mark.parametrize(
     ("what", "is_on"),
-    [(0, False), *((w, True) for w in range(1, 19)), *((w, True) for w in range(20, 32)), (34, False)],
+    [(0, False), *((w, True) for w in range(1, 19)), *((w, True) for w in range(20, 32))],
 )
 def test_lighting_what_in_the_table_keeps_its_state(what: int, is_on: bool) -> None:
     msg = OWNLightingEvent(f"*1*{what}*21##")
 
     assert msg.is_on is is_on
     assert msg.unknown_state is None
-    assert "unknown state" not in msg.human_readable_log
+    assert "unknown" not in msg.human_readable_log
 
 
-def test_lighting_step_what_has_a_log() -> None:
-    assert OWNLightingEvent("*1*30*21##").human_readable_log == "Light 21 is dimmed up one level."
-    assert OWNLightingEvent("*1*31*21##").human_readable_log == "Light 21 is dimmed down one level."
+def test_lighting_motion_what_34_is_not_an_unknown_state() -> None:
+    # 34 is not in WHO_1.pdf; OWNd decodes it as motion (ZigBee variant).
+    msg = OWNLightingEvent("*1*34*21##")
+
+    assert msg.motion is True
+    assert msg.is_on is False
+    assert msg.unknown_state is None
+
+
+@pytest.mark.parametrize("frame", ["*1*1000#1*74##", "*1*1000#19*74##"])
+def test_lighting_translation_wrapper_is_not_an_unknown_state(frame: str) -> None:
+    msg = OWNLightingEvent(frame)
+
+    assert msg.is_translation is True
+    assert msg.is_on is None
+    assert msg.unknown_state is None
+
+
+@pytest.mark.parametrize(
+    ("frame", "log"),
+    [
+        ("*1*30*21##", "Light 21 is dimmed up one level."),
+        ("*1*31*21##", "Light 21 is dimmed down one level."),
+        ("*1*30#2#3*21##", "Light 21 is dimmed up one level."),
+        ("*1*31#2#3*21##", "Light 21 is dimmed down one level."),
+    ],
+)
+def test_lighting_step_what_has_a_log(frame: str, log: str) -> None:
+    msg = OWNLightingEvent(frame)
+
+    assert msg.is_on is True
+    assert msg.unknown_state is None
+    assert msg.human_readable_log == log
 
 
 def test_sound_volume_down_uses_documented_step_what() -> None:

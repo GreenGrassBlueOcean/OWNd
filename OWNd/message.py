@@ -501,12 +501,12 @@ class OWNLightingEvent(OWNEvent):
                 self._motion = True
                 self._human_readable_log = f"Light/motion sensor {self._where}{self._interface_log_text} detected motion"
             else:
-                # Not in the WHO 1 WHAT table (e.g. 19, which an MH200 actuator
-                # with a WHO 1001 autodiagnostic fault reports): the on/off
+                # Not in the WHO 1 WHAT table (e.g. 19, seen from an MH200
+                # actuator next to a WHO 1001 autodiagnostic mask): the on/off
                 # state is unknown, not "on".
                 self._unknown_state = self._state
                 self._state = None
-                self._human_readable_log = f"Light {self._where}{self._interface_log_text} reports fault/unknown state {self._unknown_state}."  # pylint: disable=line-too-long
+                self._human_readable_log = f"Light {self._where}{self._interface_log_text} reports unknown lighting WHAT {self._unknown_state}."  # pylint: disable=line-too-long
 
         if self._dimension is not None and self._dimension_value:
             if self._dimension == 1 or self._dimension == 4:  # Brightness value
@@ -612,10 +612,10 @@ class OWNLightingEvent(OWNEvent):
 
     @property
     def unknown_state(self) -> int | None:
-        """The raw WHAT when it is not in the WHO 1 WHAT table, else None.
+        """The raw WHAT when it is not in the published WHO 1 WHAT table, else None.
 
-        An MH200 actuator answers *1*19*WHERE## together with a WHO 1001
-        DIMENSION 11 autodiagnostic mask, so treat it as a fault report.
+        19 has been seen from an MH200 actuator next to a WHO 1001 DIMENSION 11
+        autodiagnostic mask; the mask itself is not interpreted here.
         """
         return self._unknown_state
 
