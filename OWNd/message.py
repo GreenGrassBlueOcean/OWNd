@@ -31,6 +31,7 @@ MESSAGE_TYPE_PIR_SENSITIVITY = "pir_sensitivity"
 MESSAGE_TYPE_ILLUMINANCE = "illuminance_value"
 MESSAGE_TYPE_MOTION_TIMEOUT = "motion_timeout"
 MESSAGE_TYPE_FAN_SPEED = "fan_speed"
+MESSAGE_TYPE_ZONE_STATE = "zone_state"
 
 CLIMATE_MODE_OFF = "off"
 CLIMATE_MODE_HEAT = "heat"
@@ -44,7 +45,64 @@ LOCAL_CONTROL_PROTECTION = "local_protection"
 LOCAL_CONTROL_OVERRIDE = "local_override"
 LOCAL_CONTROL_UNKNOWN = "unknown"
 
+# WHO 4 DIMENSION 7, *#4*ZONE*7*CONTEXT*STATE[*TTTT]##: not in the public WHO 4
+# document; the values follow the MyHOME_Suite ScenarioDevices templates.
+ZONE_CONTEXT_GENERIC = "generic"
+ZONE_CONTEXT_HEATING = "heating"
+ZONE_CONTEXT_COOLING = "cooling"
+ZONE_CONTEXT_AUTOMATIC = "automatic"
+
+ZONE_STATE_SETPOINT = "setpoint"
+ZONE_STATE_PROTECTION = "protection"
+ZONE_STATE_COMFORT = "comfort"
+ZONE_STATE_ECO = "eco"
+ZONE_STATE_OFF = "off"
+
+_ZONE_CONTEXTS = {
+    "0": ZONE_CONTEXT_GENERIC,
+    "1": ZONE_CONTEXT_HEATING,
+    "2": ZONE_CONTEXT_COOLING,
+    "3": ZONE_CONTEXT_AUTOMATIC,
+}
+_ZONE_STATES = {
+    "1": ZONE_STATE_SETPOINT,
+    "2": ZONE_STATE_PROTECTION,
+    "3": ZONE_STATE_COMFORT,
+    "4": ZONE_STATE_ECO,
+    "5": ZONE_STATE_OFF,
+}
+
 PIR_SENSITIVITY_MAPPING = ["low", "medium", "high", "very high"]
+
+
+def _zone_state(
+    values: list[str],
+) -> tuple[str | None, str | None, float | None]:
+    """Decode DIMENSION 7 values into (context, state, setpoint temperature).
+
+    Unknown context or state codes decode to None; the temperature is only
+    read for the setpoint state.
+    """
+    context = _ZONE_CONTEXTS.get(values[0]) if values else None
+    state = _ZONE_STATES.get(values[1]) if len(values) > 1 else None
+    temperature = None
+    if (
+        state == ZONE_STATE_SETPOINT
+        and len(values) > 2
+        and re.fullmatch(r"\d{4}", values[2])
+    ):
+        temperature = float(f"{values[2][1:3]}.{values[2][-1]}")
+    return context, state, temperature
+
+
+def _zone_state_text(values: list[str]) -> str | None:
+    """'heating setpoint at 17.0°C', 'cooling protection', or None if unknown."""
+    context, state, temperature = _zone_state(values)
+    if context is None or state is None:
+        return None
+    if temperature is not None:
+        return f"{context} {state} at {temperature}°C"
+    return f"{context} {state}"
 
 
 def _validate_gateway_clock_values(
@@ -819,6 +877,8 @@ class OWNHeatingEvent(OWNEvent):
 
         self._mode = None
         self._mode_name = None
+        self._zone_context: str | None = None
+        self._zone_state: str | None = None
         self._set_temperature = None
         self._local_offset = None
         self._local_offset_raw = None
@@ -918,6 +978,27 @@ class OWNHeatingEvent(OWNEvent):
                     f"{self._dimension_value[0][1:3]}.{self._dimension_value[0][-1]}"
                 )
                 self._human_readable_log = f"Zone {self._zone}'s secondary sensor {self._sensor} is reporting a temperature of {self._secondary_temperature}°C."  # pylint: disable=line-too-long
+
+        elif self._dimension == 5 and self._dimension_value:  # Local control
+            # MyHOME_Suite writes *#4*Z*#5*val##; the meaning of val is not
+            # published, so only log it.
+            self._human_readable_log = f"Zone {self._zone}'s local control (dimension 5) is {self._dimension_value[0]}."  # pylint: disable=line-too-long
+
+        elif self._dimension == 7 and self._dimension_value:  # Zone state
+            # MyHomeServer1 / Home+Control plants carry the zone's operating
+            # state and setpoint here, and never in the reply to *#4*Z##.
+            # The zone_* properties are only set with the message type, so a
+            # half-known frame never looks like a valid state.
+            context, state, temperature = _zone_state(self._dimension_value)
+            text = _zone_state_text(self._dimension_value)
+            if text is None:
+                self._human_readable_log = f"Zone {self._zone} reports an unknown zone state {'*'.join(self._dimension_value)}."  # pylint: disable=line-too-long
+            else:
+                self._type = MESSAGE_TYPE_ZONE_STATE
+                self._zone_context = context
+                self._zone_state = state
+                self._set_temperature = temperature
+                self._human_readable_log = f"Zone {self._zone} is in {text}."
 
         elif self._dimension == 11:  # Fan speed
             self._type = MESSAGE_TYPE_FAN_SPEED
@@ -1137,6 +1218,22 @@ class OWNHeatingEvent(OWNEvent):
     @property
     def mode(self) -> str | None:
         return self._mode_name
+
+    @property
+    def zone_context(self) -> str | None:
+        """DIMENSION 7 thermal context (ZONE_CONTEXT_*), else None."""
+        return self._zone_context
+
+    @property
+    def zone_state(self) -> str | None:
+        """DIMENSION 7 operating state (ZONE_STATE_*), else None.
+
+        For ZONE_STATE_SETPOINT the temperature is in set_temperature.
+        ZONE_STATE_PROTECTION is the wire name for both cases: MyHOME_Suite
+        calls it antifreeze in the heating context (the zone also reports
+        *4*102*Z##) and thermal protection in cooling (*4*202*Z##).
+        """
+        return self._zone_state
 
     def is_active(self) -> bool | None:
         return self._is_active
@@ -2234,6 +2331,20 @@ class OWNAutomationCommand(OWNCommand):
 
 
 class OWNHeatingCommand(OWNCommand):
+    def __init__(self, data: str) -> None:
+        super().__init__(data)
+        # A dimension write seen on the event session: MyHomeServer1 runs its
+        # schedule by writing DIMENSION 7 and re-asserts DIMENSION 5.  The
+        # dimension 7 status that follows is the authoritative state.
+        if self._message_type == "DIMENSION_WRITING" and self._dimension_value:
+            if self._dimension == 7:
+                text = _zone_state_text(self._dimension_value)
+                if text is None:
+                    text = f"unknown zone state {'*'.join(self._dimension_value)}"
+                self._human_readable_log = f"Setting zone {self._where} to {text}."
+            elif self._dimension == 5:
+                self._human_readable_log = f"Setting zone {self._where}'s local control (dimension 5) to {self._dimension_value[0]}."  # pylint: disable=line-too-long
+
     @classmethod
     def status(cls, where: str | int) -> OWNHeatingCommand:
         message = cls(f"*#4*{where}##")
