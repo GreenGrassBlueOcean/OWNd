@@ -662,9 +662,9 @@ class OWNLightingEvent(OWNEvent):
     @property
     def is_on(self) -> bool | None:
         """True/False when the on/off state is known, None otherwise (e.g. a
-        reply carrying only a dimension such as illuminance or a timer, or a
-        WHAT outside the published table; see unknown_state)."""
-        if self._state is None:
+        motion event, a reply carrying only a dimension such as illuminance
+        or a timer, or a WHAT outside the published table; see unknown_state)."""
+        if self._state is None or self._motion:
             return None
         return 0 < self._state < 32
 
@@ -680,7 +680,8 @@ class OWNLightingEvent(OWNEvent):
     @property
     def is_sensor(self) -> bool:
         return (
-            self._state == 34
+            self._motion
+            or self._state == 34
             or (self._dimension is not None and self._dimension in (5, 6, 7))
             or self._type
             in (

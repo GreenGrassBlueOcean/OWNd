@@ -248,11 +248,19 @@ def test_lighting_what_in_the_table_keeps_its_state(what: int, is_on: bool) -> N
 
 def test_lighting_motion_what_34_is_not_an_unknown_state() -> None:
     # 34 is not in WHO_1.pdf; OWNd decodes it as motion (ZigBee variant).
+    # A motion frame says nothing about on/off, so is_on is None (fedem95 review on PR #59).
     msg = OWNLightingEvent("*1*34*21##")
 
     assert msg.motion is True
-    assert msg.is_on is False
+    assert msg.is_on is None
     assert msg.unknown_state is None
+    assert msg.is_sensor is True
+
+    # Frame cited in review: *1*34*74##
+    msg74 = OWNLightingEvent("*1*34*74##")
+    assert msg74.motion is True
+    assert msg74.is_on is None
+    assert msg74.unknown_state is None
 
 
 @pytest.mark.parametrize("frame", ["*1*1000#1*74##", "*1*1000#19*74##"])
