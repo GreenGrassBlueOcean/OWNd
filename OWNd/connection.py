@@ -1368,11 +1368,14 @@ class OWNCommandSession(OWNSession):
     async def _locked_send(
         self, message: str | OWNMessage, is_status_request: bool = False
     ) -> list[OWNMessage | str] | bool | None:
-        # One retry is enough for an immediate NACK or for a connection that
-        # was already unavailable.  More importantly, never replay a command
-        # after it was written: the gateway may have executed it even if its
-        # acknowledgement was lost.  Status requests are idempotent and can be
-        # retried safely after a transport reset.
+        # One retry is enough for a command NACK or for a connection that was
+        # already unavailable.  A NACKed status request is not retried: the
+        # gateway has answered (the device or subsystem is absent), and on an
+        # MH200N every NACK costs ~2 s of a shared queue (MyHOME#425).  More
+        # importantly, never replay a command after it was written: the
+        # gateway may have executed it even if its acknowledgement was lost.
+        # Status requests are idempotent and can be retried safely after a
+        # transport reset.
         max_attempts = 2
 
         for attempt in range(1, max_attempts + 1):
@@ -1415,7 +1418,7 @@ class OWNCommandSession(OWNSession):
                 if resulting_message.is_nack():
                     # A NACK after response data terminates that transaction;
                     # replaying it would duplicate the already returned sweep.
-                    if collected or attempt == max_attempts:
+                    if collected or is_status_request or attempt == max_attempts:
                         if is_status_request:
                             self._logger.debug(
                                 "%s Gateway rejected status request %s (NACK, %s response(s)). Subsystem or device may not be present.",
@@ -1430,20 +1433,12 @@ class OWNCommandSession(OWNSession):
                                 message,
                             )
                         return None
-                    if is_status_request:
-                        self._logger.debug(
-                            "%s Status request `%s` not acknowledged (NACK). Retrying (%d)...",
-                            self._log_id,
-                            message,
-                            attempt,
-                        )
-                    else:
-                        self._logger.error(
-                            "%s Could not send message `%s`. Retrying (%d)...",
-                            self._log_id,
-                            message,
-                            attempt,
-                        )
+                    self._logger.error(
+                        "%s Could not send message `%s`. Retrying (%d)...",
+                        self._log_id,
+                        message,
+                        attempt,
+                    )
                     continue
 
                 self._logger.warning(

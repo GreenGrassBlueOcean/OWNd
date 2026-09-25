@@ -369,7 +369,9 @@ async def test_partial_response_followed_by_nack_is_not_retried() -> None:
 
 
 @pytest.mark.asyncio
-async def test_rejected_status_request_is_logged_at_debug() -> None:
+async def test_rejected_status_request_is_not_retried() -> None:
+    # A NACK is the gateway's answer, not a transport failure: sending the
+    # request again only repeats it (~2 s each on an MH200N, MyHOME#425).
     session, writer = make_session(OWNCommandSession)
     assert isinstance(session, OWNCommandSession)
     logger = MagicMock()
@@ -379,20 +381,26 @@ async def test_rejected_status_request_is_logged_at_debug() -> None:
     result = await session.send("*#16*0##", is_status_request=True)
 
     assert result is None
-    assert writer.written == [b"*#16*0##", b"*#16*0##"]
+    assert writer.written == [b"*#16*0##"]
     logger.error.assert_not_called()
-    logger.debug.assert_any_call(
-        "%s Status request `%s` not acknowledged (NACK). Retrying (%d)...",
-        session._log_id,
-        "*#16*0##",
-        1,
-    )
     logger.debug.assert_any_call(
         "%s Gateway rejected status request %s (NACK, %s response(s)). Subsystem or device may not be present.",
         session._log_id,
         "*#16*0##",
         0,
     )
+
+
+@pytest.mark.asyncio
+async def test_nacked_command_is_still_retried_once() -> None:
+    session, writer = make_session(OWNCommandSession)
+    assert isinstance(session, OWNCommandSession)
+    session._read_frame = AsyncMock(side_effect=["*#*0##", "*#*1##"])
+
+    result = await session.send("*1*1*11##")
+
+    assert result is True
+    assert writer.written == [b"*1*1*11##", b"*1*1*11##"]
 
 
 @pytest.mark.asyncio
