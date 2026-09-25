@@ -1005,11 +1005,18 @@ class OWNHeatingEvent(OWNEvent):
             # published, so only log it.
             self._human_readable_log = f"Zone {self._zone}'s local control (dimension 5) is {self._dimension_value[0]}."  # pylint: disable=line-too-long
 
-        elif self._dimension == 7 and self._dimension_value:  # Zone state
+        elif (
+            self._dimension == 7
+            and self._dimension_value
+            and self._message_type != "DIMENSION_WRITING"
+        ):  # Zone state
             # MyHomeServer1 / Home+Control plants carry the zone's operating
             # state and setpoint here, and never in the reply to *#4*Z##.
             # The zone_* properties are only set with the message type, so a
             # half-known frame never looks like a valid state.
+            # Dimension writes (*#4*Z*#7*...##) are commands handled by
+            # OWNHeatingCommand; skipping them keeps write echoes typeless in
+            # OWNEvent, agreeing with OWNMessage.parse.
             context, state, temperature = _zone_state(self._dimension_value)
             text = _zone_state_text(self._dimension_value)
             if text is None:

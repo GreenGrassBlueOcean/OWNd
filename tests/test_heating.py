@@ -17,6 +17,7 @@ from OWNd.message import (
     MESSAGE_TYPE_TARGET_TEMPERATURE,
     MESSAGE_TYPE_SECONDARY_TEMPERATURE,
     MESSAGE_TYPE_ZONE_STATE,
+    OWNEvent,
     OWNHeatingCommand,
     OWNHeatingEvent,
     OWNMessage,
@@ -151,9 +152,11 @@ def test_where_zero_with_parameter_stays_zone_zero() -> None:
         assert event.unique_id == "4-#0", frame
 
 
-# DIMENSION 7 zone state (OWNd#58). Frames from MyHOME#429 captures:
-# xtimmy86x (MyHomeServer1, 7 zones, heating) and TheDarkWizard
+# DIMENSION 7 zone state (OWNd#58). Real plant capture frames from MyHOME#429
+# traces: xtimmy86x (MyHomeServer1, 7 zones, heating) and TheDarkWizard
 # (MyHomeServer1 + Home+Control, 4 zones, heating/cooling).
+# Synthetic edge cases (unknown codes, missing state, malformed temperatures,
+# and ScenarioDevices write templates) are tested separately below.
 @pytest.mark.parametrize(
     ("frame", "zone", "context", "state", "temperature", "log"),
     [
@@ -170,6 +173,7 @@ def test_where_zero_with_parameter_stays_zone_zero() -> None:
 def test_dimension_7_zone_state_captures(
     frame: str, zone: int, context: str, state: str, temperature: float | None, log: str
 ) -> None:
+    """Verbatim DIMENSION 7 response frames from MyHOME#429 bus captures."""
     event = OWNMessage.parse(frame)
 
     assert isinstance(event, OWNHeatingEvent)
@@ -195,7 +199,7 @@ def test_dimension_7_follows_the_scenario_devices_table(
     raw: str, context: str, raw_state: str, state: str
 ) -> None:
     # Encyclopedia who-4-temperature-control/dimensions.md, MyHOME_Suite
-    # ScenarioDevices DIMENSION 7 templates.
+    # ScenarioDevices DIMENSION 7 templates (synthetic 4x5 table).
     temperature = "*0200" if state == ZONE_STATE_SETPOINT else ""
     event = OWNHeatingEvent(f"*#4*3*7*{raw}*{raw_state}{temperature}##")
 
@@ -206,6 +210,7 @@ def test_dimension_7_follows_the_scenario_devices_table(
 
 @pytest.mark.parametrize("frame", ["*#4*3*7*9*1*0200##", "*#4*3*7*1*9##", "*#4*3*7*1##"])
 def test_dimension_7_unknown_values_have_no_message_type(frame: str) -> None:
+    """Synthetic edge cases: unknown context/state codes or missing state."""
     event = OWNHeatingEvent(frame)
 
     assert event.message_type is None
@@ -216,6 +221,7 @@ def test_dimension_7_unknown_values_have_no_message_type(frame: str) -> None:
 
 
 def test_dimension_7_setpoint_without_a_valid_temperature() -> None:
+    """Synthetic edge case: malformed setpoint temperature."""
     event = OWNHeatingEvent("*#4*3*7*1*1*20##")
 
     assert event.message_type == MESSAGE_TYPE_ZONE_STATE
@@ -230,9 +236,35 @@ def test_dimension_7_write_echo_has_a_log() -> None:
 
     assert isinstance(command, OWNHeatingCommand)
     assert command.human_readable_log == "Setting zone 2 to heating setpoint at 20.0°C."
-    # MyHOME_Suite templates end non-setpoint writes with an empty value.
+    # MyHOME_Suite templates end non-setpoint writes with an empty value (synthetic template).
     assert OWNHeatingCommand("*#4*2*#7*2*3*##").human_readable_log == "Setting zone 2 to cooling comfort."
+    # Synthetic unknown context/state write.
     assert OWNHeatingCommand("*#4*2*#7*9*9##").human_readable_log == "Setting zone 2 to unknown zone state 9*9."
+
+
+def test_dimension_7_write_echo_stays_typeless_across_entry_points() -> None:
+    # A dimension 7 write echo must stay typeless across both parse entry
+    # points (OWNMessage.parse and OWNEvent.parse) as well as direct
+    # OWNHeatingEvent construction. MyHomeServer1 writes dimension 7 to
+    # execute schedules, but the subsequent dimension response is authoritative.
+    frame = "*#4*2*#7*1*1*0170##"
+    command = OWNMessage.parse(frame)
+    assert isinstance(command, OWNHeatingCommand)
+    assert not hasattr(command, "message_type")
+    assert command.human_readable_log == "Setting zone 2 to heating setpoint at 17.0°C."
+
+    event = OWNEvent.parse(frame)
+    assert isinstance(event, OWNHeatingEvent)
+    assert event.message_type is None
+    assert event.zone_context is None
+    assert event.zone_state is None
+    assert event.set_temperature is None
+
+    direct_event = OWNHeatingEvent(frame)
+    assert direct_event.message_type is None
+    assert direct_event.zone_context is None
+    assert direct_event.zone_state is None
+    assert direct_event.set_temperature is None
 
 
 def test_dimension_5_status_and_write_have_a_log() -> None:
