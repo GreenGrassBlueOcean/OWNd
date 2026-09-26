@@ -8,13 +8,17 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from OWNd.profiles import (
+    CANONICAL_PROFILE_ORDER,
     DEFAULT_SUPPORTED_WHO,
+    WHO_LIGHTING,
     WHO_LOAD_CONTROL,
     WHO_SOUND,
     WHO_SOUND_DIFFUSION,
+    _PROFILES,
     GatewayProfile,
     MH200NProfile,
     MH200Profile,
+    canonical_profiles,
     get_gateway_profile,
 )
 
@@ -39,15 +43,15 @@ def test_mh200_keeps_the_mh200n_pacing() -> None:
     assert mh200.command_queue_delay == mh200n.command_queue_delay
     assert mh200.max_queue_size == mh200n.max_queue_size
     assert mh200.event_keepalive_interval == mh200n.event_keepalive_interval
-    assert mh200.supported_who == mh200n.supported_who
+    assert set(mh200.supported_who) - set(mh200n.supported_who) == {WHO_SOUND}
 
 
-def test_mh200n_supports_audio() -> None:
-    """MH200N supports WHO 16 sound diffusion (MyHOME#422)."""
+def test_mh200n_audio_stays_off_until_checked() -> None:
+    """Unchanged until an MH200N is seen answering *#16*0*5## (#53)."""
     profile = get_gateway_profile("MH200N")
 
-    assert profile.supports_audio is True
-    assert profile.supports_who(WHO_SOUND)
+    assert profile.supports_audio is False
+    assert not profile.supports_who(WHO_SOUND)
 
 
 def test_profile_lookup_accepts_common_name_variants() -> None:
@@ -92,30 +96,91 @@ def test_load_control_and_sound_diffusion_have_distinct_who_codes() -> None:
     assert WHO_SOUND_DIFFUSION in DEFAULT_SUPPORTED_WHO
 
 
+def test_canonical_order_covers_registry() -> None:
+    assert set(CANONICAL_PROFILE_ORDER) == set(_PROFILES)
+
+
+def test_sound_system_feature_matches_capabilities() -> None:
+    """Every profile advertises Sound system iff it supports WHO 16 or audio."""
+    for profile in canonical_profiles():
+        has_sound = profile.supports_who(WHO_SOUND) or profile.supports_audio
+        assert ("Sound system (WHO 16)" in profile.features_summary) is has_sound
+
+
+def test_hmac_profiles_never_show_legacy_auth() -> None:
+    """Profiles with HMAC authentication never advertise legacy password auth."""
+    for profile in canonical_profiles():
+        if profile.supports_hmac:
+            assert "Legacy password auth" not in profile.features_summary
+
+
+def test_slow_hmac_profile_does_not_pick_up_sound_or_legacy_auth_from_delay() -> None:
+    """A 150 ms delay profile does not inherit sound or legacy auth heuristics."""
+    custom = GatewayProfile(
+        model_name="SlowHMAC",
+        command_queue_delay=0.15,
+        supports_hmac=True,
+        supports_audio=False,
+        supported_who=(WHO_LIGHTING,),
+    )
+    assert custom.features_summary == "Safe pacing, HMAC-SHA2"
+    assert "Legacy password auth" not in custom.features_summary
+    assert "Sound system (WHO 16)" not in custom.features_summary
+
+
+def test_mh201_shows_clock_diagnostics() -> None:
+    """MH201 includes Clock diagnostics from extra_features."""
+    mh201 = get_gateway_profile("MH201")
+    assert "Clock diagnostics" in mh201.features_summary
+
+
 def test_gateway_profile_summary_properties() -> None:
     """Verify summary strings across diverse gateway families."""
     mhs1 = get_gateway_profile("MyHomeServer1")
     assert mhs1.concurrency_summary == "4 sessions (2 default)"
     assert mhs1.queue_delay_summary == "20 ms"
-    assert mhs1.keepalive_summary == "Profile"
-    assert mhs1.features_summary == "HMAC-SHA2, Native transitions, Extended frames"
+    assert mhs1.keepalive_summary == "OS TCP only"
+    assert (
+        mhs1.features_summary
+        == "HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16)"
+    )
 
     f454 = get_gateway_profile("F454")
     assert f454.concurrency_summary == "4 sessions"
     assert f454.queue_delay_summary == "50 ms"
     assert f454.keepalive_summary == "90 s"
+    assert (
+        f454.features_summary
+        == "HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16)"
+    )
+
+    f455 = get_gateway_profile("F455")
+    assert f455.concurrency_summary == "4 sessions"
+    assert f455.queue_delay_summary == "50 ms"
+    assert f455.keepalive_summary == "90 s"
+    assert (
+        f455.features_summary
+        == "HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16)"
+    )
+
+    mh200 = get_gateway_profile("MH200")
+    assert mh200.concurrency_summary == "1 session"
+    assert mh200.queue_delay_summary == "150 ms"
+    assert mh200.keepalive_summary == "90 s"
+    assert (
+        mh200.features_summary
+        == "Safe pacing, Legacy password auth, Sound system (WHO 16)"
+    )
 
     mh200n = get_gateway_profile("MH200N")
     assert mh200n.concurrency_summary == "1 session"
     assert mh200n.queue_delay_summary == "150 ms"
     assert mh200n.keepalive_summary == "90 s"
-    assert mh200n.features_summary == "Safe pacing, Legacy password auth, Sound system (WHO 16)"
+    assert mh200n.features_summary == "Safe pacing, Legacy password auth"
 
     generic = get_gateway_profile("Unknown")
+    assert generic.keepalive_summary == "OS TCP only"
     assert generic.features_summary == "Conservative fallback"
-
-    custom = GatewayProfile(model_name="Custom", command_queue_delay=0.05, supports_hmac=False)
-    assert custom.features_summary == ""
 
 
 def test_readme_gateway_profiles_table_is_in_sync() -> None:

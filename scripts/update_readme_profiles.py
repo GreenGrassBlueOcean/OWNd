@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from OWNd.profiles import CANONICAL_PROFILES  # noqa: E402
+from OWNd.profiles import canonical_profiles  # noqa: E402
 
 README_MD = REPO_ROOT / "README.md"
 START_MARKER = "<!-- START_GATEWAY_PROFILES_TABLE -->"
@@ -30,9 +30,14 @@ def build_profiles_table() -> str:
         "| Gateway Model | Concurrency | Queue Delay | Keepalive | Features |",
         "|:---|:---:|:---:|:---:|:---|",
     ]
-    for profile in CANONICAL_PROFILES:
+    for profile in canonical_profiles():
+        model_name = (
+            "Generic Gateway"
+            if profile.model_name in ("Generic", "Generic Gateway")
+            else profile.model_name
+        )
         lines.append(
-            f"| **{profile.model_name}** | {profile.concurrency_summary} | "
+            f"| **{model_name}** | {profile.concurrency_summary} | "
             f"{profile.queue_delay_summary} | {profile.keepalive_summary} | "
             f"{profile.features_summary} |"
         )
@@ -45,7 +50,7 @@ def sync_readme_profiles(check_only: bool = False) -> bool:
         print(f"Error: {README_MD} not found.", file=sys.stderr)
         return False
 
-    content = README_MD.read_text(encoding="utf-8")
+    content = README_MD.read_text(encoding="utf-8").replace("\r\n", "\n")
     table_block = build_profiles_table()
 
     if START_MARKER not in content or END_MARKER not in content:
@@ -71,9 +76,10 @@ def sync_readme_profiles(check_only: bool = False) -> bool:
         return is_in_sync
 
     if not is_in_sync:
-        updated_content = pattern.sub(replacement, content)
-        README_MD.write_text(updated_content, encoding="utf-8")
-        print(f"Updated gateway profiles table in {README_MD} ({len(CANONICAL_PROFILES)} models).")
+        updated_content = pattern.sub(replacement, content).replace("\r\n", "\n")
+        with README_MD.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(updated_content)
+        print(f"Updated gateway profiles table in {README_MD} ({len(canonical_profiles())} models).")
     else:
         print(f"Gateway profiles table in {README_MD} is already up-to-date.")
 
