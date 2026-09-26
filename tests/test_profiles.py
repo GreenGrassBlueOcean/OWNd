@@ -102,7 +102,7 @@ def test_canonical_order_covers_registry() -> None:
 
 def test_sound_system_feature_matches_capabilities() -> None:
     """Every profile advertises Sound system iff it supports WHO 16 or audio."""
-    for profile in canonical_profiles():
+    for profile in _PROFILES.values():
         has_sound = profile.supports_who(WHO_SOUND) or profile.supports_audio
         assert ("Sound system (WHO 16)" in profile.features_summary) is has_sound
 

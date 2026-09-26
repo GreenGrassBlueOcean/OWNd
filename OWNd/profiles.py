@@ -93,6 +93,8 @@ class GatewayProfile:
     @property
     def features_summary(self) -> str:
         """Formatted capabilities and features string."""
+        if isinstance(self, GenericGatewayProfile):
+            return "Conservative fallback"
         features: list[str] = []
         if self.command_queue_delay >= 0.15:
             features.append("Safe pacing")
@@ -257,14 +259,7 @@ class MyHomeServer1Profile(GatewayProfile):
 
 class GenericGatewayProfile(GatewayProfile):
     def __init__(self, model_name: str = "Generic") -> None:
-        super().__init__(
-            model_name=model_name,
-            requires_password=False,
-            supports_audio=False,
-            supported_who=tuple(
-                who for who in DEFAULT_SUPPORTED_WHO if who != WHO_SOUND
-            ),
-        )
+        super().__init__(model_name=model_name)
 
 
 _GENERIC = GenericGatewayProfile()
