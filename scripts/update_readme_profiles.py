@@ -27,7 +27,7 @@ END_MARKER = "<!-- END_GATEWAY_PROFILES_TABLE -->"
 def build_profiles_table() -> str:
     """Generate Markdown table representing canonical gateway profiles."""
     lines = [
-        "| Gateway Model | Concurrency | Queue Delay | Keepalive | Features |",
+        "| Gateway Model | Concurrency | Queue Delay | Event keepalive | Features |",
         "|:---|:---:|:---:|:---:|:---|",
     ]
     for profile in canonical_profiles():

@@ -142,7 +142,6 @@ class F455Profile(GatewayProfile):
             model_name="F455",
             max_command_sessions=4,
             max_queue_size=250,
-            event_keepalive_interval=90,
             supports_hmac=True,
             supports_native_transitions=True,
             supports_extended_frames=True,

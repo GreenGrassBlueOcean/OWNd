@@ -157,7 +157,7 @@ def test_gateway_profile_summary_properties() -> None:
     f455 = get_gateway_profile("F455")
     assert f455.concurrency_summary == "4 sessions"
     assert f455.queue_delay_summary == "50 ms"
-    assert f455.keepalive_summary == "90 s"
+    assert f455.keepalive_summary == "OS TCP only"
     assert (
         f455.features_summary
         == "HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16)"
