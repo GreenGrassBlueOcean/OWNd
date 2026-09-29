@@ -25,7 +25,7 @@ setuptools.setup(
     url="https://github.com/OpenWebNet-HA/OWNd",
     author_email="yetanotherjulien@gmail.com",
     description="Python interface for the OpenWebNet protocol",
-    license="LGPL-3.0-only",
+    license="Apache-2.0",
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=setuptools.find_packages(),

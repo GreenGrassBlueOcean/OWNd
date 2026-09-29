@@ -3,7 +3,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/OWNd.svg?color=blue)](https://pypi.org/project/OWNd/)
 [![Python versions](https://img.shields.io/pypi/pyversions/OWNd.svg)](https://pypi.org/project/OWNd/)
 [![CI](https://github.com/OpenWebNet-HA/OWNd/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenWebNet-HA/OWNd/actions/workflows/ci.yml)
-[![License: LGPL-3.0](https://img.shields.io/badge/License-LGPL--3.0-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![mypy: strict](https://img.shields.io/badge/mypy-strict-blue.svg)](https://mypy.readthedocs.io/en/stable/getting_started.html#strict-mode-and-configuration)
 [![Typed: PEP 561](https://img.shields.io/badge/typed-PEP%20561-informational.svg)](https://peps.python.org/pep-0561/)
@@ -300,7 +300,7 @@ mypy OWNd
 
 ## License
 
-This project is licensed under the **GNU Lesser General Public License v3.0 (LGPL-3.0-only)**. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the **Apache License 2.0**, the same license as Home Assistant Core. See the [LICENSE](LICENSE) file for details.
 
 
 ## 📊 Code Coverage & Quality Assurance
