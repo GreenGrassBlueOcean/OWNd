@@ -919,15 +919,18 @@ class TestOWNSessionNegotiateBranches:
         assert res["Message"] == "password_error"
 
     @pytest.mark.asyncio
-    async def test_negotiate_nonce_without_password(self, session):
+    async def test_negotiate_nonce_without_password(self, session, caplog):
+        """No password yet is not a wrong password: the caller must ask for one (as with SHA)."""
         session.gateway.password = None
         session._stream_reader.readuntil.side_effect = [
             b"*#*1##",
             b"*#123456789##",
         ]
-        res = await session._negotiate()
+        with caplog.at_level(logging.DEBUG, logger="test"):
+            res = await session._negotiate()
         assert res["Success"] is False
-        assert res["Message"] == "password_error"
+        assert res["Message"] == "password_required"
+        assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
 
     @pytest.mark.asyncio
     async def test_negotiate_open_session_ack(self, session):
