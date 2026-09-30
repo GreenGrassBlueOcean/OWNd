@@ -75,6 +75,18 @@ _ZONE_STATES = {
 PIR_SENSITIVITY_MAPPING = ["low", "medium", "high", "very high"]
 
 
+def _who4_temperature(raw: str) -> float | None:
+    """Decode an OpenWebNet WHO 4 temperature field (SXXX, tenths of a degree)."""
+    if len(raw) < 3:
+        return None
+    try:
+        if raw.startswith("1") and len(raw) == 4 and int(raw[1:]) != 0:
+            return -float(f"{raw[1:3]}.{raw[-1]}")
+        return float(f"{raw[1:3]}.{raw[-1]}")
+    except (ValueError, IndexError):
+        return None
+
+
 def _zone_state(
     values: list[str],
 ) -> tuple[str | None, str | None, float | None]:
@@ -91,7 +103,7 @@ def _zone_state(
         and len(values) > 2
         and re.fullmatch(r"\d{4}", values[2])
     ):
-        temperature = float(f"{values[2][1:3]}.{values[2][-1]}")
+        temperature = _who4_temperature(values[2])
     return context, state, temperature
 
 
@@ -980,26 +992,22 @@ class OWNHeatingEvent(OWNEvent):
                 and self._what_param[0] is not None
             ):
                 self._type = MESSAGE_TYPE_MODE_TARGET
-                self._set_temperature = float(
-                    f"{self._what_param[0][1:3]}.{self._what_param[0][-1]}"
-                )
+                self._set_temperature = _who4_temperature(self._what_param[0])
                 self._human_readable_log += f" at {self._set_temperature}°C."
             else:
                 self._human_readable_log += "."
 
         if self._dimension == 0:  # Temperature
-            if self._sensor is None:
-                self._type = MESSAGE_TYPE_MAIN_TEMPERATURE
-                self._measured_temperature = float(
-                    f"{self._dimension_value[0][1:3]}.{self._dimension_value[0][-1]}"
-                )
-                self._human_readable_log = f"Zone {self._zone}'s main sensor is reporting a temperature of {self._measured_temperature}°C."  # pylint: disable=line-too-long
-            else:
-                self._type = MESSAGE_TYPE_SECONDARY_TEMPERATURE
-                self._secondary_temperature = float(
-                    f"{self._dimension_value[0][1:3]}.{self._dimension_value[0][-1]}"
-                )
-                self._human_readable_log = f"Zone {self._zone}'s secondary sensor {self._sensor} is reporting a temperature of {self._secondary_temperature}°C."  # pylint: disable=line-too-long
+            if self._dimension_value:
+                temp = _who4_temperature(self._dimension_value[0])
+                if self._sensor is None:
+                    self._type = MESSAGE_TYPE_MAIN_TEMPERATURE
+                    self._measured_temperature = temp
+                    self._human_readable_log = f"Zone {self._zone}'s main sensor is reporting a temperature of {self._measured_temperature}°C."  # pylint: disable=line-too-long
+                else:
+                    self._type = MESSAGE_TYPE_SECONDARY_TEMPERATURE
+                    self._secondary_temperature = temp
+                    self._human_readable_log = f"Zone {self._zone}'s secondary sensor {self._sensor} is reporting a temperature of {self._secondary_temperature}°C."  # pylint: disable=line-too-long
 
         elif self._dimension == 5 and self._dimension_value:  # Local control
             # MyHOME_Suite writes *#4*Z*#5*val##; the meaning of val is not
@@ -1051,8 +1059,10 @@ class OWNHeatingEvent(OWNEvent):
 
         elif self._dimension == 12:  # Local set temperature (set+offset)
             self._type = MESSAGE_TYPE_LOCAL_TARGET_TEMPERATURE
-            self._local_set_temperature = float(
-                f"{self._dimension_value[0][1:3]}.{self._dimension_value[0][-1]}"
+            self._local_set_temperature = (
+                _who4_temperature(self._dimension_value[0])
+                if self._dimension_value
+                else None
             )
             self._human_readable_log = f"Zone {self._zone}'s local target temperature is set to {self._local_set_temperature}°C."  # pylint: disable=line-too-long
 
@@ -1085,8 +1095,10 @@ class OWNHeatingEvent(OWNEvent):
 
         elif self._dimension == 14:  # Set temperature
             self._type = MESSAGE_TYPE_TARGET_TEMPERATURE
-            self._set_temperature = float(
-                f"{self._dimension_value[0][1:3]}.{self._dimension_value[0][-1]}"
+            self._set_temperature = (
+                _who4_temperature(self._dimension_value[0])
+                if self._dimension_value
+                else None
             )
             self._human_readable_log = f"Zone {self._zone}'s target temperature is set to {self._set_temperature}°C."  # pylint: disable=line-too-long
 
@@ -1099,16 +1111,7 @@ class OWNHeatingEvent(OWNEvent):
                 else:
                     temp_raw = self._dimension_value[0]
 
-                if len(temp_raw) < 3:
-                    self._secondary_temperature = None
-                elif temp_raw.startswith("1") and len(temp_raw) == 4 and int(temp_raw[1:]) != 0:
-                    self._secondary_temperature = -float(
-                        f"{temp_raw[1:3]}.{temp_raw[-1]}"
-                    )
-                else:
-                    self._secondary_temperature = float(
-                        f"{temp_raw[1:3]}.{temp_raw[-1]}"
-                    )
+                self._secondary_temperature = _who4_temperature(temp_raw)
 
             if self._secondary_temperature is not None:
                 if self._sensor is not None:

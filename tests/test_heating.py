@@ -1,6 +1,7 @@
 """Regression tests for WHO 4 heating messages."""
 
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,8 @@ from OWNd.message import (
     LOCAL_CONTROL_UNKNOWN,
     MESSAGE_TYPE_ACTION,
     MESSAGE_TYPE_LOCAL_TARGET_TEMPERATURE,
+    MESSAGE_TYPE_MAIN_TEMPERATURE,
+    MESSAGE_TYPE_MODE_TARGET,
     MESSAGE_TYPE_TARGET_TEMPERATURE,
     MESSAGE_TYPE_SECONDARY_TEMPERATURE,
     MESSAGE_TYPE_ZONE_STATE,
@@ -306,3 +309,56 @@ def test_every_golden_dimension_7_capture_is_a_zone_state(frame: str) -> None:
     assert event.zone_context in (ZONE_CONTEXT_HEATING, ZONE_CONTEXT_COOLING)
     assert event.zone_state in (ZONE_STATE_SETPOINT, ZONE_STATE_PROTECTION)
     assert (event.set_temperature is not None) == (event.zone_state == ZONE_STATE_SETPOINT)
+
+
+# --- WHO 4 temperature sign, freezing and zero tests -----------------------
+
+FREEZING_TEMPS = [("1001", -0.1), ("1055", -5.5), ("1123", -12.3), ("1200", -20.0), ("1500", -50.0)]
+NON_FREEZING_TEMPS = [("0001", 0.1), ("0055", 5.5), ("0215", 21.5), ("0999", 99.9)]
+ZERO_TEMPS = [("0000", 0.0), ("1000", 0.0)]
+ALL_TEMP_CASES = FREEZING_TEMPS + NON_FREEZING_TEMPS + ZERO_TEMPS
+
+
+def _assert_temp(val: float | None, expected: float) -> None:
+    assert val == expected
+    if expected == 0.0:
+        assert val is not None and math.copysign(1.0, val) == 1.0, f"negative zero: {val!r}"
+        assert str(val) == "0.0"
+
+
+@pytest.mark.parametrize(("raw", "expected"), ALL_TEMP_CASES)
+def test_dimension_0_main_temperature_sign(raw: str, expected: float) -> None:
+    event = OWNHeatingEvent(f"*#4*1*0*{raw}##")
+    assert event.message_type == MESSAGE_TYPE_MAIN_TEMPERATURE
+    _assert_temp(event.main_temperature, expected)
+
+
+@pytest.mark.parametrize(("raw", "expected"), ALL_TEMP_CASES)
+def test_dimension_15_probe_temperature_sign(raw: str, expected: float) -> None:
+    event = OWNHeatingEvent(f"*#4*1*15*01*{raw}*3##")
+    assert event.message_type == MESSAGE_TYPE_SECONDARY_TEMPERATURE
+    assert event.secondary_temperature is not None
+    _assert_temp(event.secondary_temperature[1], expected)
+    _assert_temp(event.probe_temperature, expected)
+
+
+@pytest.mark.parametrize(("raw", "expected"), ALL_TEMP_CASES)
+def test_dimension_14_target_temperature_sign(raw: str, expected: float) -> None:
+    event = OWNHeatingEvent(f"*#4*1*14*{raw}*1##")
+    assert event.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE
+    _assert_temp(event.set_temperature, expected)
+
+
+@pytest.mark.parametrize(("raw", "expected"), ALL_TEMP_CASES)
+def test_dimension_12_local_target_temperature_sign(raw: str, expected: float) -> None:
+    event = OWNHeatingEvent(f"*#4*1*12*{raw}*1##")
+    assert event.message_type == MESSAGE_TYPE_LOCAL_TARGET_TEMPERATURE
+    _assert_temp(event.local_set_temperature, expected)
+
+
+@pytest.mark.parametrize(("raw", "expected"), ALL_TEMP_CASES)
+def test_mode_target_temperature_sign(raw: str, expected: float) -> None:
+    event = OWNHeatingEvent(f"*4*1101#{raw}*1##")
+    assert event.message_type == MESSAGE_TYPE_MODE_TARGET
+    _assert_temp(event.set_temperature, expected)
+
