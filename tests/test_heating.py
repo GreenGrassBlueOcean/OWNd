@@ -33,6 +33,7 @@ from OWNd.message import (
     ZONE_STATE_OFF,
     ZONE_STATE_PROTECTION,
     ZONE_STATE_SETPOINT,
+    who4_temperature,
 )
 
 
@@ -383,7 +384,16 @@ def test_dimension_0_secondary_sensor_temperature_sign(raw: str, expected: float
     _assert_temp(event.probe_temperature, expected)
 
 
-def test_empty_dimension_12_and_14_values() -> None:
+def test_empty_dimension_values() -> None:
+    dim0 = OWNHeatingEvent("*#4*1*0##")
+    assert dim0.message_type == MESSAGE_TYPE_MAIN_TEMPERATURE
+    assert dim0.main_temperature is None
+
+    dim0_sec = OWNHeatingEvent("*#4*201*0##")
+    assert dim0_sec.message_type == MESSAGE_TYPE_SECONDARY_TEMPERATURE
+    assert dim0_sec.secondary_temperature == [2, None]
+    assert dim0_sec.probe_temperature is None
+
     dim12 = OWNHeatingEvent("*#4*1*12##")
     assert dim12.message_type == MESSAGE_TYPE_LOCAL_TARGET_TEMPERATURE
     assert dim12.local_set_temperature is None
@@ -391,6 +401,33 @@ def test_empty_dimension_12_and_14_values() -> None:
     dim14 = OWNHeatingEvent("*#4*1*14##")
     assert dim14.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE
     assert dim14.set_temperature is None
+
+
+def test_human_readable_log_omits_none_celsius() -> None:
+    dim0 = OWNHeatingEvent("*#4*1*0*2000##")
+    assert "None°C" not in dim0.human_readable_log
+
+    dim0_empty = OWNHeatingEvent("*#4*1*0##")
+    assert "None°C" not in dim0_empty.human_readable_log
+
+    dim12 = OWNHeatingEvent("*#4*1*12##")
+    assert "None°C" not in dim12.human_readable_log
+
+    dim14 = OWNHeatingEvent("*#4*1*14##")
+    assert "None°C" not in dim14.human_readable_log
+
+    mode = OWNHeatingEvent("*4*1101#2000*1##")
+    assert "None°C" not in mode.human_readable_log
+
+
+def test_who4_temperature_public_function() -> None:
+    assert who4_temperature("0215") == 21.5
+    assert who4_temperature("1055") == -5.5
+    assert who4_temperature("1000") == 0.0
+    assert math.copysign(1.0, who4_temperature("1000")) == 1.0
+    assert who4_temperature("invalid") is None
+    # Ensure non-ASCII Unicode Nd digits are rejected
+    assert who4_temperature("\u0660\u0662\u0661\u0665") is None
 
 
 @pytest.mark.parametrize("invalid_raw", ["12", "215", "00215", "2000"])
