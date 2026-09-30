@@ -362,3 +362,11 @@ def test_mode_target_temperature_sign(raw: str, expected: float) -> None:
     assert event.message_type == MESSAGE_TYPE_MODE_TARGET
     _assert_temp(event.set_temperature, expected)
 
+
+def test_short_temperature_returns_none() -> None:
+    event = OWNHeatingEvent("*#4*1*0*12##")
+    assert event.main_temperature is None
+    probe_event = OWNHeatingEvent("*#4*1*15*01*12*3##")
+    assert probe_event.probe_temperature is None
+
+

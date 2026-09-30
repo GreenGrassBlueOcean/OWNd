@@ -79,12 +79,10 @@ def _who4_temperature(raw: str) -> float | None:
     """Decode an OpenWebNet WHO 4 temperature field (SXXX, tenths of a degree)."""
     if len(raw) < 3:
         return None
-    try:
-        if raw.startswith("1") and len(raw) == 4 and int(raw[1:]) != 0:
-            return -float(f"{raw[1:3]}.{raw[-1]}")
-        return float(f"{raw[1:3]}.{raw[-1]}")
-    except (ValueError, IndexError):
-        return None
+    if raw.startswith("1") and len(raw) == 4 and int(raw[1:]) != 0:
+        return -float(f"{raw[1:3]}.{raw[-1]}")
+    return float(f"{raw[1:3]}.{raw[-1]}")
+
 
 
 def _zone_state(
