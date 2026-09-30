@@ -1,6 +1,7 @@
 """Regression tests for WHO 4 heating messages."""
 
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,8 @@ from OWNd.message import (
     LOCAL_CONTROL_UNKNOWN,
     MESSAGE_TYPE_ACTION,
     MESSAGE_TYPE_LOCAL_TARGET_TEMPERATURE,
+    MESSAGE_TYPE_MAIN_TEMPERATURE,
+    MESSAGE_TYPE_MODE_TARGET,
     MESSAGE_TYPE_TARGET_TEMPERATURE,
     MESSAGE_TYPE_SECONDARY_TEMPERATURE,
     MESSAGE_TYPE_ZONE_STATE,
@@ -30,6 +33,7 @@ from OWNd.message import (
     ZONE_STATE_OFF,
     ZONE_STATE_PROTECTION,
     ZONE_STATE_SETPOINT,
+    who4_temperature,
 )
 
 
@@ -306,3 +310,151 @@ def test_every_golden_dimension_7_capture_is_a_zone_state(frame: str) -> None:
     assert event.zone_context in (ZONE_CONTEXT_HEATING, ZONE_CONTEXT_COOLING)
     assert event.zone_state in (ZONE_STATE_SETPOINT, ZONE_STATE_PROTECTION)
     assert (event.set_temperature is not None) == (event.zone_state == ZONE_STATE_SETPOINT)
+
+
+# --- WHO 4 temperature sign, freezing and zero tests -----------------------
+
+FREEZING_TEMPS = [("1001", -0.1), ("1055", -5.5), ("1123", -12.3), ("1200", -20.0), ("1500", -50.0)]
+NON_FREEZING_TEMPS = [("0001", 0.1), ("0055", 5.5), ("0215", 21.5), ("0999", 99.9)]
+ZERO_TEMPS = [("0000", 0.0), ("1000", 0.0)]
+ALL_TEMP_CASES = FREEZING_TEMPS + NON_FREEZING_TEMPS + ZERO_TEMPS
+
+
+def _assert_temp(val: float | None, expected: float) -> None:
+    assert val == expected
+    if expected == 0.0:
+        assert val is not None and math.copysign(1.0, val) == 1.0, f"negative zero: {val!r}"
+        assert str(val) == "0.0"
+
+
+@pytest.mark.parametrize(("raw", "expected"), ALL_TEMP_CASES)
+def test_dimension_0_main_temperature_sign(raw: str, expected: float) -> None:
+    event = OWNHeatingEvent(f"*#4*1*0*{raw}##")
+    assert event.message_type == MESSAGE_TYPE_MAIN_TEMPERATURE
+    _assert_temp(event.main_temperature, expected)
+
+
+@pytest.mark.parametrize(("raw", "expected"), ALL_TEMP_CASES)
+def test_dimension_15_probe_temperature_sign(raw: str, expected: float) -> None:
+    event = OWNHeatingEvent(f"*#4*1*15*01*{raw}*3##")
+    assert event.message_type == MESSAGE_TYPE_SECONDARY_TEMPERATURE
+    assert event.secondary_temperature is not None
+    _assert_temp(event.secondary_temperature[1], expected)
+    _assert_temp(event.probe_temperature, expected)
+
+
+@pytest.mark.parametrize(("raw", "expected"), ALL_TEMP_CASES)
+def test_dimension_14_target_temperature_sign(raw: str, expected: float) -> None:
+    event = OWNHeatingEvent(f"*#4*1*14*{raw}*1##")
+    assert event.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE
+    _assert_temp(event.set_temperature, expected)
+
+
+@pytest.mark.parametrize(("raw", "expected"), ALL_TEMP_CASES)
+def test_dimension_12_local_target_temperature_sign(raw: str, expected: float) -> None:
+    event = OWNHeatingEvent(f"*#4*1*12*{raw}*1##")
+    assert event.message_type == MESSAGE_TYPE_LOCAL_TARGET_TEMPERATURE
+    _assert_temp(event.local_set_temperature, expected)
+
+
+@pytest.mark.parametrize(("raw", "expected"), ALL_TEMP_CASES)
+def test_mode_target_temperature_sign(raw: str, expected: float) -> None:
+    event = OWNHeatingEvent(f"*4*1101#{raw}*1##")
+    assert event.message_type == MESSAGE_TYPE_MODE_TARGET
+    _assert_temp(event.set_temperature, expected)
+
+
+@pytest.mark.parametrize(("raw", "expected"), ALL_TEMP_CASES)
+def test_dimension_7_setpoint_temperature_sign(raw: str, expected: float) -> None:
+    event = OWNHeatingEvent(f"*#4*2*7*1*1*{raw}##")
+    assert event.message_type == MESSAGE_TYPE_ZONE_STATE
+    assert event.zone == 2
+    assert event.zone_context == ZONE_CONTEXT_HEATING
+    assert event.zone_state == ZONE_STATE_SETPOINT
+    _assert_temp(event.set_temperature, expected)
+
+
+@pytest.mark.parametrize(("raw", "expected"), ALL_TEMP_CASES)
+def test_dimension_0_secondary_sensor_temperature_sign(raw: str, expected: float) -> None:
+    event = OWNHeatingEvent(f"*#4*201*0*{raw}##")
+    assert event.message_type == MESSAGE_TYPE_SECONDARY_TEMPERATURE
+    assert event.zone == 1
+    assert event.secondary_temperature is not None
+    _assert_temp(event.secondary_temperature[1], expected)
+    _assert_temp(event.probe_temperature, expected)
+
+
+def test_empty_dimension_values() -> None:
+    dim0 = OWNHeatingEvent("*#4*1*0##")
+    assert dim0.message_type == MESSAGE_TYPE_MAIN_TEMPERATURE
+    assert dim0.main_temperature is None
+
+    dim0_sec = OWNHeatingEvent("*#4*201*0##")
+    assert dim0_sec.message_type == MESSAGE_TYPE_SECONDARY_TEMPERATURE
+    assert dim0_sec.secondary_temperature == [2, None]
+    assert dim0_sec.probe_temperature is None
+
+    dim12 = OWNHeatingEvent("*#4*1*12##")
+    assert dim12.message_type == MESSAGE_TYPE_LOCAL_TARGET_TEMPERATURE
+    assert dim12.local_set_temperature is None
+
+    dim14 = OWNHeatingEvent("*#4*1*14##")
+    assert dim14.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE
+    assert dim14.set_temperature is None
+
+
+def test_human_readable_log_omits_none_celsius() -> None:
+    dim0 = OWNHeatingEvent("*#4*1*0*2000##")
+    assert "None°C" not in dim0.human_readable_log
+
+    dim0_empty = OWNHeatingEvent("*#4*1*0##")
+    assert "None°C" not in dim0_empty.human_readable_log
+
+    dim12 = OWNHeatingEvent("*#4*1*12##")
+    assert "None°C" not in dim12.human_readable_log
+
+    dim14 = OWNHeatingEvent("*#4*1*14##")
+    assert "None°C" not in dim14.human_readable_log
+
+    mode = OWNHeatingEvent("*4*1101#2000*1##")
+    assert "None°C" not in mode.human_readable_log
+
+
+def test_who4_temperature_public_function() -> None:
+    assert who4_temperature("0215") == 21.5
+    assert who4_temperature("1055") == -5.5
+    assert who4_temperature("1000") == 0.0
+    assert math.copysign(1.0, who4_temperature("1000")) == 1.0
+    assert who4_temperature("invalid") is None
+    # Ensure non-ASCII Unicode Nd digits are rejected
+    assert who4_temperature("\u0660\u0662\u0661\u0665") is None
+
+
+@pytest.mark.parametrize("invalid_raw", ["12", "215", "00215", "2000"])
+def test_invalid_temperature_width_and_sign_return_none(invalid_raw: str) -> None:
+    event = OWNHeatingEvent(f"*#4*1*0*{invalid_raw}##")
+    assert event.message_type == MESSAGE_TYPE_MAIN_TEMPERATURE
+    assert event.main_temperature is None
+
+    probe_event = OWNHeatingEvent(f"*#4*1*15*01*{invalid_raw}*3##")
+    assert probe_event.message_type == MESSAGE_TYPE_SECONDARY_TEMPERATURE
+    assert probe_event.probe_temperature is None
+
+    target_event = OWNHeatingEvent(f"*#4*1*14*{invalid_raw}*1##")
+    assert target_event.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE
+    assert target_event.set_temperature is None
+
+    local_target_event = OWNHeatingEvent(f"*#4*1*12*{invalid_raw}*1##")
+    assert local_target_event.message_type == MESSAGE_TYPE_LOCAL_TARGET_TEMPERATURE
+    assert local_target_event.local_set_temperature is None
+
+    mode_event = OWNHeatingEvent(f"*4*1101#{invalid_raw}*1##")
+    assert mode_event.message_type == MESSAGE_TYPE_MODE_TARGET
+    assert mode_event.set_temperature is None
+
+    dim7_event = OWNHeatingEvent(f"*#4*2*7*1*1*{invalid_raw}##")
+    assert dim7_event.message_type == MESSAGE_TYPE_ZONE_STATE
+    assert dim7_event.set_temperature is None
+
+
+
