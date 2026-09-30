@@ -88,10 +88,6 @@ def who4_temperature(raw: str) -> float | None:
     return magnitude
 
 
-# Backward-compatible private alias for existing internal call sites
-_who4_temperature = who4_temperature
-
-
 def _zone_state(
     values: list[str],
 ) -> tuple[str | None, str | None, float | None]:
