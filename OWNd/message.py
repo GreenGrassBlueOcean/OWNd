@@ -76,13 +76,13 @@ PIR_SENSITIVITY_MAPPING = ["low", "medium", "high", "very high"]
 
 
 def _who4_temperature(raw: str) -> float | None:
-    """Decode an OpenWebNet WHO 4 temperature field (SXXX, tenths of a degree)."""
-    if len(raw) < 3:
+    """Decode WHO 4 temperature ``SXXX`` (tenths of a degree)."""
+    if not re.fullmatch(r"[01]\d{3}", raw):
         return None
-    if raw.startswith("1") and len(raw) == 4 and int(raw[1:]) != 0:
-        return -float(f"{raw[1:3]}.{raw[-1]}")
-    return float(f"{raw[1:3]}.{raw[-1]}")
-
+    magnitude = int(raw[1:]) / 10.0
+    if raw[0] == "1" and magnitude != 0.0:
+        return -magnitude
+    return magnitude
 
 
 def _zone_state(
@@ -96,11 +96,7 @@ def _zone_state(
     context = _ZONE_CONTEXTS.get(values[0]) if values else None
     state = _ZONE_STATES.get(values[1]) if len(values) > 1 else None
     temperature = None
-    if (
-        state == ZONE_STATE_SETPOINT
-        and len(values) > 2
-        and re.fullmatch(r"\d{4}", values[2])
-    ):
+    if state == ZONE_STATE_SETPOINT and len(values) > 2:
         temperature = _who4_temperature(values[2])
     return context, state, temperature
 

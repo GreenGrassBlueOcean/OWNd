@@ -363,10 +363,61 @@ def test_mode_target_temperature_sign(raw: str, expected: float) -> None:
     _assert_temp(event.set_temperature, expected)
 
 
-def test_short_temperature_returns_none() -> None:
-    event = OWNHeatingEvent("*#4*1*0*12##")
+@pytest.mark.parametrize(("raw", "expected"), ALL_TEMP_CASES)
+def test_dimension_7_setpoint_temperature_sign(raw: str, expected: float) -> None:
+    event = OWNHeatingEvent(f"*#4*2*7*1*1*{raw}##")
+    assert event.message_type == MESSAGE_TYPE_ZONE_STATE
+    assert event.zone == 2
+    assert event.zone_context == ZONE_CONTEXT_HEATING
+    assert event.zone_state == ZONE_STATE_SETPOINT
+    _assert_temp(event.set_temperature, expected)
+
+
+@pytest.mark.parametrize(("raw", "expected"), ALL_TEMP_CASES)
+def test_dimension_0_secondary_sensor_temperature_sign(raw: str, expected: float) -> None:
+    event = OWNHeatingEvent(f"*#4*201*0*{raw}##")
+    assert event.message_type == MESSAGE_TYPE_SECONDARY_TEMPERATURE
+    assert event.zone == 1
+    assert event.secondary_temperature is not None
+    _assert_temp(event.secondary_temperature[1], expected)
+    _assert_temp(event.probe_temperature, expected)
+
+
+def test_empty_dimension_12_and_14_values() -> None:
+    dim12 = OWNHeatingEvent("*#4*1*12##")
+    assert dim12.message_type == MESSAGE_TYPE_LOCAL_TARGET_TEMPERATURE
+    assert dim12.local_set_temperature is None
+
+    dim14 = OWNHeatingEvent("*#4*1*14##")
+    assert dim14.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE
+    assert dim14.set_temperature is None
+
+
+@pytest.mark.parametrize("invalid_raw", ["12", "215", "00215", "2000"])
+def test_invalid_temperature_width_and_sign_return_none(invalid_raw: str) -> None:
+    event = OWNHeatingEvent(f"*#4*1*0*{invalid_raw}##")
+    assert event.message_type == MESSAGE_TYPE_MAIN_TEMPERATURE
     assert event.main_temperature is None
-    probe_event = OWNHeatingEvent("*#4*1*15*01*12*3##")
+
+    probe_event = OWNHeatingEvent(f"*#4*1*15*01*{invalid_raw}*3##")
+    assert probe_event.message_type == MESSAGE_TYPE_SECONDARY_TEMPERATURE
     assert probe_event.probe_temperature is None
+
+    target_event = OWNHeatingEvent(f"*#4*1*14*{invalid_raw}*1##")
+    assert target_event.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE
+    assert target_event.set_temperature is None
+
+    local_target_event = OWNHeatingEvent(f"*#4*1*12*{invalid_raw}*1##")
+    assert local_target_event.message_type == MESSAGE_TYPE_LOCAL_TARGET_TEMPERATURE
+    assert local_target_event.local_set_temperature is None
+
+    mode_event = OWNHeatingEvent(f"*4*1101#{invalid_raw}*1##")
+    assert mode_event.message_type == MESSAGE_TYPE_MODE_TARGET
+    assert mode_event.set_temperature is None
+
+    dim7_event = OWNHeatingEvent(f"*#4*2*7*1*1*{invalid_raw}##")
+    assert dim7_event.message_type == MESSAGE_TYPE_ZONE_STATE
+    assert dim7_event.set_temperature is None
+
 
 
