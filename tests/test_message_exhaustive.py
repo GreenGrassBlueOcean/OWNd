@@ -223,7 +223,7 @@ class TestMessageExhaustiveCoverage:
         assert ev_int.is_alarm is True
 
         ev_act = OWNAlarmEvent("*5*11*0##")
-        assert ev_act.is_armed_home is True
+        assert ev_act.is_armed_home is False
         assert ev_act.general is True
 
         # Sensor in non-zero zone reporting (where="12" -> zone 1, sensor 2)

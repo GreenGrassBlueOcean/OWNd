@@ -99,12 +99,15 @@ Gateways have varying processing limitations, socket budgets, and pacing require
 | **F454** | 4 sessions | 50 ms | 90 s | HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16) |
 | **F455** | 4 sessions | 50 ms | OS TCP only | HMAC-SHA2, Native transitions, Extended frames |
 | **F461** | 4 sessions | 50 ms | 90 s | HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16) |
-| **MH202** | 2 sessions | 100 ms | OS TCP only | HMAC-SHA2, Extended frames, Sound system (WHO 16) |
+| **H4890** | 1 session | 50 ms | OS TCP only | Auth unmeasured, Sound system (WHO 16), Burglar alarm (WHO 5) |
+| **MH202** | 2 sessions | 100 ms | OS TCP only | HMAC-SHA2, Extended frames, Sound system (WHO 16), Burglar alarm (WHO 5) |
 | **MH201** | 1 session | 100 ms | OS TCP only | Legacy password auth, Extended frames, Sound system (WHO 16), Clock diagnostics |
 | **MH200** | 1 session | 150 ms | 90 s | Safe pacing, Legacy password auth, Sound system (WHO 16) |
 | **MH200N** | 1 session | 150 ms | 90 s | Safe pacing, Legacy password auth, Sound system (WHO 16) |
 | **Generic Gateway** | 1 session | 50 ms | OS TCP only | Conservative fallback |
 <!-- END_GATEWAY_PROFILES_TABLE -->
+
+Session, pacing and authentication values in the H4890 row are class defaults, not measurements; only its WHO set (lighting, automation, audio, energy, CEN+, burglar alarm) comes from captures.
 
 Profiles can be resolved automatically using `get_gateway_profile(model_name)`:
 

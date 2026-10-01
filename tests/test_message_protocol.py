@@ -8,6 +8,7 @@ import pytest
 
 from OWNd.message import (
     OWNAlarmCommand,
+    OWNAlarmEvent,
     OWNAutomationCommand,
     OWNAutomationEvent,
     OWNCENEvent,
@@ -91,7 +92,11 @@ def test_status_requests_can_omit_where() -> None:
 
 def test_alarm_command_helpers_and_dispatch() -> None:
     assert str(OWNAlarmCommand.disarm()) == "*5*2*0##"
+    assert str(OWNAlarmCommand.disengage()) == "*5*9*0##"
+    assert str(OWNAlarmCommand.disengage("1")) == "*5*9*1##"
     assert str(OWNAlarmCommand.arm_away()) == "*5*1*0##"
+    assert str(OWNAlarmCommand.engage()) == "*5*8*0##"
+    assert str(OWNAlarmCommand.engage("1")) == "*5*8*1##"
     assert str(OWNAlarmCommand.arm_home()) == "*5*1*0##"
     assert str(OWNAlarmCommand.trigger()) == "*5*17*0##"
     assert str(OWNAlarmCommand.panic()) == "*5*17*0##"
@@ -101,6 +106,104 @@ def test_alarm_command_helpers_and_dispatch() -> None:
     assert str(OWNAlarmCommand.status(None)) == "*#5##"
     assert str(OWNAlarmCommand.status("")) == "*#5##"
     assert isinstance(OWNCommand.parse("*5*2*0##"), OWNAlarmCommand)
+    assert isinstance(OWNCommand.parse("*5*8*0##"), OWNAlarmCommand)
+    assert isinstance(OWNCommand.parse("*5*9*0##"), OWNAlarmCommand)
+
+
+def test_alarm_central_telemetry_and_events() -> None:
+    """Central unit WHO 5 broadcasts (*5*<what>*0##) verify all state and power telemetry properties."""
+    act = OWNMessage.parse("*5*1*0##")
+    assert isinstance(act, OWNAlarmEvent)
+    assert act.general is True
+    assert act.is_active is True
+    assert act.is_armed_away is True
+    assert act.is_disarmed is False
+
+    eng = OWNMessage.parse("*5*8*0##")
+    assert isinstance(eng, OWNAlarmEvent)
+    assert eng.general is True
+    assert eng.is_engaged is True
+    assert eng.is_armed_away is True
+    assert eng.is_disarmed is False
+
+    dis = OWNMessage.parse("*5*9*0##")
+    assert isinstance(dis, OWNAlarmEvent)
+    assert dis.general is True
+    assert dis.is_disarmed is True
+    assert dis.is_armed_away is False
+    assert dis.is_engaged is False
+
+    bat_fault4 = OWNMessage.parse("*5*4*0##")
+    assert isinstance(bat_fault4, OWNAlarmEvent)
+    assert bat_fault4.is_battery_fault is True
+    assert bat_fault4.is_power_telemetry is True
+
+    bat_fault10 = OWNMessage.parse("*5*10*0##")
+    assert isinstance(bat_fault10, OWNAlarmEvent)
+    assert bat_fault10.is_battery_fault is True
+    assert bat_fault10.is_power_telemetry is True
+
+    bat_ok = OWNMessage.parse("*5*5*0##")
+    assert isinstance(bat_ok, OWNAlarmEvent)
+    assert bat_ok.general is True
+    assert bat_ok.is_battery_ok is True
+    assert bat_ok.is_power_telemetry is True
+
+    mains_fault = OWNMessage.parse("*5*6*0##")
+    assert isinstance(mains_fault, OWNAlarmEvent)
+    assert mains_fault.is_mains_fault is True
+    assert mains_fault.is_power_telemetry is True
+
+    mains_ok = OWNMessage.parse("*5*7*0##")
+    assert isinstance(mains_ok, OWNAlarmEvent)
+    assert mains_ok.general is True
+    assert mains_ok.is_mains_ok is True
+    assert mains_ok.is_power_telemetry is True
+
+    # Alarm event subtypes
+    ev_tech = OWNMessage.parse("*5*12*0##")
+    assert isinstance(ev_tech, OWNAlarmEvent)
+    assert ev_tech.is_technical is True
+    assert ev_tech.is_alarm is True
+
+    ev_int = OWNMessage.parse("*5*15*0##")
+    assert isinstance(ev_int, OWNAlarmEvent)
+    assert ev_int.is_intrusion is True
+    assert ev_int.is_alarm is True
+
+    ev_tamper = OWNMessage.parse("*5*16*0##")
+    assert isinstance(ev_tamper, OWNAlarmEvent)
+    assert ev_tamper.is_tamper is True
+    assert ev_tamper.is_alarm is True
+
+    ev_panic = OWNMessage.parse("*5*17*0##")
+    assert isinstance(ev_panic, OWNAlarmEvent)
+    assert ev_panic.is_panic is True
+    assert ev_panic.is_alarm is True
+
+    ev_silent = OWNMessage.parse("*5*31*0##")
+    assert isinstance(ev_silent, OWNAlarmEvent)
+    assert ev_silent.is_silent is True
+    assert ev_silent.is_alarm is True
+
+
+def test_alarm_zone_telemetry_does_not_pollute_system_arm_state() -> None:
+    """Active zone partition reports (*5*11*#1##) must never trigger is_armed_home."""
+    z_act = OWNMessage.parse("*5*11*#1##")
+    assert isinstance(z_act, OWNAlarmEvent)
+    assert z_act.general is False
+    assert z_act.zone == "1"
+    assert z_act.is_zone_active is True
+    assert z_act.is_armed_home is False
+    assert z_act.is_armed_away is False
+
+    z_byp = OWNMessage.parse("*5*18*#7##")
+    assert isinstance(z_byp, OWNAlarmEvent)
+    assert z_byp.general is False
+    assert z_byp.zone == "7"
+    assert z_byp.is_zone_inactive is True
+    assert z_byp.is_zone_active is False
+    assert z_byp.is_disarmed is False
 
 
 def test_f454_time_without_timezone_is_parsed_safely() -> None:

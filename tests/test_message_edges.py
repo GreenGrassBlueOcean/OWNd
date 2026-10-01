@@ -391,7 +391,44 @@ class TestAlarmEdgeCases:
     def test_alarm_active_zone(self):
         msg = OWNEvent.parse("*5*11*#1##")
         assert isinstance(msg, OWNAlarmEvent)
-        assert msg.is_active is True
+        # A zone dump must not move the panel.
+        assert msg.is_active is False
+        assert msg.is_armed_home is False
+        assert msg.is_zone_active is True
+
+    def test_alarm_system_active_is_active(self):
+        assert OWNEvent.parse("*5*11**##").is_active is True
+        assert OWNEvent.parse("*5*1*0##").is_active is True
+        # No capture shows a system-level WHAT 11, so it never means "home".
+        assert OWNEvent.parse("*5*11*0##").is_armed_home is False
+        assert OWNEvent.parse("*5*11*0##").is_active is True
+        assert OWNEvent.parse("*5*8*#3##").is_engaged is False
+        assert OWNEvent.parse("*5*8*0##").is_engaged is True
+
+    @pytest.mark.parametrize("frame", ["*5*1*##", "*5*1**##", "*5*8*##"])
+    def test_alarm_broadcast_spellings(self, frame):
+        from OWNd.message import OWNMessage
+
+        for msg in (OWNMessage.parse(frame), OWNEvent.parse(frame)):
+            assert isinstance(msg, OWNAlarmEvent)
+            assert msg.general is True
+
+    @pytest.mark.parametrize("frame", ["*5*1**##", "*5*1*0##"])
+    def test_alarm_system_address_is_one_identity(self, frame):
+        msg = OWNEvent.parse(frame)
+        assert msg.where == "0"
+        assert msg.unique_id == "5-0"
+
+    def test_empty_where_stays_distinct_from_the_panel(self):
+        """A gateway without a panel dumps *5*9*## on the poll; a panel says *5*9*0##."""
+        msg = OWNEvent.parse("*5*9*##")
+        assert msg.where == ""
+        assert msg.general is True
+
+    def test_empty_where_is_alarm_only(self):
+        from OWNd.message import OWNMessage
+
+        assert OWNMessage.parse("*1*1*##") is None
 
     def test_alarm_reset_technical(self):
         msg = OWNEvent.parse("*5*13**##")

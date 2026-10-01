@@ -10,14 +10,17 @@ if str(REPO_ROOT) not in sys.path:
 from OWNd.profiles import (
     CANONICAL_PROFILE_ORDER,
     DEFAULT_SUPPORTED_WHO,
+    WHO_ALARM,
     WHO_LIGHTING,
     WHO_LOAD_CONTROL,
     WHO_SOUND,
     WHO_SOUND_DIFFUSION,
     _PROFILES,
     GatewayProfile,
+    H4890Profile,
     MH200NProfile,
     MH200Profile,
+    MH202Profile,
     canonical_profiles,
     get_gateway_profile,
 )
@@ -103,6 +106,53 @@ def test_load_control_and_sound_diffusion_have_distinct_who_codes() -> None:
     assert WHO_SOUND_DIFFUSION == 22
     assert WHO_LOAD_CONTROL in DEFAULT_SUPPORTED_WHO
     assert WHO_SOUND_DIFFUSION in DEFAULT_SUPPORTED_WHO
+
+
+@pytest.mark.parametrize("name", ["H4890", "h4890", "AM4890", "LN4890", "LN4890A", "4890"])
+def test_4890_family_carries_the_burglar_alarm(name: str) -> None:
+    """The H4890 relays the alarm bus: WHO 5 frames are in the MyHOME#466 and #564 captures."""
+    profile = get_gateway_profile(name)
+
+    assert isinstance(profile, H4890Profile)
+    assert profile.model_name == "H4890"
+    assert profile.supports_who(WHO_ALARM)
+    # Only the subsystems seen in the captures, not the generic default set.
+    assert set(profile.supported_who) == {1, 2, 5, 16, 18, 22, 25}
+    assert "Burglar alarm (WHO 5)" in profile.features_summary
+
+
+def test_h4890_does_not_claim_a_measured_auth_scheme() -> None:
+    summary = get_gateway_profile("H4890").features_summary
+    assert "Auth unmeasured" in summary
+    assert "HMAC" not in summary and "Legacy password" not in summary
+
+
+@pytest.mark.parametrize("name", ["HC4890", "MH4892", "MH4893C", "3488", "3487", "myhometouch", "myhometouch10"])
+def test_other_touch_screens_stay_generic_until_captured(name: str) -> None:
+    """Only the 3.5" 4890 family is measured; other screens may carry WHO 4 and must not be restricted."""
+    profile = get_gateway_profile(name)
+
+    assert not isinstance(profile, H4890Profile)
+
+
+@pytest.mark.parametrize("name", ["MH202", "mh202", "MH-202", "MH 202"])
+def test_mh202_carries_the_burglar_alarm(name: str) -> None:
+    """The MH202 relays the alarm bus: WHO 5 frames verified in MyHOME#564 (comment 5917195080)."""
+    profile = get_gateway_profile(name)
+
+    assert isinstance(profile, MH202Profile)
+    assert profile.model_name == "MH202"
+    assert profile.supports_who(WHO_ALARM)
+    assert set(DEFAULT_SUPPORTED_WHO) <= set(profile.supported_who)
+    assert "Burglar alarm (WHO 5)" in profile.features_summary
+
+
+def test_only_supported_families_advertise_the_alarm() -> None:
+    """Only profiles with verified alarm captures claim WHO 5."""
+    assert WHO_ALARM == 5
+    assert WHO_ALARM not in DEFAULT_SUPPORTED_WHO
+    for key, profile in _PROFILES.items():
+        assert profile.supports_who(WHO_ALARM) is (key in {"h4890", "mh202"})
 
 
 def test_canonical_order_covers_registry() -> None:

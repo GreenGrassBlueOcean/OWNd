@@ -20,7 +20,7 @@ class OWNAlarmEvent(OWNEvent):
         self._sensor: int | None = None
 
         where = self._where or ""
-        if where == "*":
+        if where in ("*", ""):
             self._system = True
             self._human_readable_log = "System is reporting: "
         elif where.startswith("#"):
@@ -114,23 +114,77 @@ class OWNAlarmEvent(OWNEvent):
 
     @property
     def is_active(self) -> bool:
-        return self._state_code == 1 or self._state_code == 11
+        """System-wide activation only: zone/sensor frames never move the panel."""
+        return self._state_code in (1, 11) and self._system
 
     @property
     def is_engaged(self) -> bool:
-        return self._state_code == 8
+        return self._state_code == 8 and self._system
 
     @property
     def is_disarmed(self) -> bool:
-        return self._state_code in (0, 2, 9)
+        return self._state_code in (0, 2, 9) and self._system
 
     @property
     def is_armed_away(self) -> bool:
-        return self._state_code in (1, 8)
+        return self._state_code in (1, 8) and self._system
 
     @property
     def is_armed_home(self) -> bool:
-        return self._state_code == 11
+        # Always False. WHAT 11 is "active zone" and no capture shows a
+        # system-level WHAT 11, so home vs away is not distinguishable on the
+        # wire; the system state comes from WHAT 1 (activation) and 8/9.
+        return False
+
+    @property
+    def is_zone_active(self) -> bool:
+        return self._state_code == 11 and not self._system
+
+    @property
+    def is_zone_inactive(self) -> bool:
+        """WHAT 18 is "non-active zone" (partition state), not a bypass."""
+        return self._state_code == 18 and not self._system
+
+    @property
+    def is_battery_fault(self) -> bool:
+        # Not system-scoped: check general/zone/sensor to know the source.
+        return self._state_code in (4, 10)
+
+    @property
+    def is_battery_ok(self) -> bool:
+        return self._state_code == 5
+
+    @property
+    def is_mains_fault(self) -> bool:
+        return self._state_code == 6
+
+    @property
+    def is_mains_ok(self) -> bool:
+        return self._state_code == 7
+
+    @property
+    def is_power_telemetry(self) -> bool:
+        return self._state_code in (4, 5, 6, 7, 10)
+
+    @property
+    def is_intrusion(self) -> bool:
+        return self._state_code == 15
+
+    @property
+    def is_tamper(self) -> bool:
+        return self._state_code == 16
+
+    @property
+    def is_panic(self) -> bool:
+        return self._state_code == 17
+
+    @property
+    def is_technical(self) -> bool:
+        return self._state_code == 12
+
+    @property
+    def is_silent(self) -> bool:
+        return self._state_code == 31
 
     @property
     def state_name(self) -> str | None:
@@ -206,6 +260,30 @@ class OWNAlarmCommand(OWNCommand):
     @classmethod
     def panic(cls, where: str | int = "0") -> OWNAlarmCommand:
         return cls.trigger(where=where)
+
+    @classmethod
+    def engage(cls, where: str | int = "0") -> OWNAlarmCommand:
+        """Experimental: engage burglar alarm for zone (default "0" = central).
+
+        No TX capture of this command exists yet.
+        """
+        message = cls(f"*5*8*{where}##")
+        message._human_readable_log = (
+            f"Engaging burglar alarm for zone {where}."
+        )
+        return message
+
+    @classmethod
+    def disengage(cls, where: str | int = "0") -> OWNAlarmCommand:
+        """Experimental: disengage burglar alarm for zone (default "0" = central).
+
+        No TX capture of this command exists yet.
+        """
+        message = cls(f"*5*9*{where}##")
+        message._human_readable_log = (
+            f"Disengaging burglar alarm for zone {where}."
+        )
+        return message
 
 
 register_event_parser(5, OWNAlarmEvent)
