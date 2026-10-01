@@ -312,9 +312,24 @@ OWNd maintains an automated test suite with strict **100.0% line coverage** (3,0
 | Component / Module | Coverage | Notes |
 |---|:---:|---|
 | [`OWNd/__init__.py`](OWNd/__init__.py) | **100%** | Package initialization and version metadata |
-| [`OWNd/connection.py`](OWNd/connection.py) | **100%** | Hardened dual-session TCP engine, SHA-1/HMAC auth, keepalives & bounded read loops |
+| [`OWNd/connection/__init__.py`](OWNd/connection/__init__.py) | **100%** | Hardened dual-session TCP engine & connection package exports |
+| [`OWNd/connection/auth.py`](OWNd/connection/auth.py) | **100%** | Pure cryptographic routines: Open password, HMAC-SHA1/SHA256, hex/dec conversions |
+| [`OWNd/connection/command_session.py`](OWNd/connection/command_session.py) | **100%** | Command queue pacing, synchronized send, and request/reply tracking |
+| [`OWNd/connection/event_session.py`](OWNd/connection/event_session.py) | **100%** | Long-lived event bus session, keepalives, and automatic reconnection |
+| [`OWNd/connection/gateway.py`](OWNd/connection/gateway.py) | **100%** | Gateway configuration container, endpoint discovery, and profile mapping |
+| [`OWNd/connection/session.py`](OWNd/connection/session.py) | **100%** | Base TCP transport, negotiation state machine, and frame buffering |
 | [`OWNd/discovery.py`](OWNd/discovery.py) | **100%** | SSDP multicast and UPnP XML gateway discovery and descriptor parsing |
-| [`OWNd/message.py`](OWNd/message.py) | **100%** | OpenWebNet frame parsers, encoders, and WHO dimension decoders |
+| [`OWNd/message/__init__.py`](OWNd/message/__init__.py) | **100%** | OpenWebNet message package exports & WHO subsystem registries |
+| [`OWNd/message/alarm.py`](OWNd/message/alarm.py) | **100%** | WHO 5: Intrusion and technical alarm subsystem events and commands |
+| [`OWNd/message/automation.py`](OWNd/message/automation.py) | **100%** | WHO 2: Automation and motorized shutter events and commands |
+| [`OWNd/message/base.py`](OWNd/message/base.py) | **100%** | Base message, signaling, and protocol dispatcher registries |
+| [`OWNd/message/cen.py`](OWNd/message/cen.py) | **100%** | WHO 15 & WHO 25: CEN, CEN+, and dry contact control events/commands |
+| [`OWNd/message/energy.py`](OWNd/message/energy.py) | **100%** | WHO 18: Energy management, power, and diagnostic pulse events/commands |
+| [`OWNd/message/gateway.py`](OWNd/message/gateway.py) | **100%** | WHO 13: Gateway management, clock/date configuration, and model telemetry |
+| [`OWNd/message/heating.py`](OWNd/message/heating.py) | **100%** | WHO 4: Thermoregulation, heating/cooling zone control, and temperature decoders |
+| [`OWNd/message/lighting.py`](OWNd/message/lighting.py) | **100%** | WHO 1: Lighting controls, dimming, RGB/HSV color, and motion/PIR sensors |
+| [`OWNd/message/scenario.py`](OWNd/message/scenario.py) | **100%** | WHO 0, WHO 9, WHO 17: Scenario activation, auxiliary commands, and MH200/MH202 scenes |
+| [`OWNd/message/sound.py`](OWNd/message/sound.py) | **100%** | WHO 16, WHO 22: Sound system and audio/video matrix routing |
 | [`OWNd/profiles.py`](OWNd/profiles.py) | **100%** | Declarative hardware gateway models (F454, MH200, MH200N, MH201, MH202, MyHomeServer1) |
 | [`OWNd/transport/__init__.py`](OWNd/transport/__init__.py) | **100%** | Transport subpackage exports |
 | [`OWNd/transport/base.py`](OWNd/transport/base.py) | **100%** | Abstract transport layer and event listener notification contracts |

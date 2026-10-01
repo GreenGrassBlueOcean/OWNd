@@ -83,7 +83,7 @@ def test_verify_all_coverage_detects_uncovered_lines(tmp_path):
 
     root = ET.Element("coverage")
     pkg = ET.SubElement(root, "package")
-    cls = ET.SubElement(pkg, "class", attrib={"filename": "OWNd/connection.py", "line-rate": "0.40"})
+    cls = ET.SubElement(pkg, "class", attrib={"filename": "OWNd/connection/session.py", "line-rate": "0.40"})
     lines = ET.SubElement(cls, "lines")
     ET.SubElement(lines, "line", number="10", hits="0")
     ET.SubElement(lines, "line", number="11", hits="0")
@@ -97,7 +97,7 @@ def test_verify_all_coverage_detects_uncovered_lines(tmp_path):
 
     summary_content = summary_file.read_text(encoding="utf-8")
     assert "Test Coverage Enforcement Failed" in summary_content
-    assert "connection.py" in summary_content
+    assert "session.py" in summary_content
     assert "10-11" in summary_content
 
 
