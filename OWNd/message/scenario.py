@@ -76,6 +76,10 @@ class OWNAuxEvent(OWNEvent):
             self._human_readable_log = (
                 f"Auxiliary channel {self._channel} is set to 'RESET_TRI'."
             )
+        else:
+            self._human_readable_log = (
+                f"Auxiliary channel {self._channel} state is {self._state}."
+            )
 
     @property
     def channel(self) -> str | None:

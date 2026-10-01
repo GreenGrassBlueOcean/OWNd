@@ -23,6 +23,8 @@ class OWNCENEvent(OWNEvent):
             self._human_readable_log = f"Button {self.push_button} of CEN object {self.object}{self._interface_log_text} has been released after a short press."  # pylint: disable=line-too-long
         elif int(self._state) == 2:
             self._human_readable_log = f"Button {self.push_button} of CEN object {self.object}{self._interface_log_text} has been released after a long press."  # pylint: disable=line-too-long
+        else:
+            self._human_readable_log = f"Button {self.push_button} of CEN object {self.object}{self._interface_log_text} state is {self._state}."
 
     @property
     def is_pressed(self) -> bool:

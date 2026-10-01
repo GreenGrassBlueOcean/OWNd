@@ -1442,7 +1442,8 @@ def test_message_subsystems_branch_coverage_edges() -> None:
     # 1. OWNd/message/alarm.py: unmapped state code (line 90->93)
     evt_alarm = OWNAlarmEvent("*5*99*1##")
     assert evt_alarm.state_name is None
-    assert "None" in evt_alarm.human_readable_log
+    assert "unknown state '99'" in evt_alarm.human_readable_log
+    assert "None" not in evt_alarm.human_readable_log
 
     # 2. OWNd/message/base.py: unhandled WHO number returns None (line 341->348)
     assert OWNCommand.parse("*99*1*1##") is None
@@ -1453,6 +1454,7 @@ def test_message_subsystems_branch_coverage_edges() -> None:
     assert not evt_cen.is_held
     assert not evt_cen.is_released_after_short_press
     assert not evt_cen.is_released_after_long_press
+    assert "state is 99" in evt_cen.human_readable_log
 
     # 4. OWNd/message/energy.py: valid sensor prefix with no dimension (line 52->exit)
     evt_energy = OWNEnergyEvent("*18*0*1##")
@@ -1461,6 +1463,8 @@ def test_message_subsystems_branch_coverage_edges() -> None:
     # 5. OWNd/message/gateway.py: OWNGatewayCommand without dimension 0, 1, or 22 (line 220->exit)
     cmd_gw = OWNGatewayCommand("*13*1*1##")
     assert cmd_gw.dimension is None
+    cmd_gw_other = OWNGatewayCommand("*#13**#99*1##")
+    assert cmd_gw_other.dimension == 99
 
     # 6. OWNd/message/lighting.py: dimension 12 with truncated values (< 3) (line 150->exit)
     evt_light_hsv = OWNLightingEvent("*#1*01*#12*1*2##")
@@ -1477,7 +1481,22 @@ def test_message_subsystems_branch_coverage_edges() -> None:
     # 9. OWNd/message/scenario.py: unmapped auxiliary channel state (line 75->exit)
     evt_aux = OWNAuxEvent("*9*99*1##")
     assert evt_aux.state_code == 99
+    assert "state is 99" in evt_aux.human_readable_log
 
     # 10. OWNd/message/sound.py: sound event with state is None and dimension != 1 (line 48->exit)
     evt_sound = OWNSoundEvent("*#16*1*2*10##")
     assert evt_sound.volume is None
+
+    # 11. OWNd/message/heating.py: cooling fan speed and state formatting
+    evt_cool_fan = OWNEvent.parse("*#4*1*19*6*0##")
+    assert isinstance(evt_cool_fan, OWNHeatingEvent)
+    assert evt_cool_fan.cooling_fan_speed == 1
+    assert evt_cool_fan.cooling_fan_on is True
+    assert "cooling fan is on at speed 1" in evt_cool_fan.human_readable_log
+    assert "speed None" not in evt_cool_fan.human_readable_log
+
+    evt_cool_fan_off = OWNEvent.parse("*#4*1*19*5*0##")
+    assert isinstance(evt_cool_fan_off, OWNHeatingEvent)
+    assert evt_cool_fan_off.cooling_fan_speed is None
+    assert evt_cool_fan_off.cooling_fan_on is False
+    assert "cooling fan is off" in evt_cool_fan_off.human_readable_log

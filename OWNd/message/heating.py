@@ -368,7 +368,7 @@ class OWNHeatingEvent(OWNEvent):
                     self._cooling_fan_on = True
                     self._is_active = True
                     self._cooling_fan_speed = _fan_mode
-                    self._human_readable_log = f"Zone {self._zone}'s cooling fan is on at speed {self._fan_speed}"  # pylint: disable=line-too-long
+                    self._human_readable_log = f"Zone {self._zone}'s cooling fan is on at speed {self._cooling_fan_speed}"  # pylint: disable=line-too-long
                 else:
                     self._cooling_fan_on = False
                     self._is_active = False
@@ -539,6 +539,14 @@ class OWNHeatingEvent(OWNEvent):
     @property
     def fan_on(self) -> bool | None:
         return self._fan_on
+
+    @property
+    def cooling_fan_speed(self) -> int | None:
+        return self._cooling_fan_speed
+
+    @property
+    def cooling_fan_on(self) -> bool | None:
+        return self._cooling_fan_on
 
 
 

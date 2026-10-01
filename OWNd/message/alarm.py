@@ -90,7 +90,12 @@ class OWNAlarmEvent(OWNEvent):
         elif self._state_code == 31:
             self._state = "silent alarm"
 
-        self._human_readable_log = f"{self._human_readable_log}'{self._state}'."
+        if self._state is not None:
+            self._human_readable_log = f"{self._human_readable_log}'{self._state}'."
+        else:
+            self._human_readable_log = (
+                f"{self._human_readable_log}unknown state '{self._state_code}'."
+            )
 
     @property
     def general(self) -> bool:
