@@ -838,8 +838,8 @@ class OWNSession:
                             )
                 else:
                     error = True
-                    error_message = "password_error"
-                    self._logger.error(
+                    error_message = "password_required"
+                    self._logger.warning(
                         "%s Connection requires a password but none was provided for %s session.",
                         self._log_id,
                         self._type,
