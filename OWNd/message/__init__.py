@@ -24,6 +24,7 @@ from .base import (
     OWNMessage,
     OWNSignaling,
     OWNStatusRequest,
+    _ensure_all_subsystems_registered,
     register_command_parser,
     register_event_parser,
 )
@@ -122,6 +123,7 @@ __all__ = [
     "OWNStatusRequest",
     "register_event_parser",
     "register_command_parser",
+    "_ensure_all_subsystems_registered",
     # Lighting (WHO 1)
     "MESSAGE_TYPE_ACTION",
     "MESSAGE_TYPE_MOTION",
@@ -207,3 +209,5 @@ __all__ = [
     "OWNAuxEvent",
     "OWNSceneEvent",
 ]
+
+_ensure_all_subsystems_registered()

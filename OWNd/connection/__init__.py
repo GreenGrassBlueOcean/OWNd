@@ -107,6 +107,24 @@ __all__ = [
 ]
 
 
+_FORWARD_TARGETS: dict[str, tuple[str, ...]] = {
+    "time": ("session",),
+    "socket": ("session",),
+    "asyncio": ("session",),
+    "secrets": ("session",),
+    "hashlib": ("auth",),
+    "hmac": ("session",),
+    "string": ("session",),
+    "logging": ("session", "gateway"),
+    "urlparse": ("gateway", "session"),
+    "find_gateways": ("gateway",),
+    "get_gateway": ("gateway",),
+    "get_port": ("gateway",),
+    "GatewayProfile": ("gateway", "session"),
+    "get_gateway_profile": ("gateway", "session"),
+}
+
+
 class _ConnectionModule(ModuleType):
     """Proxy module synchronizing mocked attributes with submodules.
 
@@ -115,18 +133,63 @@ class _ConnectionModule(ModuleType):
     ``NEGOTIATION_MAX_FRAMES``).
     """
 
+    def _get_submodules(self) -> list[ModuleType]:
+        """Dynamically resolve all loaded connection submodules."""
+        pkg = self.__name__
+        return [
+            mod
+            for name, mod in list(sys.modules.items())
+            if name.startswith(f"{pkg}.")
+            and isinstance(mod, ModuleType)
+            and mod.__name__ != pkg
+        ]
+
+    def __getattr__(self, name: str) -> Any:
+        for mod in self._get_submodules():
+            if hasattr(mod, name):
+                return getattr(mod, name)
+        raise AttributeError(f"module '{self.__name__}' has no attribute '{name}'")
+
     def __setattr__(self, name: str, value: Any) -> None:
         super().__setattr__(name, value)
-        for mod in (auth, command_session, event_session, gateway, session):
+        if name.startswith("__") and name.endswith("__"):
+            return
+
+        if name in _FORWARD_TARGETS:
+            pkg = self.__name__
+            for sub_name in _FORWARD_TARGETS[name]:
+                target_mod = sys.modules.get(f"{pkg}.{sub_name}")
+                if target_mod is None or not hasattr(target_mod, name):
+                    raise AttributeError(
+                        f"Patched attribute '{name}' missing from expected target submodule '{sub_name}'"
+                    )
+
+        all_attrs = getattr(self, "__all__", ())
+        submodules = self._get_submodules()
+        if name in all_attrs and submodules:
+            if not any(hasattr(mod, name) for mod in submodules):
+                raise AttributeError(
+                    f"Patched attribute '{name}' in __all__ is missing from all connection submodules"
+                )
+
+        for mod in submodules:
             if hasattr(mod, name):
                 setattr(mod, name, value)
 
     def __delattr__(self, name: str) -> None:
         super().__delattr__(name)
-        for mod in (auth, command_session, event_session, gateway, session):
+        if name.startswith("__") and name.endswith("__"):
+            return
+        for mod in self._get_submodules():
             if hasattr(mod, name):
                 with contextlib.suppress(AttributeError):
                     delattr(mod, name)
+
+    def __dir__(self) -> list[str]:
+        attrs = set(super().__dir__())
+        for mod in self._get_submodules():
+            attrs.update(dir(mod))
+        return sorted(attrs)
 
 
 sys.modules[__name__].__class__ = _ConnectionModule

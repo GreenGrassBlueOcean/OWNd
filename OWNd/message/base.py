@@ -9,6 +9,31 @@ from typing import Any
 _EVENT_DISPATCH: dict[int, Callable[[str], OWNEvent]] = {}
 _COMMAND_DISPATCH: dict[int, Callable[[str], OWNCommand]] = {}
 
+_WHO_SUBMODULES: tuple[str, ...] = (
+    "alarm",
+    "automation",
+    "cen",
+    "energy",
+    "gateway",
+    "heating",
+    "lighting",
+    "scenario",
+    "sound",
+)
+_SUBMODULES_REGISTERED: bool = False
+
+
+def _ensure_all_subsystems_registered() -> None:
+    """Ensure all WHO subsystem parser modules are imported and registered."""
+    global _SUBMODULES_REGISTERED
+    if _SUBMODULES_REGISTERED:
+        return
+    import importlib
+
+    for mod_name in _WHO_SUBMODULES:
+        importlib.import_module(f"OWNd.message.{mod_name}")
+    _SUBMODULES_REGISTERED = True
+
 
 def register_event_parser(who: int, parser: Callable[[str], OWNEvent]) -> None:
     """Register a specialized event parser for a WHO subsystem."""
@@ -308,8 +333,7 @@ class OWNEvent(OWNMessage):
 
         if _match:
             _who = int(_match.group("who"))
-            if not _EVENT_DISPATCH:
-                import OWNd.message  # noqa: F401
+            _ensure_all_subsystems_registered()
             parser = _EVENT_DISPATCH.get(_who)
             if parser is not None:
                 return parser(data)
@@ -331,8 +355,7 @@ class OWNCommand(OWNMessage):
 
         if _match:
             _who = int(_match.group("who"))
-            if not _COMMAND_DISPATCH:
-                import OWNd.message  # noqa: F401
+            _ensure_all_subsystems_registered()
             parser = _COMMAND_DISPATCH.get(_who)
             if parser is not None:
                 return parser(data)
