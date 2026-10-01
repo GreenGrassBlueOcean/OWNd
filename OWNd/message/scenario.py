@@ -32,7 +32,10 @@ class OWNAuxEvent(OWNEvent):
         self._channel = self._where
 
         self._state = self._what
-        if self._state == 0:
+        if self._state is None:
+            # Bare status request (e.g. *#9##): keep the raw frame as the log.
+            pass
+        elif self._state == 0:
             self._human_readable_log = (
                 f"Auxiliary channel {self._channel} is set to 'OFF'."
             )
