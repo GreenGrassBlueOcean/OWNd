@@ -73,12 +73,14 @@ def test_f461_profile_lookup() -> None:
 
 
 def test_f455_basic_gateway_has_no_audio() -> None:
-    """F455 Basic Gateway has a single SCS bus and no audio hardware (MyHOME#466)."""
+    """F455 Basic Gateway has a single SCS bus and no audio hardware (RA00125AB / MyHOME#466)."""
     f455 = get_gateway_profile("F455")
     assert f455.supports_audio is False
     assert not f455.supports_who(WHO_SOUND)
     assert not f455.supports_who(WHO_SOUND_DIFFUSION)
     assert f455.event_keepalive_interval is None
+    assert f455.max_command_sessions == 4
+    assert f455.default_command_sessions == 2
 
 
 def test_unknown_gateway_uses_conservative_limits() -> None:
@@ -164,7 +166,7 @@ def test_gateway_profile_summary_properties() -> None:
     )
 
     f455 = get_gateway_profile("F455")
-    assert f455.concurrency_summary == "4 sessions"
+    assert f455.concurrency_summary == "4 sessions (2 default)"
     assert f455.queue_delay_summary == "50 ms"
     assert f455.keepalive_summary == "OS TCP only"
     assert (

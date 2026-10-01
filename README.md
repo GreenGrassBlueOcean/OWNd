@@ -97,7 +97,7 @@ Gateways have varying processing limitations, socket budgets, and pacing require
 |:---|:---:|:---:|:---:|:---|
 | **MyHomeServer1** | 4 sessions (2 default) | 20 ms | OS TCP only | HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16) |
 | **F454** | 4 sessions | 50 ms | 90 s | HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16) |
-| **F455** | 4 sessions | 50 ms | OS TCP only | HMAC-SHA2, Native transitions, Extended frames |
+| **F455** | 4 sessions (2 default) | 50 ms | OS TCP only | HMAC-SHA2, Native transitions, Extended frames |
 | **F461** | 4 sessions | 50 ms | 90 s | HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16) |
 | **MH202** | 2 sessions | 100 ms | OS TCP only | HMAC-SHA2, Extended frames, Sound system (WHO 16) |
 | **MH201** | 1 session | 100 ms | OS TCP only | Legacy password auth, Extended frames, Sound system (WHO 16), Clock diagnostics |
