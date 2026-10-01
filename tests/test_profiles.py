@@ -72,6 +72,15 @@ def test_f461_profile_lookup() -> None:
     assert profile.supports_native_transitions is True
 
 
+def test_f455_basic_gateway_has_no_audio() -> None:
+    """F455 Basic Gateway has a single SCS bus and no audio hardware (MyHOME#466)."""
+    f455 = get_gateway_profile("F455")
+    assert f455.supports_audio is False
+    assert not f455.supports_who(WHO_SOUND)
+    assert not f455.supports_who(WHO_SOUND_DIFFUSION)
+    assert f455.event_keepalive_interval is None
+
+
 def test_unknown_gateway_uses_conservative_limits() -> None:
     profile = get_gateway_profile("Future gateway")
 
@@ -160,7 +169,7 @@ def test_gateway_profile_summary_properties() -> None:
     assert f455.keepalive_summary == "OS TCP only"
     assert (
         f455.features_summary
-        == "HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16)"
+        == "HMAC-SHA2, Native transitions, Extended frames"
     )
 
     mh200 = get_gateway_profile("MH200")
