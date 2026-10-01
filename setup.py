@@ -43,7 +43,7 @@ setuptools.setup(
     extras_require={
         "serial": ["pyserial-asyncio>=0.6"],
         "test": [
-            "pytest<9",
+            "pytest<10",
             "pytest-asyncio>=0.23",
             "pytest-cov>=4.0",
             "pyyaml>=6.0",
