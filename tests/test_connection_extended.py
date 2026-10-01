@@ -1234,4 +1234,22 @@ class TestOWNEventAndCommandSessionRemainingCoverage:
         assert call_count >= 2
 
 
+def test_connection_module_delattr():
+    """Verify that deleting an attribute on OWNd.connection propagates to submodules."""
+    import OWNd.connection as conn
+    import OWNd.connection.gateway as gw_mod
+
+    conn._custom_transient_attr = "hello"
+    assert hasattr(conn, "_custom_transient_attr")
+    del conn._custom_transient_attr
+    assert not hasattr(conn, "_custom_transient_attr")
+
+    # Also test deleting an attribute present on a submodule
+    gw_mod._dummy_test_attr = 123
+    conn._dummy_test_attr = 456
+    del conn._dummy_test_attr
+    assert not hasattr(gw_mod, "_dummy_test_attr")
+
+
+
 

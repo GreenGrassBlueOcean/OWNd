@@ -1418,3 +1418,23 @@ def test_phase2_coverage_edges():
         OWNHeatingCommand.set_central_mode("#0", "invalid_mode")
 
 
+def test_dispatch_registry_lazy_import():
+    """Test lazy registration branch when dispatch registries are temporarily cleared."""
+    import OWNd.message.base as base_mod
+
+    saved_event = dict(base_mod._EVENT_DISPATCH)
+    saved_command = dict(base_mod._COMMAND_DISPATCH)
+    try:
+        base_mod._EVENT_DISPATCH.clear()
+        base_mod._COMMAND_DISPATCH.clear()
+
+        evt = base_mod.OWNEvent.parse("*1*1*11##")
+        assert evt is not None
+        cmd = base_mod.OWNCommand.parse("*0*1*1##")
+        assert cmd is not None
+    finally:
+        base_mod._EVENT_DISPATCH.update(saved_event)
+        base_mod._COMMAND_DISPATCH.update(saved_command)
+
+
+

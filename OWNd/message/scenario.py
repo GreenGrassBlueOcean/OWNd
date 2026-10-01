@@ -1,0 +1,141 @@
+"""WHO 0, 9, 17: Scenario, Auxiliary, and MH200/MH202 Scene events."""
+
+from __future__ import annotations
+
+import re
+
+from .base import OWNEvent, register_event_parser
+
+
+class OWNScenarioEvent(OWNEvent):
+    def __init__(self, data: str) -> None:
+        super().__init__(data)
+
+        self._scenario = self._what
+        self._control_panel = self._where
+        self._human_readable_log = f"Scenario {self._scenario} from control panel {self._control_panel} has been launched."  # pylint: disable=line-too-long
+
+    @property
+    def scenario(self) -> int | None:
+        return self._scenario
+
+    @property
+    def control_panel(self) -> str | None:
+        return self._control_panel
+
+
+
+class OWNAuxEvent(OWNEvent):
+    def __init__(self, data: str) -> None:
+        super().__init__(data)
+
+        self._channel = self._where
+
+        self._state = self._what
+        if self._state == 0:
+            self._human_readable_log = (
+                f"Auxiliary channel {self._channel} is set to 'OFF'."
+            )
+        elif self._state == 1:
+            self._human_readable_log = (
+                f"Auxiliary channel {self._channel} is set to 'ON'."
+            )
+        elif self._state == 2:
+            self._human_readable_log = (
+                f"Auxiliary channel {self._channel} is set to 'TOGGLE'."
+            )
+        elif self._state == 3:
+            self._human_readable_log = (
+                f"Auxiliary channel {self._channel} is set to 'STOP'."
+            )
+        elif self._state == 4:
+            self._human_readable_log = (
+                f"Auxiliary channel {self._channel} is set to 'UP'."
+            )
+        elif self._state == 5:
+            self._human_readable_log = (
+                f"Auxiliary channel {self._channel} is set to 'DOWN'."
+            )
+        elif self._state == 6:
+            self._human_readable_log = (
+                f"Auxiliary channel {self._channel} is set to 'ENABLED'."
+            )
+        elif self._state == 7:
+            self._human_readable_log = (
+                f"Auxiliary channel {self._channel} is set to 'DISABLED'."
+            )
+        elif self._state == 8:
+            self._human_readable_log = (
+                f"Auxiliary channel {self._channel} is set to 'RESET_GEN'."
+            )
+        elif self._state == 9:
+            self._human_readable_log = (
+                f"Auxiliary channel {self._channel} is set to 'RESET_BI'."
+            )
+        elif self._state == 10:
+            self._human_readable_log = (
+                f"Auxiliary channel {self._channel} is set to 'RESET_TRI'."
+            )
+
+    @property
+    def channel(self) -> str | None:
+        return self._channel
+
+    @property
+    def state_code(self) -> int | None:
+        return self._state
+
+    @property
+    def is_on(self) -> bool:
+        return self._state == 1
+
+
+
+class OWNSceneEvent(OWNEvent):
+    def __init__(self, data: str) -> None:
+        super().__init__(data)
+
+        self._scene = self._where
+        self._state = self._what
+
+        if self._state == 1:
+            _status = "started"
+        elif self._state == 2:
+            _status = "stopped"
+        elif self._state == 3:
+            _status = "enabled"
+        elif self._state == 4:
+            _status = "disabled"
+        else:
+            _status = f"unknown ({self._state})"
+
+        self._human_readable_log = f"Scene {self._scene} is {_status}."
+
+    @property
+    def scenario(self) -> str | None:
+        return self._scene
+
+    @property
+    def state(self) -> int | None:
+        return self._state
+
+    @property
+    def is_on(self) -> bool | None:
+        if self._state == 1:
+            return True
+        if self._state == 2:
+            return False
+        return None
+
+    @property
+    def is_enabled(self) -> bool | None:
+        if self._state == 3:
+            return True
+        if self._state == 4:
+            return False
+        return None
+
+
+register_event_parser(0, OWNScenarioEvent)
+register_event_parser(9, OWNAuxEvent)
+register_event_parser(17, OWNSceneEvent)

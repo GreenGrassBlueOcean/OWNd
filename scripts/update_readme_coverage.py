@@ -21,9 +21,24 @@ START_MARKER = "<!-- START_COVERAGE_TABLE -->"
 END_MARKER = "<!-- END_COVERAGE_TABLE -->"
 
 COMPONENT_NOTES = {
-    "OWNd/connection.py": "Hardened dual-session TCP engine, SHA-1/HMAC auth, keepalives & bounded read loops",
+    "OWNd/connection/__init__.py": "Hardened dual-session TCP engine & connection package exports",
+    "OWNd/connection/auth.py": "Pure cryptographic routines: Open password, HMAC-SHA1/SHA256, hex/dec conversions",
+    "OWNd/connection/command_session.py": "Command queue pacing, synchronized send, and request/reply tracking",
+    "OWNd/connection/event_session.py": "Long-lived event bus session, keepalives, and automatic reconnection",
+    "OWNd/connection/gateway.py": "Gateway configuration container, endpoint discovery, and profile mapping",
+    "OWNd/connection/session.py": "Base TCP transport, negotiation state machine, and frame buffering",
     "OWNd/discovery.py": "SSDP multicast and UPnP XML gateway discovery and descriptor parsing",
-    "OWNd/message.py": "OpenWebNet frame parsers, encoders, and WHO dimension decoders",
+    "OWNd/message/__init__.py": "OpenWebNet message package exports & WHO subsystem registries",
+    "OWNd/message/alarm.py": "WHO 5: Intrusion and technical alarm subsystem events and commands",
+    "OWNd/message/automation.py": "WHO 2: Automation and motorized shutter events and commands",
+    "OWNd/message/base.py": "Base message, signaling, and protocol dispatcher registries",
+    "OWNd/message/cen.py": "WHO 15 & WHO 25: CEN, CEN+, and dry contact control events/commands",
+    "OWNd/message/energy.py": "WHO 18: Energy management, power, and diagnostic pulse events/commands",
+    "OWNd/message/gateway.py": "WHO 13: Gateway management, clock/date configuration, and model telemetry",
+    "OWNd/message/heating.py": "WHO 4: Thermoregulation, heating/cooling zone control, and temperature decoders",
+    "OWNd/message/lighting.py": "WHO 1: Lighting controls, dimming, RGB/HSV color, and motion/PIR sensors",
+    "OWNd/message/scenario.py": "WHO 0, WHO 9, WHO 17: Scenario activation, auxiliary commands, and MH200/MH202 scenes",
+    "OWNd/message/sound.py": "WHO 16, WHO 22: Sound system and audio/video matrix routing",
     "OWNd/profiles.py": "Declarative hardware gateway models (F454, MH200, MH200N, MH201, MH202, MyHomeServer1)",
     "OWNd/transport/base.py": "Abstract transport layer and event listener notification contracts",
     "OWNd/transport/serial.py": "Async Serial/USB transport for Legrand 3578 interface with in-band demux",
@@ -91,7 +106,7 @@ def update_readme_and_svg() -> None:
     # ── 1. Generate updated coverage.svg ─────────────────────────────────────
     color = "#4c1" if rate_round >= 80 else ("#dfb317" if rate_round >= 60 else "#e05d44")
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="98" height="20"><linearGradient id="b" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient><mask id="a"><rect width="98" height="20" rx="3" fill="#fff"/></mask><g mask="url(#a)"><path fill="#555" d="M0 0h61v20H0z"/><path fill="{color}" d="M61 0h37v20H61z"/><path fill="url(#b)" d="M0 0h98v20H0z"/></g><g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11"><text x="30.5" y="15" fill="#010101" fill-opacity=".3">coverage</text><text x="30.5" y="14">coverage</text><text x="79.5" y="15" fill="#010101" fill-opacity=".3">{rate_round}%</text><text x="79.5" y="14">{rate_round}%</text></g></svg>'''
-    with open(COVERAGE_SVG, "w", encoding="utf-8") as f:
+    with open(COVERAGE_SVG, "w", encoding="utf-8", newline="\n") as f:
         f.write(svg)
     print(f"Updated {COVERAGE_SVG} -> {rate_round}% ({color})")
 
@@ -152,7 +167,7 @@ def update_readme_and_svg() -> None:
             content,
         )
 
-    with open(README_MD, "w", encoding="utf-8") as f:
+    with open(README_MD, "w", encoding="utf-8", newline="\n") as f:
         f.write(content)
 
     print(f"Updated {README_MD} coverage table successfully ({len(sorted_files)} modules, total {rate_round}%).")
