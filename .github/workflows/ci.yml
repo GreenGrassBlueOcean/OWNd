@@ -34,7 +34,7 @@ jobs:
           python scripts/verify_coverage.py coverage.xml 80.0
       - name: Upload coverage report
         if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: coverage.xml
@@ -87,7 +87,7 @@ jobs:
           python -m twine check --strict build-artifacts/*
           check-wheel-contents build-artifacts/*.whl
       - name: Upload distribution packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-packages
           path: build-artifacts/*
