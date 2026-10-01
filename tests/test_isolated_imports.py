@@ -110,3 +110,42 @@ assert type(evt_energy).__name__ == "OWNEnergyEvent", f"Expected OWNEnergyEvent,
 """
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
     assert result.returncode == 0, f"Subprocess failed:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+
+
+def test_isolated_import_command_first() -> None:
+    """Verify clean isolated import of OWNd.message.base parses commands first."""
+    code = """
+import sys
+from OWNd.message.base import OWNCommand, OWNEvent
+
+cmd_heat = OWNCommand.parse("*#4*1##")
+assert type(cmd_heat).__name__ == "OWNHeatingCommand", f"Expected OWNHeatingCommand, got {type(cmd_heat)}"
+
+cmd_alarm = OWNCommand.parse("*#5*1##")
+assert type(cmd_alarm).__name__ == "OWNAlarmCommand", f"Expected OWNAlarmCommand, got {type(cmd_alarm)}"
+
+evt_heat = OWNEvent.parse("*4*0*1##")
+assert type(evt_heat).__name__ == "OWNHeatingEvent", f"Expected OWNHeatingEvent, got {type(evt_heat)}"
+"""
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, f"Subprocess failed:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+
+
+def test_isolated_import_alarm_submodule() -> None:
+    """Verify importing only OWNd.message.alarm still parses other subsystems."""
+    code = """
+import sys
+from OWNd.message.alarm import OWNAlarmEvent
+from OWNd.message.base import OWNEvent, OWNCommand
+
+# Parse lighting event (WHO 1)
+evt_light = OWNEvent.parse("*1*1*1##")
+assert type(evt_light).__name__ == "OWNLightingEvent", f"Expected OWNLightingEvent, got {type(evt_light)}"
+
+# Parse sound event (WHO 16)
+evt_sound = OWNEvent.parse("*16*1*1##")
+assert type(evt_sound).__name__ == "OWNSoundEvent", f"Expected OWNSoundEvent, got {type(evt_sound)}"
+"""
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, f"Subprocess failed:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+

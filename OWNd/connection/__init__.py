@@ -151,8 +151,8 @@ class _ConnectionModule(ModuleType):
         raise AttributeError(f"module '{self.__name__}' has no attribute '{name}'")
 
     def __setattr__(self, name: str, value: Any) -> None:
-        super().__setattr__(name, value)
         if name.startswith("__") and name.endswith("__"):
+            super().__setattr__(name, value)
             return
 
         if name in _FORWARD_TARGETS:
@@ -172,18 +172,29 @@ class _ConnectionModule(ModuleType):
                     f"Patched attribute '{name}' in __all__ is missing from all connection submodules"
                 )
 
+        super().__setattr__(name, value)
         for mod in submodules:
             if hasattr(mod, name):
                 setattr(mod, name, value)
 
     def __delattr__(self, name: str) -> None:
-        super().__delattr__(name)
         if name.startswith("__") and name.endswith("__"):
+            super().__delattr__(name)
             return
+
+        deleted = False
+        with contextlib.suppress(AttributeError):
+            super().__delattr__(name)
+            deleted = True
+
         for mod in self._get_submodules():
             if hasattr(mod, name):
                 with contextlib.suppress(AttributeError):
                     delattr(mod, name)
+                    deleted = True
+
+        if not deleted:
+            raise AttributeError(f"module '{self.__name__}' has no attribute '{name}'")
 
     def __dir__(self) -> list[str]:
         attrs = set(super().__dir__())

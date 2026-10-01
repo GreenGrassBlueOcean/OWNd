@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import importlib
 import re
+import sys
 from typing import Any
 
 _EVENT_DISPATCH: dict[int, Callable[[str], OWNEvent]] = {}
@@ -20,19 +22,14 @@ _WHO_SUBMODULES: tuple[str, ...] = (
     "scenario",
     "sound",
 )
-_SUBMODULES_REGISTERED: bool = False
 
 
 def _ensure_all_subsystems_registered() -> None:
     """Ensure all WHO subsystem parser modules are imported and registered."""
-    global _SUBMODULES_REGISTERED
-    if _SUBMODULES_REGISTERED:
-        return
-    import importlib
-
     for mod_name in _WHO_SUBMODULES:
-        importlib.import_module(f"OWNd.message.{mod_name}")
-    _SUBMODULES_REGISTERED = True
+        full_name = f"OWNd.message.{mod_name}"
+        if full_name not in sys.modules:
+            importlib.import_module(full_name)
 
 
 def register_event_parser(who: int, parser: Callable[[str], OWNEvent]) -> None:

@@ -81,6 +81,28 @@ def test_connection_proxy_delattr_submodule() -> None:
     assert not hasattr(gw_mod, "_transient_submodule_attr")
 
 
+def test_connection_proxy_delattr_submodule_only() -> None:
+    """Verify deleting an attribute that exists only on a submodule (not on proxy dict) succeeds."""
+    import OWNd.connection.gateway as gw_mod
+
+    gw_mod._submodule_only_probe = "probe_val"
+    try:
+        assert hasattr(conn, "_submodule_only_probe")
+        assert "_submodule_only_probe" not in conn.__dict__
+        del conn._submodule_only_probe
+        assert not hasattr(conn, "_submodule_only_probe")
+        assert not hasattr(gw_mod, "_submodule_only_probe")
+    finally:
+        if hasattr(gw_mod, "_submodule_only_probe"):
+            del gw_mod._submodule_only_probe
+
+
+def test_connection_proxy_delattr_nonexistent() -> None:
+    """Verify deleting a nonexistent attribute raises AttributeError."""
+    with pytest.raises(AttributeError, match="has no attribute 'nonexistent_attr_xyz'"):
+        del conn.nonexistent_attr_xyz
+
+
 def test_connection_proxy_forward_targets_missing_fails_loudly() -> None:
     """Verify that if a required forward target is missing from the submodule, it fails loudly."""
     _FORWARD_TARGETS["test_missing_forward_target"] = ("session",)
@@ -90,8 +112,23 @@ def test_connection_proxy_forward_targets_missing_fails_loudly() -> None:
             match="Patched attribute 'test_missing_forward_target' missing from expected target submodule 'session'",
         ):
             conn.test_missing_forward_target = "should_fail"
+        assert "test_missing_forward_target" not in conn.__dict__
     finally:
         _FORWARD_TARGETS.pop("test_missing_forward_target", None)
+
+
+def test_connection_proxy_forward_targets_submodule_missing_fails_loudly() -> None:
+    """Verify that if the target submodule itself is not loaded/missing, it fails loudly."""
+    _FORWARD_TARGETS["test_missing_submodule"] = ("nonexistent_submodule",)
+    try:
+        with pytest.raises(
+            AttributeError,
+            match="Patched attribute 'test_missing_submodule' missing from expected target submodule 'nonexistent_submodule'",
+        ):
+            conn.test_missing_submodule = "should_fail"
+        assert "test_missing_submodule" not in conn.__dict__
+    finally:
+        _FORWARD_TARGETS.pop("test_missing_submodule", None)
 
 
 def test_connection_proxy_all_attribute_missing_fails_loudly() -> None:
@@ -104,6 +141,7 @@ def test_connection_proxy_all_attribute_missing_fails_loudly() -> None:
             match="Patched attribute 'bogus_all_symbol_missing' in __all__ is missing from all connection submodules",
         ):
             conn.bogus_all_symbol_missing = "fail"
+        assert "bogus_all_symbol_missing" not in conn.__dict__
 
 
 def test_connection_proxy_reload() -> None:
