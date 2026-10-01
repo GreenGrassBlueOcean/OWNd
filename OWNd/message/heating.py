@@ -362,7 +362,7 @@ class OWNHeatingEvent(OWNEvent):
                 self._human_readable_log = (
                     f"Zone {self._zone}'s cooling valve is stopped"
                 )
-            elif _cooling_value > 4:
+            else:
                 _fan_mode = _cooling_value - 5
                 if _fan_mode > 0:
                     self._cooling_fan_on = True
@@ -385,7 +385,7 @@ class OWNHeatingEvent(OWNEvent):
                 self._human_readable_log += "; heating valve is closed."
             elif _heating_value == 4:
                 self._human_readable_log += "; heating valve is stopped."
-            elif _heating_value > 4:
+            else:
                 _fan_mode = _heating_value - 5
                 if _fan_mode > 0:
                     self._fan_on = True
@@ -426,7 +426,7 @@ class OWNHeatingEvent(OWNEvent):
                 self._human_readable_log = (
                     f"Zone {self._zone}'s actuator {self._actuator} is stopped."
                 )
-            elif _value > 4:
+            else:
                 _fan_mode = _value - 5
                 if _fan_mode > 0:
                     self._fan_on = True

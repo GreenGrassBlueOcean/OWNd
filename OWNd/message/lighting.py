@@ -177,7 +177,7 @@ class OWNLightingEvent(OWNEvent):
                     self._supports_color_temp = True
                     self._color_temp = val
                     self._human_readable_log = f"Light {self._where}{self._interface_log_text} color temperature is {self._color_temp} mireds."
-            elif self._dimension_value:
+            else:
                 self._human_readable_log = f"Light/motion sensor {self._where}{self._interface_log_text} has sent an unknown dimension {self._dimension}."
 
     @property
