@@ -137,18 +137,27 @@ class F454Profile(GatewayProfile):
 
 
 class F455Profile(GatewayProfile):
-    """The F455 Basic Gateway.
+    """The F455 Basic Gateway (0 035 94).
 
     Entry-level IP gateway connecting an Ethernet LAN to a single SCS
-    automation/lighting bus (WHO 1, 2, 4, 18). Has no audio/sound diffusion
-    bus (WHO 16/22). Event session stability without keepalive frames (OS
-    TCP keepalive only) physically confirmed on firmware 1.0.86 (MyHOME#466).
+    automation/lighting bus (WHO 1, 2, 4, 18). Per official installer manual
+    RA00125AB ("Funzioni principali"):
+    - Funzioni gestite: Luci, Automazione, Termoregolazione, Gestione energia.
+    - Funzioni non gestite: Videocitofonia, Diffusione sonora (WHO 16/22),
+      Antintrusione (WHO 5), Gestione avanzata tapparelle (positioned covers),
+      Lighting, scenari avanzati.
+    - Hardware socket budget: max 5 simultaneous sockets. Defaults to 2 command
+      sessions (leaving headroom for the event session, reconnection overlap,
+      and the mobile app) with a ceiling of 4.
+    - Keepalive: no reconnect loop observed on firmware 1.0.86 with OS TCP
+      keepalive only (MyHOME#466).
     """
 
     def __init__(self) -> None:
         super().__init__(
             model_name="F455",
             max_command_sessions=4,
+            default_command_sessions=2,
             max_queue_size=250,
             supports_audio=False,
             supports_hmac=True,

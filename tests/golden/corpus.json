@@ -522,7 +522,7 @@
     ],
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Lighting: Dimmer telemetry level 100% with 2 transition steps at address 13 (MyHOME#466)",
+    "mcp_notes": "Lighting: dimension 4 reply reporting OFF (level 100 = 0 %, speed 2) at address 13, sent in answer to a dimension 1 query (MyHOME#466)",
     "roundtrip": true,
     "_file": "who01_lighting.yaml"
   },

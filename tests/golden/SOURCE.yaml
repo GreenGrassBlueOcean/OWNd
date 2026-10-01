@@ -49,6 +49,11 @@ authorities:
         document: "WHO_25.pdf"
         version: "v1.0.0"
         date: "2011"
+      - model: "F455"
+        name: "Basic Gateway (0 035 94) Installer Manual"
+        document: "RA00125AB"
+        date: "2013"
+        reference: "Legrand / BTicino Basic gateway F455 technical sheet"
 
   oracle:
     name: "openwebnet4j & openHAB OpenWebNet Binding"
@@ -121,7 +126,7 @@ authorities:
         author: "@lionelser"
         date: "2026-10-01"
         gateway: "Legrand F455 Basic Gateway, firmware 1.0.86"
-        devices: "Seven lights/dimmers (addresses 11-17), physical pushbuttons with command translations (1000#0/1) and dimmer telemetry (*#1*13*4*100*2##)"
+        devices: "Seven lights/dimmers (addresses 11-17), physical pushbuttons with command translations (1000#0/1) and dimmer telemetry reporting OFF in answer to dimension 1 query (*#1*13*4*100*2##)"
     role: "Provides authentic on-wire bus frames and status replies captured from live physical hardware."
 
   community_capture_cen_plus:
