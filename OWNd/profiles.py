@@ -137,14 +137,33 @@ class F454Profile(GatewayProfile):
 
 
 class F455Profile(GatewayProfile):
+    """The F455 Basic Gateway.
+
+    Entry-level IP gateway connecting an Ethernet LAN to a single SCS
+    automation/lighting bus (WHO 1, 2, 4, 18). Has no audio/sound diffusion
+    bus (WHO 16/22). Event session stability without keepalive frames (OS
+    TCP keepalive only) physically confirmed on firmware 1.0.86 (MyHOME#466).
+    """
+
     def __init__(self) -> None:
         super().__init__(
             model_name="F455",
             max_command_sessions=4,
             max_queue_size=250,
+            supports_audio=False,
             supports_hmac=True,
             supports_native_transitions=True,
             supports_extended_frames=True,
+            supported_who=(
+                WHO_LIGHTING,
+                WHO_AUTOMATION,
+                WHO_LOAD_CONTROL,
+                WHO_HEATING,
+                WHO_CEN,
+                WHO_SCENARIO,
+                WHO_ENERGY,
+                WHO_CEN_PLUS,
+            ),
         )
 
 

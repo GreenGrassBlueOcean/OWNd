@@ -509,6 +509,50 @@
     "_file": "who01_lighting.yaml"
   },
   {
+    "id": "light.dim.reply.level_transition.13",
+    "frame": "*#1*13*4*100*2##",
+    "direction": "dimension_response",
+    "who": 1,
+    "what": null,
+    "where": "13",
+    "dimension": 4,
+    "dimension_values": [
+      "100",
+      "2"
+    ],
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Dimmer telemetry level 100% with 2 transition steps at address 13 (MyHOME#466)",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.event.translation.on.12",
+    "frame": "*1*1000#1*12##",
+    "direction": "event",
+    "who": 1,
+    "what": "1000#1",
+    "where": "12",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Pushbutton command translation ON at address 12 (MyHOME#466)",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
+    "id": "light.event.translation.off.12",
+    "frame": "*1*1000#0*12##",
+    "direction": "event",
+    "who": 1,
+    "what": "1000#0",
+    "where": "12",
+    "source": "community-plant-capture",
+    "mcp_valid": true,
+    "mcp_notes": "Lighting: Pushbutton command translation OFF at address 12 (MyHOME#466)",
+    "roundtrip": true,
+    "_file": "who01_lighting.yaml"
+  },
+  {
     "id": "cover.cmd.up.ptp.93",
     "frame": "*2*1*93##",
     "direction": "command",
