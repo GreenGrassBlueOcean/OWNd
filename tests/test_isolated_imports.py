@@ -1,6 +1,7 @@
 """Tests verifying isolated imports of OWNd.message modules and dispatcher hardening."""
 from __future__ import annotations
 
+from unittest.mock import patch
 import subprocess
 import sys
 import pytest
@@ -12,6 +13,15 @@ def test_ensure_all_subsystems_registered_idempotent() -> None:
     """Verify that _ensure_all_subsystems_registered can be called repeatedly safely."""
     _ensure_all_subsystems_registered()
     _ensure_all_subsystems_registered()
+
+
+def test_ensure_all_subsystems_registered_loads_missing_module() -> None:
+    """Verify _ensure_all_subsystems_registered dynamically imports missing submodules."""
+    with patch("importlib.import_module") as mock_import:
+        with patch.dict(sys.modules):
+            sys.modules.pop("OWNd.message.sound", None)
+            _ensure_all_subsystems_registered()
+            mock_import.assert_called_with("OWNd.message.sound")
 
 
 def test_isolated_import_base_subprocesses() -> None:
