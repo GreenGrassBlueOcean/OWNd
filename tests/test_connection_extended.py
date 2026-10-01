@@ -1,7 +1,7 @@
 """Tests for OWNGateway, OWNSession crypto helpers, and connection infrastructure."""
 import pytest
 import logging
-from OWNd.connection import OWNGateway, OWNSession
+from OWNd.connection import OWNGateway, OWNSession, _first_scalar
 
 
 # ── OWNGateway ─────────────────────────────────────────────────────────────
@@ -40,13 +40,59 @@ class TestOWNGateway:
         gw_tuple = OWNGateway({"address": "127.0.0.1", "manufacturer": ("BTicino S.p.A.",)})
         assert gw_tuple.manufacturer == "BTicino S.p.A."
 
+        # Nested UPnP list
+        gw_nested = OWNGateway({"address": "127.0.0.1", "manufacturer": [["BTicino S.p.A."]]})
+        assert gw_nested.manufacturer == "BTicino S.p.A."
+
         # Empty tuple / list fallback
         gw_empty_list = OWNGateway({"address": "127.0.0.1", "manufacturer": []})
         assert gw_empty_list.manufacturer == "BTicino S.p.A."
 
+        # Nested empty list fallback
+        gw_nested_empty = OWNGateway({"address": "127.0.0.1", "manufacturer": [[]]})
+        assert gw_nested_empty.manufacturer == "BTicino S.p.A."
+
         # Missing / None fallback
         gw_none = OWNGateway({"address": "127.0.0.1", "manufacturer": None})
         assert gw_none.manufacturer == "BTicino S.p.A."
+
+    def test_first_scalar_recursive_and_type_preservation(self):
+        """Verify _first_scalar recursively unwraps nested structures and preserves scalar types."""
+        # Non-string scalar types are preserved
+        assert _first_scalar(42) == 42
+        assert isinstance(_first_scalar(42), int)
+        assert _first_scalar(True) is True
+        assert _first_scalar(3.14) == 3.14
+        assert _first_scalar("BTicino") == "BTicino"
+
+        # None and default fallback
+        assert _first_scalar(None) is None
+        assert _first_scalar(None, default="fallback") == "fallback"
+
+        # Empty collections return default
+        assert _first_scalar([]) is None
+        assert _first_scalar([], default="fallback") == "fallback"
+        assert _first_scalar(()) is None
+        assert _first_scalar((), default="fallback") == "fallback"
+
+        # Single-level list/tuple
+        assert _first_scalar(["BTicino"]) == "BTicino"
+        assert _first_scalar(("BTicino",)) == "BTicino"
+
+        # Deeply nested list/tuple unwrapping
+        assert _first_scalar([["BTicino"]]) == "BTicino"
+        assert _first_scalar([([["Deeply Nested"]],)]) == "Deeply Nested"
+        assert _first_scalar([[[42]]]) == 42
+        assert isinstance(_first_scalar([[[42]]]), int)
+
+        # Deeply nested empty collections return default
+        assert _first_scalar([[]]) is None
+        assert _first_scalar([[]], default="fallback") == "fallback"
+        assert _first_scalar([([[]],)], default="fallback") == "fallback"
+
+        # Nested collection with None returns default
+        assert _first_scalar([None]) is None
+        assert _first_scalar([[None]], default="fallback") == "fallback"
 
     def test_unique_id(self, gateway_info):
         gw = OWNGateway(gateway_info)

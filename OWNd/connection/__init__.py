@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+# Standard library and utility imports retained exclusively for backwards compatibility
+# with consumer test suites and legacy mock/patch targets (e.g., patch("OWNd.connection.time"),
+# patch("OWNd.connection.socket"), patch("OWNd.connection.asyncio")).
+# While not directly referenced in this module's runtime logic, _ConnectionModule forwards
+# patched attributes to underlying submodules. DO NOT REMOVE or "clean up" these imports.
 import asyncio
 import contextlib
 import hashlib

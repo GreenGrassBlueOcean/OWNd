@@ -11,12 +11,13 @@ from ..discovery import find_gateways, get_gateway, get_port
 from ..profiles import GatewayProfile, get_gateway_profile
 
 
-def _first_scalar(val: Any, default: str | None = None) -> str | None:
-    if val is None:
-        return default
-    if isinstance(val, (list, tuple)):
-        return str(val[0]) if val else default
-    return str(val)
+def _first_scalar(value: Any, default: Any = None) -> Any:
+    """Return a scalar from legacy tuple/list discovery values."""
+    while isinstance(value, (list, tuple)):
+        if not value:
+            return default
+        value = value[0]
+    return default if value is None else value
 
 class OWNGateway:
     def __init__(self, discovery_info: Mapping[str, Any] | dict[str, Any]) -> None:
