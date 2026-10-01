@@ -24,12 +24,19 @@ _WHO_SUBMODULES: tuple[str, ...] = (
 )
 
 
+_SUBSYSTEMS_REGISTERED = False
+
+
 def _ensure_all_subsystems_registered() -> None:
     """Ensure all WHO subsystem parser modules are imported and registered."""
+    global _SUBSYSTEMS_REGISTERED  # pylint: disable=global-statement
+    if _SUBSYSTEMS_REGISTERED:
+        return
     for mod_name in _WHO_SUBMODULES:
         full_name = f"OWNd.message.{mod_name}"
         if full_name not in sys.modules:
             importlib.import_module(full_name)
+    _SUBSYSTEMS_REGISTERED = True
 
 
 def register_event_parser(who: int, parser: Callable[[str], OWNEvent]) -> None:

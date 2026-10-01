@@ -6,6 +6,7 @@ import subprocess
 import sys
 import pytest
 
+from OWNd.message import OWNEvent, base
 from OWNd.message.base import _ensure_all_subsystems_registered
 
 
@@ -18,7 +19,7 @@ def test_ensure_all_subsystems_registered_idempotent() -> None:
 def test_ensure_all_subsystems_registered_loads_missing_module() -> None:
     """Verify _ensure_all_subsystems_registered dynamically imports missing submodules."""
     with patch("importlib.import_module") as mock_import:
-        with patch.dict(sys.modules):
+        with patch.dict(sys.modules), patch.object(base, "_SUBSYSTEMS_REGISTERED", False):
             sys.modules.pop("OWNd.message.sound", None)
             _ensure_all_subsystems_registered()
             mock_import.assert_called_with("OWNd.message.sound")
@@ -159,3 +160,20 @@ assert type(evt_sound).__name__ == "OWNSoundEvent", f"Expected OWNSoundEvent, go
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
     assert result.returncode == 0, f"Subprocess failed:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
 
+
+def test_ensure_all_subsystems_registered_short_circuits_after_first_call() -> None:
+    """Once registered, later calls must not touch sys.modules / importlib again."""
+    _ensure_all_subsystems_registered()
+    with patch("importlib.import_module") as mock_import:
+        with patch.dict(sys.modules):
+            sys.modules.pop("OWNd.message.sound", None)
+            _ensure_all_subsystems_registered()
+        mock_import.assert_not_called()
+
+
+@pytest.mark.parametrize("frame", ["*#9##", "*#5##"])
+def test_bare_status_request_event_keeps_raw_log(frame: str) -> None:
+    """Bare *#WHO## frames must be logged as the raw frame, not 'None'/'-1' states."""
+    event = OWNEvent.parse(frame)
+    assert event is not None
+    assert event.human_readable_log == frame

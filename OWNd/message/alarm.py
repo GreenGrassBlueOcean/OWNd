@@ -90,7 +90,10 @@ class OWNAlarmEvent(OWNEvent):
         elif self._state_code == 31:
             self._state = "silent alarm"
 
-        if self._state is not None:
+        if self._what is None:
+            # Bare status request (e.g. *#5##): keep the raw frame as the log.
+            self._human_readable_log = self._raw
+        elif self._state is not None:
             self._human_readable_log = f"{self._human_readable_log}'{self._state}'."
         else:
             self._human_readable_log = (
