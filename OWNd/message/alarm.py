@@ -135,7 +135,7 @@ class OWNAlarmEvent(OWNEvent):
     def is_armed_home(self) -> bool:
         # Always False. WHAT 11 is "active zone" and no capture shows a
         # system-level WHAT 11, so home vs away is not distinguishable on the
-        # wire; the system state comes from WHAT 1 (activation) and 8/9.
+        # wire; armed/disarmed comes from WHAT 8/9 (engaged/disengaged).
         return False
 
     @property

@@ -260,7 +260,8 @@ class MH202Profile(GatewayProfile):
     """The MH202 scenario programmer and gateway.
 
     Hardware verified relaying the alarm bus (WHO 5) in MyHOME#564 (comment
-    5917195080): captures show arm/disarm transitions and zone states.
+    5917195080): the capture is a status dump of a disarmed panel (*5*1*0##,
+    *5*9*0##) and its zone states (WHAT 11/18).
     """
 
     def __init__(self) -> None:
@@ -278,8 +279,9 @@ class H4890Profile(GatewayProfile):
     """The 4890 3.5" touch screen family (AM4890, H4890, LN4890, LN4890A).
 
     The screen sits on the SCS bus next to the burglar alarm central unit and
-    relays the alarm bus: the H4890 captures in MyHOME#466 / PR #484 and #564
-    carry WHO 5 (arm and disarm, zone states, alarm events). ``supported_who`` is
+    relays the alarm bus: the H4890 capture in MyHOME#466 / PR #484 carries a
+    disarmed panel's status dump (*5*1*0##, *5*9*0##) and zone states (WHAT
+    11/18); no arm transition or alarm event is captured. ``supported_who`` is
     the class default plus WHO 5: the captures do not show the screen dropping
     heating, CEN or scenarios, so absence in a trace is not inferred. Sessions,
     pacing and authentication are the class defaults, not measurements, and
