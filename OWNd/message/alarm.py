@@ -127,7 +127,9 @@ class OWNAlarmEvent(OWNEvent):
 
     @property
     def is_armed_away(self) -> bool:
-        return self._state_code in (1, 8) and self._system
+        # WHAT 1 is "system operational", sent on a disarm (*5*2*0## -> *5*1*0##
+        # -> *5*9*0##) and in disarmed status dumps; only WHAT 8 means armed.
+        return self._state_code == 8 and self._system
 
     @property
     def is_armed_home(self) -> bool:

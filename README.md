@@ -107,7 +107,7 @@ Gateways have varying processing limitations, socket budgets, and pacing require
 | **Generic Gateway** | 1 session | 50 ms | OS TCP only | Conservative fallback |
 <!-- END_GATEWAY_PROFILES_TABLE -->
 
-Session, pacing and authentication values in the H4890 row are class defaults, not measurements; only its WHO set (lighting, automation, audio, energy, CEN+, burglar alarm) comes from captures.
+Session, pacing and authentication values in the H4890 row are class defaults, not measurements; only its WHO set (the class default plus the burglar alarm) is stated.
 
 Profiles can be resolved automatically using `get_gateway_profile(model_name)`:
 

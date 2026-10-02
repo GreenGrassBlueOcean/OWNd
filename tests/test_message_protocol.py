@@ -110,13 +110,27 @@ def test_alarm_command_helpers_and_dispatch() -> None:
     assert isinstance(OWNCommand.parse("*5*9*0##"), OWNAlarmCommand)
 
 
+@pytest.mark.parametrize(
+    ("frames", "armed"),
+    [
+        (["*5*2*0##", "*5*1*0##", "*5*9*0##"], [False, False, False]),
+        (["*5*1*0##", "*5*8*0##"], [False, True]),
+        (["*5*1*##", "*5*9*##"], [False, False]),
+    ],
+)
+def test_alarm_what_1_never_reads_as_armed(frames: list[str], armed: list[bool]) -> None:
+    """F454 trace (MyHOME#311): WHAT 1 is sent on disarm and in disarmed dumps; only WHAT 8 is armed."""
+    events = [OWNMessage.parse(f) for f in frames]
+    assert [e.is_armed_away for e in events] == armed
+
+
 def test_alarm_central_telemetry_and_events() -> None:
     """Central unit WHO 5 broadcasts (*5*<what>*0##) verify all state and power telemetry properties."""
     act = OWNMessage.parse("*5*1*0##")
     assert isinstance(act, OWNAlarmEvent)
     assert act.general is True
     assert act.is_active is True
-    assert act.is_armed_away is True
+    assert act.is_armed_away is False
     assert act.is_disarmed is False
 
     eng = OWNMessage.parse("*5*8*0##")

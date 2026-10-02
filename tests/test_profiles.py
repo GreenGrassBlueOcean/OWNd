@@ -116,8 +116,8 @@ def test_4890_family_carries_the_burglar_alarm(name: str) -> None:
     assert isinstance(profile, H4890Profile)
     assert profile.model_name == "H4890"
     assert profile.supports_who(WHO_ALARM)
-    # Only the subsystems seen in the captures, not the generic default set.
-    assert set(profile.supported_who) == {1, 2, 5, 16, 18, 22, 25}
+    # Class default plus WHO 5: absence in a trace is not inferred.
+    assert set(profile.supported_who) == {*DEFAULT_SUPPORTED_WHO, WHO_ALARM}
     assert "Burglar alarm (WHO 5)" in profile.features_summary
 
 

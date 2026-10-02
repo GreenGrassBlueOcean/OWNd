@@ -279,26 +279,18 @@ class H4890Profile(GatewayProfile):
 
     The screen sits on the SCS bus next to the burglar alarm central unit and
     relays the alarm bus: the H4890 captures in MyHOME#466 / PR #484 and #564
-    carry WHO 5 (arm and disarm, zone states, alarm events) alongside lighting,
-    automation, audio, energy and CEN+, and ``supported_who`` lists exactly
-    those. Only the subsystem set is verified; sessions, pacing and
-    authentication are the class defaults, not measurements, and whether a WHO 5 command
-    sent through the screen is accepted has not been captured.
+    carry WHO 5 (arm and disarm, zone states, alarm events). ``supported_who`` is
+    the class default plus WHO 5: the captures do not show the screen dropping
+    heating, CEN or scenarios, so absence in a trace is not inferred. Sessions,
+    pacing and authentication are the class defaults, not measurements, and
+    whether a WHO 5 command sent through the screen is accepted has not been captured.
     """
 
     def __init__(self) -> None:
         super().__init__(
             model_name="H4890",
             auth_measured=False,
-            supported_who=(
-                WHO_LIGHTING,
-                WHO_AUTOMATION,
-                WHO_SOUND,
-                WHO_ENERGY,
-                WHO_SOUND_DIFFUSION,
-                WHO_CEN_PLUS,
-                WHO_ALARM,
-            ),
+            supported_who=(*DEFAULT_SUPPORTED_WHO, WHO_ALARM),
         )
 
 
