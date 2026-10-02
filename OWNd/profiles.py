@@ -8,6 +8,7 @@ WHO_LIGHTING = 1
 WHO_AUTOMATION = 2
 WHO_LOAD_CONTROL = 3
 WHO_HEATING = 4
+WHO_ALARM = 5
 WHO_CEN = 15
 WHO_SOUND = 16
 WHO_SCENARIO = 17
@@ -45,6 +46,7 @@ class GatewayProfile:
     supports_energy_instant_power: bool = True
     supports_audio: bool = True
     supports_hmac: bool = False
+    auth_measured: bool = True
     supports_native_transitions: bool = False
     supports_extended_frames: bool = False
     supported_who: tuple[int, ...] = DEFAULT_SUPPORTED_WHO
@@ -98,7 +100,9 @@ class GatewayProfile:
         features: list[str] = []
         if self.command_queue_delay >= 0.15:
             features.append("Safe pacing")
-        if self.supports_hmac:
+        if not self.auth_measured:
+            features.append("Auth unmeasured")
+        elif self.supports_hmac:
             features.append("HMAC-SHA2")
         elif self.requires_password:
             features.append("Legacy password auth")
@@ -108,6 +112,8 @@ class GatewayProfile:
             features.append("Extended frames")
         if self.supports_who(WHO_SOUND) or self.supports_audio:
             features.append("Sound system (WHO 16)")
+        if self.supports_who(WHO_ALARM):
+            features.append("Burglar alarm (WHO 5)")
         features.extend(self.extra_features)
         return ", ".join(features) or "Conservative fallback"
 
@@ -260,6 +266,15 @@ class MH201Profile(GatewayProfile):
 
 
 class MH202Profile(GatewayProfile):
+    """The MH202 scenario programmer and gateway.
+
+    Hardware verified relaying the alarm bus (WHO 5) in MyHOME#564 (comment
+    5917195080): the capture is a status dump of a disarmed panel (*5*1*0##,
+    *5*9*0##) and its zone states (WHAT 11/18). WHO 5 here means reading the
+    alarm: the plant owner reports the central unit rejects SCS arm/disarm from
+    any gateway and arms through WHO 9 AUX frames instead (see OWNAlarmCommand).
+    """
+
     def __init__(self) -> None:
         super().__init__(
             model_name="MH202",
@@ -267,6 +282,30 @@ class MH202Profile(GatewayProfile):
             command_queue_delay=0.10,
             supports_hmac=True,
             supports_extended_frames=True,
+            supported_who=(*DEFAULT_SUPPORTED_WHO, WHO_ALARM),
+        )
+
+
+class H4890Profile(GatewayProfile):
+    """The 4890 3.5" touch screen family (AM4890, H4890, LN4890, LN4890A).
+
+    The screen sits on the SCS bus next to the burglar alarm central unit and
+    relays the alarm bus: the H4890 capture in MyHOME#466 / PR #484 carries a
+    disarmed panel's status dump (*5*1*0##, *5*9*0##) and zone states (WHAT
+    11/18); no arm transition or alarm event is captured. ``supported_who`` is
+    the class default plus WHO 5: the captures do not show the screen dropping
+    heating, CEN or scenarios, so absence in a trace is not inferred. Sessions,
+    pacing and authentication are the class defaults, not measurements. WHO 5
+    here means reading the alarm: the plant owner reports the central unit
+    rejects SCS arm/disarm from any gateway and arms through WHO 9 AUX frames
+    instead (see OWNAlarmCommand).
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            model_name="H4890",
+            auth_measured=False,
+            supported_who=(*DEFAULT_SUPPORTED_WHO, WHO_ALARM),
         )
 
 
@@ -295,6 +334,7 @@ _PROFILES = {
     "f454": F454Profile(),
     "f455": F455Profile(),
     "f461": F461Profile(),
+    "h4890": H4890Profile(),
     "mh200": MH200Profile(),
     "mh200n": MH200NProfile(),
     "mh201": MH201Profile(),
@@ -307,6 +347,7 @@ CANONICAL_PROFILE_ORDER = (
     "f454",
     "f455",
     "f461",
+    "h4890",
     "mh202",
     "mh201",
     "mh200",
@@ -322,6 +363,10 @@ CANONICAL_PROFILES: tuple[GatewayProfile, ...] = canonical_profiles()
 
 _ALIASES = {
     "mhs1": "myhomeserver1",
+    "am4890": "h4890",
+    "ln4890": "h4890",
+    "ln4890a": "h4890",
+    "4890": "h4890",
 }
 
 

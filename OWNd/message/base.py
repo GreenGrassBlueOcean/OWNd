@@ -61,6 +61,11 @@ class OWNMessage:
     _STATUS = re.compile(
         r"^\*(?P<who>\d+)\*(?P<what>\d+)(?P<what_param>(?:#\d+)*)\*(?P<where>\*|#?\d+)(?P<where_param>(?:#\d+)*)##$"  # pylint: disable=line-too-long
     )  #  *WHO*WHAT*WHERE##
+    # WHO 5 only: field units log system broadcasts with an empty WHERE
+    # (*5*1*##) next to the documented star form (*5*1**##).
+    _ALARM_EMPTY_WHERE = re.compile(
+        r"^\*5\*(?P<what>\d+)(?P<what_param>(?:#\d+)*)\*##$"
+    )  #  *5*WHAT*##
     _STATUS_REQUEST = re.compile(
         r"^\*#(?P<who>\d+)(?:\*(?P<where>#?\d+)(?P<where_param>(?:#\d+)*))?##$"
     )  #  *#WHO*WHERE## or *#WHO##
@@ -106,7 +111,22 @@ class OWNMessage:
                 self._family = "COMMAND_TRANSLATION"
             self._what_param = match.group("what_param").split("#")[1:]
             self._where = match.group("where")
+            if self._who == 5 and self._where == "*":
+                self._where = "0"  # the documented star form is the system address
             self._where_param = match.group("where_param").split("#")[1:]
+
+        elif match := self._ALARM_EMPTY_WHERE.match(self._raw):
+            self._is_valid_message = True
+            self._match = match
+            self._family = "EVENT"
+            self._message_type = "STATUS"
+            self._who = 5
+            self._what = int(match.group("what"))
+            self._what_param = match.group("what_param").split("#")[1:]
+            # Kept empty on purpose: gateways without a panel answer the *#5*0##
+            # poll with these (*5*9*##), a panel sends *5*9*0##. Consumers must
+            # not turn this spelling into a device.
+            self._where = ""
 
         elif match := self._STATUS_REQUEST.match(self._raw):
             self._is_valid_message = True
@@ -162,7 +182,11 @@ class OWNMessage:
             or cls._SHA.match(data)
         ):
             return OWNSignaling(data)
-        if cls._STATUS.match(data) or cls._DIMENSION_REQUEST_REPLY.match(data):
+        if (
+            cls._STATUS.match(data)
+            or cls._ALARM_EMPTY_WHERE.match(data)
+            or cls._DIMENSION_REQUEST_REPLY.match(data)
+        ):
             return OWNEvent.parse(data)
         if (
             cls._STATUS_REQUEST.match(data)

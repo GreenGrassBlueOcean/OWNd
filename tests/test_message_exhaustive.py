@@ -212,7 +212,7 @@ class TestMessageExhaustiveCoverage:
         ev_eng = OWNAlarmEvent("*5*8*0##")
         assert ev_eng.state_code == 8
         assert ev_eng.is_engaged is True
-        assert ev_eng.is_armed_away is True
+        assert ev_eng.is_armed_away is True  # WHAT 8 is the only armed state
 
         ev_tech = OWNAlarmEvent("*5*12*0##")
         assert ev_tech.state_code == 12
@@ -223,7 +223,7 @@ class TestMessageExhaustiveCoverage:
         assert ev_int.is_alarm is True
 
         ev_act = OWNAlarmEvent("*5*11*0##")
-        assert ev_act.is_armed_home is True
+        assert ev_act.is_armed_home is False
         assert ev_act.general is True
 
         # Sensor in non-zero zone reporting (where="12" -> zone 1, sensor 2)

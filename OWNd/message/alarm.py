@@ -20,7 +20,7 @@ class OWNAlarmEvent(OWNEvent):
         self._sensor: int | None = None
 
         where = self._where or ""
-        if where == "*":
+        if where in ("*", ""):
             self._system = True
             self._human_readable_log = "System is reporting: "
         elif where.startswith("#"):
@@ -114,23 +114,79 @@ class OWNAlarmEvent(OWNEvent):
 
     @property
     def is_active(self) -> bool:
-        return self._state_code == 1 or self._state_code == 11
+        """System-wide activation only: zone/sensor frames never move the panel."""
+        return self._state_code in (1, 11) and self._system
 
     @property
     def is_engaged(self) -> bool:
-        return self._state_code == 8
+        return self._state_code == 8 and self._system
 
     @property
     def is_disarmed(self) -> bool:
-        return self._state_code in (0, 2, 9)
+        return self._state_code in (0, 2, 9) and self._system
 
     @property
     def is_armed_away(self) -> bool:
-        return self._state_code in (1, 8)
+        # WHAT 1 is "system operational", sent on a disarm (*5*2*0## -> *5*1*0##
+        # -> *5*9*0##) and in disarmed status dumps; only WHAT 8 means armed.
+        return self._state_code == 8 and self._system
 
     @property
     def is_armed_home(self) -> bool:
-        return self._state_code == 11
+        # Always False. WHAT 11 is "active zone" and no capture shows a
+        # system-level WHAT 11, so home vs away is not distinguishable on the
+        # wire; armed/disarmed comes from WHAT 8/9 (engaged/disengaged).
+        return False
+
+    @property
+    def is_zone_active(self) -> bool:
+        return self._state_code == 11 and not self._system
+
+    @property
+    def is_zone_inactive(self) -> bool:
+        """WHAT 18 is "non-active zone" (partition state), not a bypass."""
+        return self._state_code == 18 and not self._system
+
+    @property
+    def is_battery_fault(self) -> bool:
+        # Not system-scoped: check general/zone/sensor to know the source.
+        return self._state_code in (4, 10)
+
+    @property
+    def is_battery_ok(self) -> bool:
+        return self._state_code == 5
+
+    @property
+    def is_mains_fault(self) -> bool:
+        return self._state_code == 6
+
+    @property
+    def is_mains_ok(self) -> bool:
+        return self._state_code == 7
+
+    @property
+    def is_power_telemetry(self) -> bool:
+        return self._state_code in (4, 5, 6, 7, 10)
+
+    @property
+    def is_intrusion(self) -> bool:
+        return self._state_code == 15
+
+    @property
+    def is_tamper(self) -> bool:
+        return self._state_code == 16
+
+    @property
+    def is_panic(self) -> bool:
+        return self._state_code == 17
+
+    @property
+    def is_technical(self) -> bool:
+        return self._state_code == 12
+
+    @property
+    def is_silent(self) -> bool:
+        return self._state_code == 31
 
     @property
     def state_name(self) -> str | None:
@@ -153,6 +209,25 @@ class OWNAlarmEvent(OWNEvent):
 
 
 class OWNAlarmCommand(OWNCommand):
+    """WHO 5 frames sent to the burglar alarm central unit.
+
+    Only ``status()`` is safe to rely on. Field reports say current central-unit
+    firmware rejects arm/disarm sent as WHO 5 frames over SCS (MyHOME#564,
+    comment 5913248544: the owner of an MHS1 + H4890/MH202 plant, quoting
+    BTicino support), whichever gateway sends them. No TX capture shows any
+    ``*5*...`` command being accepted.
+
+    The working route on that plant is a WHO 9 auxiliary command, e.g.
+    ``*9*1*7##`` (AUX channel 7 ON), with an automation programmed on the
+    central unit that arms the chosen zones when that AUX command arrives.
+    Which AUX channels and WHATs arm or disarm depends on the installer's
+    programming, so OWNd has no fixed frame for it. Consumers should treat the
+    alarm as read-only and send installer-configured AUX frames to arm or
+    disarm.
+
+    The arm/disarm/trigger builders below are kept for API compatibility.
+    """
+
     @classmethod
     def status(cls, where: str | int | None = "0") -> OWNAlarmCommand:
         if where is None or where == "":
@@ -175,12 +250,18 @@ class OWNAlarmCommand(OWNCommand):
 
     @classmethod
     def disarm(cls, where: str | int = "0") -> OWNAlarmCommand:
+        """Unverified: current central-unit firmware rejects SCS disarm (see class docstring)."""
         message = cls(f"*5*2*{where}##")
         message._human_readable_log = f"Disarming burglar alarm for zone {where}."
         return message
 
     @classmethod
     def arm_away(cls, where: str | int = "0") -> OWNAlarmCommand:
+        """Unverified: current central-unit firmware rejects SCS arming (see class docstring).
+
+        On the bus WHAT 1 is "activation" (system operational), not armed: the
+        F454 trace (MyHOME#311) shows it on every disarm. Same frame as arm_home().
+        """
         message = cls(f"*5*1*{where}##")
         message._human_readable_log = (
             f"Arming burglar alarm (away) for zone {where}."
@@ -189,6 +270,7 @@ class OWNAlarmCommand(OWNCommand):
 
     @classmethod
     def arm_home(cls, where: str | int = "0") -> OWNAlarmCommand:
+        """Unverified: same frame as arm_away(); see arm_away() and the class docstring."""
         message = cls(f"*5*1*{where}##")
         message._human_readable_log = (
             f"Arming burglar alarm (home) for zone {where}."
@@ -197,6 +279,7 @@ class OWNAlarmCommand(OWNCommand):
 
     @classmethod
     def trigger(cls, where: str | int = "0") -> OWNAlarmCommand:
+        """Unverified: no TX capture of a panic command being accepted."""
         message = cls(f"*5*17*{where}##")
         message._human_readable_log = (
             f"Triggering panic burglar alarm for zone {where}."
@@ -206,6 +289,32 @@ class OWNAlarmCommand(OWNCommand):
     @classmethod
     def panic(cls, where: str | int = "0") -> OWNAlarmCommand:
         return cls.trigger(where=where)
+
+    @classmethod
+    def engage(cls, where: str | int = "0") -> OWNAlarmCommand:
+        """Experimental: engage burglar alarm for zone (default "0" = central).
+
+        No TX capture of this command exists, and current central-unit firmware
+        is reported to reject SCS arming (see class docstring).
+        """
+        message = cls(f"*5*8*{where}##")
+        message._human_readable_log = (
+            f"Engaging burglar alarm for zone {where}."
+        )
+        return message
+
+    @classmethod
+    def disengage(cls, where: str | int = "0") -> OWNAlarmCommand:
+        """Experimental: disengage burglar alarm for zone (default "0" = central).
+
+        No TX capture of this command exists, and current central-unit firmware
+        is reported to reject SCS disarming (see class docstring).
+        """
+        message = cls(f"*5*9*{where}##")
+        message._human_readable_log = (
+            f"Disengaging burglar alarm for zone {where}."
+        )
+        return message
 
 
 register_event_parser(5, OWNAlarmEvent)
