@@ -261,7 +261,9 @@ class MH202Profile(GatewayProfile):
 
     Hardware verified relaying the alarm bus (WHO 5) in MyHOME#564 (comment
     5917195080): the capture is a status dump of a disarmed panel (*5*1*0##,
-    *5*9*0##) and its zone states (WHAT 11/18).
+    *5*9*0##) and its zone states (WHAT 11/18). WHO 5 here means reading the
+    alarm: the plant owner reports the central unit rejects SCS arm/disarm from
+    any gateway and arms through WHO 9 AUX frames instead (see OWNAlarmCommand).
     """
 
     def __init__(self) -> None:
@@ -284,8 +286,10 @@ class H4890Profile(GatewayProfile):
     11/18); no arm transition or alarm event is captured. ``supported_who`` is
     the class default plus WHO 5: the captures do not show the screen dropping
     heating, CEN or scenarios, so absence in a trace is not inferred. Sessions,
-    pacing and authentication are the class defaults, not measurements, and
-    whether a WHO 5 command sent through the screen is accepted has not been captured.
+    pacing and authentication are the class defaults, not measurements. WHO 5
+    here means reading the alarm: the plant owner reports the central unit
+    rejects SCS arm/disarm from any gateway and arms through WHO 9 AUX frames
+    instead (see OWNAlarmCommand).
     """
 
     def __init__(self) -> None:

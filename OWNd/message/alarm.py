@@ -209,6 +209,25 @@ class OWNAlarmEvent(OWNEvent):
 
 
 class OWNAlarmCommand(OWNCommand):
+    """WHO 5 frames sent to the burglar alarm central unit.
+
+    Only ``status()`` is safe to rely on. Field reports say current central-unit
+    firmware rejects arm/disarm sent as WHO 5 frames over SCS (MyHOME#564,
+    comment 5913248544: the owner of an MHS1 + H4890/MH202 plant, quoting
+    BTicino support), whichever gateway sends them. No TX capture shows any
+    ``*5*...`` command being accepted.
+
+    The working route on that plant is a WHO 9 auxiliary command, e.g.
+    ``*9*1*7##`` (AUX channel 7 ON), with an automation programmed on the
+    central unit that arms the chosen zones when that AUX command arrives.
+    Which AUX channels and WHATs arm or disarm depends on the installer's
+    programming, so OWNd has no fixed frame for it. Consumers should treat the
+    alarm as read-only and send installer-configured AUX frames to arm or
+    disarm.
+
+    The arm/disarm/trigger builders below are kept for API compatibility.
+    """
+
     @classmethod
     def status(cls, where: str | int | None = "0") -> OWNAlarmCommand:
         if where is None or where == "":
@@ -231,12 +250,18 @@ class OWNAlarmCommand(OWNCommand):
 
     @classmethod
     def disarm(cls, where: str | int = "0") -> OWNAlarmCommand:
+        """Unverified: current central-unit firmware rejects SCS disarm (see class docstring)."""
         message = cls(f"*5*2*{where}##")
         message._human_readable_log = f"Disarming burglar alarm for zone {where}."
         return message
 
     @classmethod
     def arm_away(cls, where: str | int = "0") -> OWNAlarmCommand:
+        """Unverified: current central-unit firmware rejects SCS arming (see class docstring).
+
+        On the bus WHAT 1 is "activation" (system operational), not armed: the
+        F454 trace (MyHOME#311) shows it on every disarm. Same frame as arm_home().
+        """
         message = cls(f"*5*1*{where}##")
         message._human_readable_log = (
             f"Arming burglar alarm (away) for zone {where}."
@@ -245,6 +270,7 @@ class OWNAlarmCommand(OWNCommand):
 
     @classmethod
     def arm_home(cls, where: str | int = "0") -> OWNAlarmCommand:
+        """Unverified: same frame as arm_away(); see arm_away() and the class docstring."""
         message = cls(f"*5*1*{where}##")
         message._human_readable_log = (
             f"Arming burglar alarm (home) for zone {where}."
@@ -253,6 +279,7 @@ class OWNAlarmCommand(OWNCommand):
 
     @classmethod
     def trigger(cls, where: str | int = "0") -> OWNAlarmCommand:
+        """Unverified: no TX capture of a panic command being accepted."""
         message = cls(f"*5*17*{where}##")
         message._human_readable_log = (
             f"Triggering panic burglar alarm for zone {where}."
@@ -267,7 +294,8 @@ class OWNAlarmCommand(OWNCommand):
     def engage(cls, where: str | int = "0") -> OWNAlarmCommand:
         """Experimental: engage burglar alarm for zone (default "0" = central).
 
-        No TX capture of this command exists yet.
+        No TX capture of this command exists, and current central-unit firmware
+        is reported to reject SCS arming (see class docstring).
         """
         message = cls(f"*5*8*{where}##")
         message._human_readable_log = (
@@ -279,7 +307,8 @@ class OWNAlarmCommand(OWNCommand):
     def disengage(cls, where: str | int = "0") -> OWNAlarmCommand:
         """Experimental: disengage burglar alarm for zone (default "0" = central).
 
-        No TX capture of this command exists yet.
+        No TX capture of this command exists, and current central-unit firmware
+        is reported to reject SCS disarming (see class docstring).
         """
         message = cls(f"*5*9*{where}##")
         message._human_readable_log = (
