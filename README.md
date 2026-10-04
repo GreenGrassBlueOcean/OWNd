@@ -96,6 +96,10 @@ Gateways have varying processing limitations, socket budgets, and pacing require
 | Gateway Model | Concurrency | Queue Delay | Event keepalive | Features |
 |:---|:---:|:---:|:---:|:---|
 | **MyHomeServer1** | 4 sessions (2 default) | 20 ms | OS TCP only | HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16) |
+| **F452** | 1 session | 50 ms | OS TCP only | Legacy password auth |
+| **F452V** | 1 session | 50 ms | OS TCP only | Legacy password auth |
+| **F453** | 1 session | 50 ms | OS TCP only | Legacy password auth |
+| **F453AV** | 1 session | 50 ms | OS TCP only | Legacy password auth, CEN+ requires FW >= 2.1.7 |
 | **F454** | 4 sessions | 50 ms | 90 s | HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16) |
 | **F455** | 4 sessions (2 default) | 50 ms | OS TCP only | HMAC-SHA2, Native transitions, Extended frames |
 | **F461** | 4 sessions | 50 ms | 90 s | HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16) |

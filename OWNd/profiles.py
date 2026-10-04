@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 WHO_LIGHTING = 1
 WHO_AUTOMATION = 2
@@ -30,11 +31,42 @@ DEFAULT_SUPPORTED_WHO = (
 )
 
 
+def parse_firmware_version(
+    version: str | tuple[int, ...] | list[int] | None,
+) -> tuple[int, ...]:
+    """Parse and normalize firmware version into a comparable integer tuple.
+
+    Zero-pads to at least 3 parts (V, R, B) to guarantee semantic comparison
+    without tuple-length comparison flaws (e.g. (2, 1) < (2, 1, 7)).
+    """
+    if version is None:
+        return (0, 0, 0)
+    if isinstance(version, (list, tuple)):
+        parts: list[int] = []
+        for item in version:
+            if isinstance(item, int):
+                parts.append(item)
+            elif isinstance(item, str):
+                parts.extend(int(m) for m in re.findall(r"\d+", item))
+            else:
+                pass
+    elif isinstance(version, str):
+        parts = [int(m) for m in re.findall(r"\d+", version)]
+    elif isinstance(version, int):
+        parts = [version]
+    else:
+        parts = []
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts)
+
+
 @dataclass(frozen=True, slots=True)
 class GatewayProfile:
     """Capabilities and safe defaults for an OpenWebNet gateway family."""
 
     model_name: str
+    firmware_version: str | None = None
     max_command_sessions: int = 1
     default_command_sessions: int = 1
     default_port: int = 20000
@@ -127,6 +159,144 @@ class GatewayProfile:
 
     def can_support_workers(self, count: int) -> bool:
         return self.supports_session_count(count)
+
+
+class F452Profile(GatewayProfile):
+    """The F452 Web Server gateway.
+
+    Single-session legacy gateway connecting Ethernet to an SCS bus.
+    Supports WHO 1, 2, 3, 4, 15, 17. Does not support sound diffusion (WHO 16/22)
+    or CEN+ (WHO 25) per Legrand WHO 25 specification (v1.0.0, 2010, p. 13)
+    and WHO 15-25 specification (p. 24).
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            model_name="F452",
+            max_command_sessions=1,
+            command_queue_delay=0.05,
+            supports_audio=False,
+            supported_who=(
+                WHO_LIGHTING,
+                WHO_AUTOMATION,
+                WHO_LOAD_CONTROL,
+                WHO_HEATING,
+                WHO_CEN,
+                WHO_SCENARIO,
+            ),
+        )
+
+
+class F452VProfile(GatewayProfile):
+    """The F452V Web Server Audio/Video gateway.
+
+    Single-session legacy gateway connecting Ethernet to an SCS bus.
+    Supports WHO 1, 2, 3, 4, 15, 17. Does not support sound diffusion (WHO 16/22)
+    or CEN+ (WHO 25) per Legrand WHO 25 specification (v1.0.0, 2010, p. 13)
+    and WHO 15-25 specification (p. 24).
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            model_name="F452V",
+            max_command_sessions=1,
+            command_queue_delay=0.05,
+            supports_audio=False,
+            supported_who=(
+                WHO_LIGHTING,
+                WHO_AUTOMATION,
+                WHO_LOAD_CONTROL,
+                WHO_HEATING,
+                WHO_CEN,
+                WHO_SCENARIO,
+            ),
+        )
+
+
+class F453Profile(GatewayProfile):
+    """The F453 Audio/Video Web Server gateway.
+
+    Single-session gateway connecting Ethernet to an SCS bus.
+    Supports lighting, automation, load control, heating, CEN, scenario,
+    energy management, and CEN+ (WHO 25) per Legrand WHO 25 specification
+    (v1.0.0, 2010, p. 13) and WHO 15-25 specification (p. 24).
+    Does not support sound diffusion (WHO 16/22).
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            model_name="F453",
+            max_command_sessions=1,
+            command_queue_delay=0.05,
+            supports_audio=False,
+            supported_who=(
+                WHO_LIGHTING,
+                WHO_AUTOMATION,
+                WHO_LOAD_CONTROL,
+                WHO_HEATING,
+                WHO_CEN,
+                WHO_SCENARIO,
+                WHO_ENERGY,
+                WHO_CEN_PLUS,
+            ),
+        )
+
+
+class F453AVProfile(GatewayProfile):
+    """The F453AV (Arteor 573992) Audio/Video Web Server gateway.
+
+    Per Legrand WHO 25 specification (v1.0.0, 2010, p. 13) and WHO 15-25
+    specification (p. 24):
+    - Firmware < 2.1.7 (e.g. 1.0.19, 2.1.0) does NOT support CEN+ (WHO 25).
+    - Firmware >= 2.1.7 (e.g. 2.1.7, 3.0) DOES support CEN+ (WHO 25).
+    When firmware version is unstated or unknown, resolves to the conservative
+    legacy profile (omitting WHO 25) with an advisory note in extra_features.
+    Does not support sound diffusion (WHO 16/22).
+    """
+
+    def __init__(
+        self,
+        firmware_version: str | tuple[int, ...] | list[int] | None = None,
+    ) -> None:
+        if not firmware_version:
+            fw_str = None
+        elif isinstance(firmware_version, (list, tuple)):
+            fw_str = ".".join(str(p) for p in firmware_version)
+        else:
+            fw_str = str(firmware_version)
+        has_cen_plus = parse_firmware_version(firmware_version) >= (2, 1, 7)
+        supported_who = (
+            (
+                WHO_LIGHTING,
+                WHO_AUTOMATION,
+                WHO_LOAD_CONTROL,
+                WHO_HEATING,
+                WHO_CEN,
+                WHO_SCENARIO,
+                WHO_ENERGY,
+                WHO_CEN_PLUS,
+            )
+            if has_cen_plus
+            else (
+                WHO_LIGHTING,
+                WHO_AUTOMATION,
+                WHO_LOAD_CONTROL,
+                WHO_HEATING,
+                WHO_CEN,
+                WHO_SCENARIO,
+                WHO_ENERGY,
+            )
+        )
+        extra_features = () if has_cen_plus else ("CEN+ requires FW >= 2.1.7",)
+        super().__init__(
+            model_name="F453AV",
+            firmware_version=fw_str,
+            max_command_sessions=1,
+            command_queue_delay=0.05,
+            supports_audio=False,
+            supported_who=supported_who,
+            extra_features=extra_features,
+        )
 
 
 class F454Profile(GatewayProfile):
@@ -337,6 +507,10 @@ class GenericGatewayProfile(GatewayProfile):
 _GENERIC = GenericGatewayProfile()
 
 _PROFILES = {
+    "f452": F452Profile(),
+    "f452v": F452VProfile(),
+    "f453": F453Profile(),
+    "f453av": F453AVProfile(),
     "f454": F454Profile(),
     "f455": F455Profile(),
     "f461": F461Profile(),
@@ -350,6 +524,10 @@ _PROFILES = {
 
 CANONICAL_PROFILE_ORDER = (
     "myhomeserver1",
+    "f452",
+    "f452v",
+    "f453",
+    "f453av",
     "f454",
     "f455",
     "f461",
@@ -373,11 +551,25 @@ _ALIASES = {
     "ln4890": "h4890",
     "ln4890a": "h4890",
     "4890": "h4890",
+    "573992": "f453av",
+    "arteor573992": "f453av",
+    "arteorf453av": "f453av",
+    "003598": "f454",
+    "03598": "f454",
+    "003594": "f455",
+    "03594": "f455",
+    "03565": "mh200n",
+    "003565": "mh200n",
+    "003535": "mh202",
+    "03535": "mh202",
 }
 
 
-def get_gateway_profile(model_name: str | None) -> GatewayProfile:
-    """Resolve a model name to a profile, falling back conservatively."""
+def get_gateway_profile(
+    model_name: str | None,
+    firmware_version: str | tuple[int, ...] | list[int] | None = None,
+) -> GatewayProfile:
+    """Resolve a model name and optional firmware version to a profile, falling back conservatively."""
     if not model_name:
         return _GENERIC
 
@@ -385,6 +577,8 @@ def get_gateway_profile(model_name: str | None) -> GatewayProfile:
         character for character in model_name.lower() if character.isalnum()
     )
     normalized = _ALIASES.get(normalized, normalized)
+    if normalized == "f453av":
+        return F453AVProfile(firmware_version=firmware_version)
     profile = _PROFILES.get(normalized)
     if profile is not None:
         return profile
