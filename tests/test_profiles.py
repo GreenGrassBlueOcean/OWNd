@@ -48,7 +48,7 @@ def test_mh200_keeps_the_mh200n_pacing() -> None:
     assert mh200.command_queue_delay == mh200n.command_queue_delay
     assert mh200.max_queue_size == mh200n.max_queue_size
     assert mh200.event_keepalive_interval == mh200n.event_keepalive_interval
-    # TiMH200N release notes: MH200N added CEN+ (WHO 25); legacy MH200 only supports classic CEN (WHO 15)
+    # Legrand WHO 25 spec (2010, p. 13): MH200 lacks WHO 25 (CEN+ / dry contact & IR); MH200N supports it.
     assert set(mh200n.supported_who) - set(mh200.supported_who) == {WHO_CEN_PLUS}
     assert mh200.supports_who(WHO_CEN) is True
     assert not mh200.supports_who(WHO_CEN_PLUS)

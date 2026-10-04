@@ -204,10 +204,14 @@ class MH200Profile(GatewayProfile):
     state frame for every amplifier and source within 0.6 s, and the bare
     ``*#16*0##`` returned none (#53). Pacing, queue size, keepalive and the other
     subsystems are copied from the MH200N profile and have not been
-    measured on an MH200. As documented in the BTicino TiMH200N release
-    notes, support for CEN+ (WHO 25) and virtual objects was newly introduced
-    specifically for the MH200N; the legacy MH200 firmware predates and
-    does not support CEN+, supporting only classic CEN (WHO 15).
+    measured on an MH200.
+
+    WHO 25 covers both CEN+ and dry contact / IR state functions (WHAT 31/32).
+    As documented in Legrand's WHO 25 specification ("Dry contact and IR state
+    functions", v1.0.0, 2010, https://developer.legrand.com/uploads/2019/12/WHO_25.pdf,
+    page 13 "Gateways that allow the function": MH200 NO, MH200N 03565 YES),
+    the legacy MH200 firmware supports neither, supporting only classic
+    CEN (WHO 15).
     """
 
     def __init__(self) -> None:
