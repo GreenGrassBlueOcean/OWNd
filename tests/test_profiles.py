@@ -405,6 +405,13 @@ def test_f453av_profile_firmware_discrimination() -> None:
     assert profile_list.firmware_version == "2.1.7"
     assert profile_list.supports_who(WHO_CEN_PLUS) is True
 
+    # Empty inputs resolve to None firmware_version and conservative profile
+    for empty_fw in ["", [], (), None]:
+        empty_prof = F453AVProfile(firmware_version=empty_fw)
+        assert empty_prof.firmware_version is None
+        assert empty_prof.supports_who(WHO_CEN_PLUS) is False
+        assert "CEN+ requires FW >= 2.1.7" in empty_prof.extra_features
+
 
 def test_catalog_aliases_resolution() -> None:
     """Verify Legrand/BTicino catalog item numbers resolve to appropriate profiles."""
@@ -417,20 +424,27 @@ def test_catalog_aliases_resolution() -> None:
     assert isinstance(f453av_cat_fw, F453AVProfile)
     assert f453av_cat_fw.supports_who(WHO_CEN_PLUS) is True
 
-    # 003598 (F454)
+    # Named Arteor variants
+    assert isinstance(get_gateway_profile("Arteor 573992", "2.1.7"), F453AVProfile)
+    assert isinstance(get_gateway_profile("Arteor F453AV"), F453AVProfile)
+
+    # 003598 / 03598 (F454)
     assert isinstance(get_gateway_profile("003598"), F454Profile)
+    assert isinstance(get_gateway_profile("03598"), F454Profile)
     assert isinstance(get_gateway_profile("0 035 98"), F454Profile)
 
-    # 003594 (F455)
+    # 003594 / 03594 (F455)
     assert isinstance(get_gateway_profile("003594"), F455Profile)
+    assert isinstance(get_gateway_profile("03594"), F455Profile)
     assert isinstance(get_gateway_profile("0 035 94"), F455Profile)
 
     # 03565 / 003565 (MH200N)
     assert isinstance(get_gateway_profile("03565"), MH200NProfile)
     assert isinstance(get_gateway_profile("003565"), MH200NProfile)
 
-    # 003535 (MH202)
+    # 003535 / 03535 (MH202)
     assert isinstance(get_gateway_profile("003535"), MH202Profile)
+    assert isinstance(get_gateway_profile("03535"), MH202Profile)
 
 
 def test_owngateway_reactive_profile_upgrade_on_firmware() -> None:
@@ -453,6 +467,11 @@ def test_owngateway_reactive_profile_upgrade_on_firmware() -> None:
     gw.firmware = "1.0.19"
     assert gw.profile.supports_who(WHO_CEN_PLUS) is False
 
+    # Empty string resets firmware to None and conservative profile
+    gw.firmware = ""
+    assert gw.firmware is None
+    assert gw.profile.supports_who(WHO_CEN_PLUS) is False
+
     # Initialize with firmware in discovery_info
     gw_with_fw = OWNGateway({
         "address": "192.168.1.50",
@@ -461,6 +480,15 @@ def test_owngateway_reactive_profile_upgrade_on_firmware() -> None:
     })
     assert gw_with_fw.firmware == "2.1.7"
     assert gw_with_fw.profile.supports_who(WHO_CEN_PLUS) is True
+
+    # Initialize with empty string in discovery_info
+    gw_empty_fw = OWNGateway({
+        "address": "192.168.1.50",
+        "modelName": "F453AV",
+        "modelNumber": "",
+    })
+    assert gw_empty_fw.firmware is None
+    assert gw_empty_fw.profile.supports_who(WHO_CEN_PLUS) is False
 
 
 def test_owngateway_event_properties() -> None:

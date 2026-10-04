@@ -42,7 +42,7 @@ class OWNGateway:
             self.model_number = (
                 ".".join(str(part) for part in model_number) if model_number else None
             )
-        elif model_number is None:
+        elif model_number in (None, ""):
             self.model_number = None
         else:
             self.model_number = str(model_number)
@@ -83,7 +83,7 @@ class OWNGateway:
             self.model_number = (
                 ".".join(str(part) for part in firmware) if firmware else None
             )
-        elif firmware is None:
+        elif firmware in (None, ""):
             self.model_number = None
         else:
             self.model_number = str(firmware)

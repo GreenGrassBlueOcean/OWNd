@@ -258,13 +258,12 @@ class F453AVProfile(GatewayProfile):
         self,
         firmware_version: str | tuple[int, ...] | list[int] | None = None,
     ) -> None:
-        fw_str = (
-            ".".join(str(p) for p in firmware_version)
-            if isinstance(firmware_version, (list, tuple))
-            else str(firmware_version)
-            if firmware_version is not None
-            else None
-        )
+        if not firmware_version:
+            fw_str = None
+        elif isinstance(firmware_version, (list, tuple)):
+            fw_str = ".".join(str(p) for p in firmware_version)
+        else:
+            fw_str = str(firmware_version)
         has_cen_plus = parse_firmware_version(firmware_version) >= (2, 1, 7)
         supported_who = (
             (
@@ -549,11 +548,16 @@ _ALIASES = {
     "ln4890a": "h4890",
     "4890": "h4890",
     "573992": "f453av",
+    "arteor573992": "f453av",
+    "arteorf453av": "f453av",
     "003598": "f454",
+    "03598": "f454",
     "003594": "f455",
+    "03594": "f455",
     "03565": "mh200n",
     "003565": "mh200n",
     "003535": "mh202",
+    "03535": "mh202",
 }
 
 
