@@ -37,7 +37,6 @@ class OWNGateway:
         self.manufacturer_url = discovery_info.get("manufacturerURL")
         self.model_name = discovery_info.get("modelName", "Unknown model")
         self.model = self.model_name
-        self.profile: GatewayProfile = get_gateway_profile(self.model_name)
         model_number = discovery_info.get("modelNumber")
         if isinstance(model_number, (list, tuple)):
             self.model_number = (
@@ -47,6 +46,9 @@ class OWNGateway:
             self.model_number = None
         else:
             self.model_number = str(model_number)
+        self.profile: GatewayProfile = get_gateway_profile(
+            self.model_name, self.model_number
+        )
         # self.presentationURL = discovery_info.get("presentationURL")
         self.serial_number = discovery_info.get("serialNumber")
         self.udn = discovery_info.get("UDN")
@@ -85,6 +87,7 @@ class OWNGateway:
             self.model_number = None
         else:
             self.model_number = str(firmware)
+        self.profile = get_gateway_profile(self.model_name, self.model_number)
 
     @property
     def serial(self) -> str | None:
