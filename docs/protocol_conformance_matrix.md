@@ -32,18 +32,18 @@ To prevent divergence and eliminate guesswork, every protocol frame and capabili
 | **5** | **Burglar Alarm** | Zone status, CU status, Silent alarms, System arm/disarm | `*5*1*1##`, `*#5*1##`, `*5*2*2##` | Valid | Matched | **VERIFIED (100%)** |
 | **9** | **Auxiliary** | Relay ON/OFF commands across auxiliary channels | `*9*1*1##`, `*9*0*1##` | Valid | Matched | **VERIFIED (100%)** |
 | **13** | **Gateway Mgmt** | Firmware version, Gateway internal datetime requests | `*#13*0*0##`, `*#13*0*22##` | Valid | Matched | **VERIFIED (100%)** |
-| **15** | **CEN Scenarios** | Press, short release, long release, extended hold | `*15*02*11##`, `*15*02#1*11##`, `*15*02#3*11##`, `*15*02#2*11##` | Valid | Matched | **DOCUMENTED (no bus capture)** |
+| **15** | **CEN Scenarios** | Press, short release, long release, extended hold | `*15*01*73##`, `*15*01#1*73##`, `*15*01#2*0110##`, `*15*01#3*0110##` | Valid | Matched | **VERIFIED (100%)** |
 | **18** | **Energy Mgmt** | Instantaneous active power (W), Cumulative energy (kWh) | `*#18*51*113##`, `*#18*51*51##`, `*#18*51*52#26#9##` | Valid | Matched | **VERIFIED (100%)** |
 | **25** | **CEN+ / Dry Contacts**| Short press; start, hold and release of an extended press; WHERE `2` + object 0–2047 | `*25*21#1*21##`, `*25*22#1*21##`, `*25*23#1*21##`, `*25*24#1*21##` | Valid | Matched | **VERIFIED (100%)** |
 
-**DOCUMENTED** means the frames follow the [OpenWebNet Encyclopedia](https://github.com/OpenWebNet-HA/OpenWebNet-Encyclopedia) but no bus capture backs them yet. The WHO 15 row waits for the traces requested in [#434](https://github.com/OpenWebNet-HA/MyHOME/issues/434). The WHO 25 examples are an MH201 capture from [#418](https://github.com/OpenWebNet-HA/MyHOME/issues/418).
+Sources for the examples changed in [OWNd#77](https://github.com/OpenWebNet-HA/OWNd/issues/77). The MyHomeServer1 firmware, run on an emulated bus, produces a bus frame for each of them and refuses the examples they replace. The WHO 15 press and short release (`*15*01*73##`, `*15*01#1*73##`) were captured on an MH200N + MyHomeServer1 bus in [MyHOME#541](https://github.com/OpenWebNet-HA/MyHOME/issues/541). Long release and extended hold (`#2`, `#3`) rest on the firmware alone. The WHO 25 examples are an MH201 capture from [MyHOME#418](https://github.com/OpenWebNet-HA/MyHOME/issues/418). The energy request `*#18*51*52#26#9##` was accepted by a real MyHomeServer1.
 
 ---
 
 ## 3. Key Architectural Truths & Design Decisions
 
 ### 3.1 String Preservation for Hardware Addresses
-- **Observation**: Addresses such as `0311` (Lighting PTP) and `0001` (CEN+ module) begin with leading zeros.
+- **Observation**: Addresses such as `0311` (Lighting PTP) and `0110` (CEN) begin with leading zeros.
 - **Verifiable Truth**: Addresses **must never be converted to integers** (`311` or `1`). In OpenWebNet, leading zeros denote specific address spaces and module wiring. OWNd strictly enforces string types for `where` across all subsystems.
 
 ### 3.2 Private Bus Routing (`#4#bus`)

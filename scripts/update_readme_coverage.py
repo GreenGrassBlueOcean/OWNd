@@ -38,7 +38,7 @@ COMPONENT_NOTES = {
     "OWNd/message/heating.py": "WHO 4: Thermoregulation, heating/cooling zone control, and temperature decoders",
     "OWNd/message/lighting.py": "WHO 1: Lighting controls, dimming, RGB/HSV color, and motion/PIR sensors",
     "OWNd/message/scenario.py": "WHO 0, WHO 9, WHO 17: Scenario activation, auxiliary commands, and MH200/MH202 scenes",
-    "OWNd/message/sound.py": "WHO 16, WHO 22: Sound system and audio/video matrix routing",
+    "OWNd/message/sound.py": "WHO 16: Sound system and audio/video matrix routing (WHO 22 is not implemented)",
     "OWNd/profiles.py": "Declarative hardware gateway models (F454, MH200, MH200N, MH201, MH202, MyHomeServer1)",
     "OWNd/transport/base.py": "Abstract transport layer and event listener notification contracts",
     "OWNd/transport/serial.py": "Async Serial/USB transport for Legrand 3578 interface with in-band demux",
