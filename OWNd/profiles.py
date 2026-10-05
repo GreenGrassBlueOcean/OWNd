@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
 
 WHO_LIGHTING = 1
@@ -66,7 +66,6 @@ class GatewayProfile:
     """Capabilities and safe defaults for an OpenWebNet gateway family."""
 
     model_name: str
-    firmware_version: str | None = None
     max_command_sessions: int = 1
     default_command_sessions: int = 1
     default_port: int = 20000
@@ -83,6 +82,7 @@ class GatewayProfile:
     supports_extended_frames: bool = False
     supported_who: tuple[int, ...] = DEFAULT_SUPPORTED_WHO
     extra_features: tuple[str, ...] = ()
+    firmware_version: str | None = field(default=None, kw_only=True)
 
     @property
     def max_workers(self) -> int:
@@ -161,97 +161,116 @@ class GatewayProfile:
         return self.supports_session_count(count)
 
 
-class F452Profile(GatewayProfile):
-    """The F452 Web Server gateway.
+# Class default minus CEN+ (WHO 25), for gateways the Legrand tables list as NO.
+_DEFAULT_WITHOUT_CEN_PLUS = tuple(
+    who for who in DEFAULT_SUPPORTED_WHO if who != WHO_CEN_PLUS
+)
 
-    Single-session legacy gateway connecting Ethernet to an SCS bus.
-    Supports WHO 1, 2, 3, 4, 15, 17. Does not support sound diffusion (WHO 16/22)
-    or CEN+ (WHO 25) per Legrand WHO 25 specification (v1.0.0, 2010, p. 13)
-    and WHO 15-25 specification (p. 24).
+# Firmware at which Legrand documents CEN+ on the F453AV (WHO 25 p. 13).
+_F453AV_CEN_PLUS_FIRMWARE = (2, 1, 7)
+
+
+class F452Profile(GatewayProfile):
+    """The F452 Web Server.
+
+    Only WHO 25 is documented: Legrand's WHO 25 specification (p. 13,
+    https://developer.legrand.com/uploads/2019/12/WHO_25.pdf) and WHO 15-25
+    specification (p. 24, https://developer.legrand.com/uploads/2019/12/WHO_15-25.pdf)
+    list the F452 as NO for CEN+ and dry contact / IR state, so WHO 25 is
+    dropped. Every other subsystem is the class default and unverified.
+    Sessions and authentication are the class defaults, not measurements;
+    pacing is copied from the MH200 because nothing is measured.
     """
 
     def __init__(self) -> None:
         super().__init__(
             model_name="F452",
-            max_command_sessions=1,
-            command_queue_delay=0.05,
-            supports_audio=False,
-            supported_who=(
-                WHO_LIGHTING,
-                WHO_AUTOMATION,
-                WHO_LOAD_CONTROL,
-                WHO_HEATING,
-                WHO_CEN,
-                WHO_SCENARIO,
-            ),
+            command_queue_delay=0.15,
+            auth_measured=False,
+            supported_who=_DEFAULT_WITHOUT_CEN_PLUS,
         )
 
 
 class F452VProfile(GatewayProfile):
-    """The F452V Web Server Audio/Video gateway.
+    """The F452V Web Server.
 
-    Single-session legacy gateway connecting Ethernet to an SCS bus.
-    Supports WHO 1, 2, 3, 4, 15, 17. Does not support sound diffusion (WHO 16/22)
-    or CEN+ (WHO 25) per Legrand WHO 25 specification (v1.0.0, 2010, p. 13)
-    and WHO 15-25 specification (p. 24).
+    Only WHO 25 is documented: Legrand's WHO 25 specification (p. 13,
+    https://developer.legrand.com/uploads/2019/12/WHO_25.pdf) and WHO 15-25
+    specification (p. 24, https://developer.legrand.com/uploads/2019/12/WHO_15-25.pdf)
+    list the F452V as NO for CEN+ and dry contact / IR state, so WHO 25 is
+    dropped. Every other subsystem is the class default and unverified.
+    Sessions and authentication are the class defaults, not measurements;
+    pacing is copied from the MH200 because nothing is measured.
     """
 
     def __init__(self) -> None:
         super().__init__(
             model_name="F452V",
-            max_command_sessions=1,
-            command_queue_delay=0.05,
-            supports_audio=False,
-            supported_who=(
-                WHO_LIGHTING,
-                WHO_AUTOMATION,
-                WHO_LOAD_CONTROL,
-                WHO_HEATING,
-                WHO_CEN,
-                WHO_SCENARIO,
-            ),
+            command_queue_delay=0.15,
+            auth_measured=False,
+            supported_who=_DEFAULT_WITHOUT_CEN_PLUS,
         )
 
 
 class F453Profile(GatewayProfile):
-    """The F453 Audio/Video Web Server gateway.
+    """The F453 Web Server.
 
-    Single-session gateway connecting Ethernet to an SCS bus.
-    Supports lighting, automation, load control, heating, CEN, scenario,
-    energy management, and CEN+ (WHO 25) per Legrand WHO 25 specification
-    (v1.0.0, 2010, p. 13) and WHO 15-25 specification (p. 24).
-    Does not support sound diffusion (WHO 16/22).
+    Documented:
+    - WHO 25: YES in Legrand's WHO 25 specification (p. 13,
+      https://developer.legrand.com/uploads/2019/12/WHO_25.pdf) and WHO 15-25
+      specification (p. 24, https://developer.legrand.com/uploads/2019/12/WHO_15-25.pdf).
+    - WHO 18: the TiF453 user guide has an Energy Management chapter (load
+      control and energy data pages, pp. 39-40,
+      https://www.bticino.be/sites/default/files/Service-en-support/software-en-schemas2/My%20Home/Tif453/TiF453%20Version2_0_07/Software_Manual_F453_EN.pdf).
+      That shows the gateway handles energy on its own web pages, not that
+      it relays WHO 18 to OpenWebNet clients.
+    - Authentication: the same guide (p. 17) configures only an OPEN
+      password (default 12345). The F454 user manual (p. 69,
+      https://dar.bticino.com/asset/Documents/O1755J_U_EN.pdf) offers OPEN or
+      HMAC; the F453 guide has no HMAC option, so ``supports_hmac`` stays
+      False. No handshake is captured, so ``auth_measured`` is False.
+
+    Every other subsystem, including sound (WHO 16/22), is the class default
+    and unverified. Sessions are the class default; pacing is copied from the
+    MH200 because nothing is measured.
     """
 
     def __init__(self) -> None:
         super().__init__(
             model_name="F453",
-            max_command_sessions=1,
-            command_queue_delay=0.05,
-            supports_audio=False,
-            supported_who=(
-                WHO_LIGHTING,
-                WHO_AUTOMATION,
-                WHO_LOAD_CONTROL,
-                WHO_HEATING,
-                WHO_CEN,
-                WHO_SCENARIO,
-                WHO_ENERGY,
-                WHO_CEN_PLUS,
-            ),
+            command_queue_delay=0.15,
+            auth_measured=False,
         )
 
 
 class F453AVProfile(GatewayProfile):
-    """The F453AV (Arteor 573992) Audio/Video Web Server gateway.
+    """The F453AV Web Server (Legrand Arteor 573992).
 
-    Per Legrand WHO 25 specification (v1.0.0, 2010, p. 13) and WHO 15-25
-    specification (p. 24):
-    - Firmware < 2.1.7 (e.g. 1.0.19, 2.1.0) does NOT support CEN+ (WHO 25).
-    - Firmware >= 2.1.7 (e.g. 2.1.7, 3.0) DOES support CEN+ (WHO 25).
-    When firmware version is unstated or unknown, resolves to the conservative
-    legacy profile (omitting WHO 25) with an advisory note in extra_features.
-    Does not support sound diffusion (WHO 16/22).
+    Documented:
+    - WHO 25: Legrand's WHO 25 specification (p. 13,
+      https://developer.legrand.com/uploads/2019/12/WHO_25.pdf) and WHO 15-25
+      specification (p. 24, https://developer.legrand.com/uploads/2019/12/WHO_15-25.pdf)
+      list F453AV v1.0.19 as NO and F453AV / 573992 v2.1.7 as YES. Behaviour
+      between those two versions is not documented. Firmware below 2.1.7, or
+      unknown firmware, is treated as without CEN+; that is a conservative
+      choice, not a documented threshold.
+    - WHO 18: the TiF453AV user guide has an Energy Management chapter (pp.
+      39-40,
+      https://www.bticino.be/sites/default/files/Service-en-support/software-en-schemas2/My%20Home/TiF453AV/Version%203_0_64/Software_Manual_F453AV_EN.pdf).
+      That shows the gateway handles energy on its own web pages, not that
+      it relays WHO 18 to OpenWebNet clients.
+    - Authentication: the same guide (p. 18) configures only an OPEN
+      password (default 12345) and, unlike the F454 user manual (p. 69,
+      https://dar.bticino.com/asset/Documents/O1755J_U_EN.pdf), offers no HMAC
+      option, so ``supports_hmac`` stays False. No handshake is captured, so
+      ``auth_measured`` is False.
+    - WHO 7: Legrand's WHO 7 specification names the F453AV as its device
+      (p. 1, https://developer.legrand.com/uploads/2019/12/WHO_7.pdf). OWNd does
+      not model WHO 7, so it is not listed in ``supported_who``.
+
+    Every other subsystem, including sound (WHO 16/22), is the class default
+    and unverified. Sessions are the class default; pacing is copied from the
+    MH200 because nothing is measured.
     """
 
     def __init__(
@@ -264,38 +283,18 @@ class F453AVProfile(GatewayProfile):
             fw_str = ".".join(str(p) for p in firmware_version)
         else:
             fw_str = str(firmware_version)
-        has_cen_plus = parse_firmware_version(firmware_version) >= (2, 1, 7)
-        supported_who = (
-            (
-                WHO_LIGHTING,
-                WHO_AUTOMATION,
-                WHO_LOAD_CONTROL,
-                WHO_HEATING,
-                WHO_CEN,
-                WHO_SCENARIO,
-                WHO_ENERGY,
-                WHO_CEN_PLUS,
-            )
-            if has_cen_plus
-            else (
-                WHO_LIGHTING,
-                WHO_AUTOMATION,
-                WHO_LOAD_CONTROL,
-                WHO_HEATING,
-                WHO_CEN,
-                WHO_SCENARIO,
-                WHO_ENERGY,
-            )
+        has_cen_plus = (
+            parse_firmware_version(firmware_version) >= _F453AV_CEN_PLUS_FIRMWARE
         )
-        extra_features = () if has_cen_plus else ("CEN+ requires FW >= 2.1.7",)
         super().__init__(
             model_name="F453AV",
             firmware_version=fw_str,
-            max_command_sessions=1,
-            command_queue_delay=0.05,
-            supports_audio=False,
-            supported_who=supported_who,
-            extra_features=extra_features,
+            command_queue_delay=0.15,
+            auth_measured=False,
+            supported_who=(
+                DEFAULT_SUPPORTED_WHO if has_cen_plus else _DEFAULT_WITHOUT_CEN_PLUS
+            ),
+            extra_features=() if has_cen_plus else ("CEN+ documented from FW 2.1.7",),
         )
 
 
@@ -560,8 +559,6 @@ _ALIASES = {
     "03594": "f455",
     "03565": "mh200n",
     "003565": "mh200n",
-    "003535": "mh202",
-    "03535": "mh202",
 }
 
 

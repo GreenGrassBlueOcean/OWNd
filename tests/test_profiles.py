@@ -323,82 +323,75 @@ def test_parse_firmware_version_normalization_and_edges() -> None:
 
 
 def test_f452_and_f452v_profiles() -> None:
-    """F452 and F452V legacy web servers omit sound and CEN+ (WHO 25)."""
-    f452 = get_gateway_profile("F452")
-    assert isinstance(f452, F452Profile)
-    assert f452.model_name == "F452"
-    assert f452.max_command_sessions == 1
-    assert f452.command_queue_delay == 0.05
-    assert f452.supports_audio is False
-    assert not f452.supports_who(WHO_SOUND)
-    assert not f452.supports_who(WHO_SOUND_DIFFUSION)
-    assert not f452.supports_who(WHO_CEN_PLUS)
-    assert not f452.supports_who(WHO_ENERGY)
-    assert f452.supports_who(WHO_LIGHTING)
-    assert f452.supports_who(WHO_AUTOMATION)
-    assert f452.supports_who(WHO_LOAD_CONTROL)
-    assert f452.supports_who(WHO_HEATING)
-    assert f452.supports_who(WHO_CEN)
-    assert f452.supports_who(WHO_SCENARIO)
-    assert f452.features_summary == "Legacy password auth"
-
-    f452v = get_gateway_profile("F452V")
-    assert isinstance(f452v, F452VProfile)
-    assert f452v.model_name == "F452V"
-    assert f452v.max_command_sessions == 1
-    assert f452v.command_queue_delay == 0.05
-    assert f452v.supports_audio is False
-    assert not f452v.supports_who(WHO_SOUND)
-    assert not f452v.supports_who(WHO_CEN_PLUS)
-    assert f452v.supports_who(WHO_LIGHTING)
-    assert f452v.features_summary == "Legacy password auth"
+    """F452/F452V drop only WHO 25, the one subsystem Legrand documents (as NO)."""
+    for model, cls in (("F452", F452Profile), ("F452V", F452VProfile)):
+        profile = get_gateway_profile(model)
+        assert isinstance(profile, cls)
+        assert profile.model_name == model
+        assert profile.max_command_sessions == 1
+        # Nothing is measured: pacing copied from the MH200, auth unmeasured.
+        assert profile.command_queue_delay == MH200Profile().command_queue_delay
+        assert profile.auth_measured is False
+        assert "Auth unmeasured" in profile.features_summary
+        assert "Legacy password auth" not in profile.features_summary
+        # WHO_25.pdf p. 13 / WHO_15-25.pdf p. 24: F452 and F452V NO.
+        assert not profile.supports_who(WHO_CEN_PLUS)
+        assert profile.supports_who(WHO_CEN)
+        # Everything else is the undocumented class default, not an exclusion.
+        dropped = set(DEFAULT_SUPPORTED_WHO) - set(profile.supported_who)
+        assert dropped == {WHO_CEN_PLUS}
+        assert profile.supports_audio is GatewayProfile("X").supports_audio
 
 
 def test_f453_profile() -> None:
-    """F453 Audio/Video Web Server supports CEN+ (WHO 25) and Energy (WHO 18) but not sound."""
+    """F453 keeps the class default: WHO 25 is documented YES, nothing is dropped."""
     f453 = get_gateway_profile("F453")
     assert isinstance(f453, F453Profile)
     assert f453.model_name == "F453"
     assert f453.max_command_sessions == 1
-    assert f453.command_queue_delay == 0.05
-    assert f453.supports_audio is False
-    assert not f453.supports_who(WHO_SOUND)
+    assert f453.command_queue_delay == MH200Profile().command_queue_delay
+    assert f453.supported_who == DEFAULT_SUPPORTED_WHO
     assert f453.supports_who(WHO_CEN_PLUS)
     assert f453.supports_who(WHO_ENERGY)
-    assert f453.supports_who(WHO_LIGHTING)
-    assert f453.supports_who(WHO_AUTOMATION)
-    assert f453.supports_who(WHO_LOAD_CONTROL)
-    assert f453.supports_who(WHO_HEATING)
-    assert f453.supports_who(WHO_CEN)
-    assert f453.supports_who(WHO_SCENARIO)
-    assert f453.features_summary == "Legacy password auth"
+    # The TiF453 guide offers only an OPEN password; no handshake is captured.
+    assert f453.supports_hmac is False
+    assert f453.auth_measured is False
+    assert "Auth unmeasured" in f453.features_summary
 
 
 def test_f453av_profile_firmware_discrimination() -> None:
-    """F453AV gates WHO 25 (CEN+) on firmware >= 2.1.7."""
-    # 1. Default without firmware version specified: conservative legacy profile
+    """F453AV adds WHO 25 from firmware 2.1.7, the first version Legrand lists as YES."""
+    note = "CEN+ documented from FW 2.1.7"
+
+    # 1. Unknown firmware: conservative, without CEN+.
     f453av_default = get_gateway_profile("F453AV")
     assert isinstance(f453av_default, F453AVProfile)
     assert f453av_default.firmware_version is None
     assert f453av_default.supports_who(WHO_CEN) is True
     assert f453av_default.supports_who(WHO_CEN_PLUS) is False
-    assert "CEN+ requires FW >= 2.1.7" in f453av_default.extra_features
-    assert "CEN+ requires FW >= 2.1.7" in f453av_default.features_summary
+    assert set(DEFAULT_SUPPORTED_WHO) - set(f453av_default.supported_who) == {
+        WHO_CEN_PLUS
+    }
+    assert note in f453av_default.extra_features
+    assert note in f453av_default.features_summary
+    assert f453av_default.auth_measured is False
+    assert f453av_default.supports_hmac is False
+    assert f453av_default.command_queue_delay == MH200Profile().command_queue_delay
 
-    # 2. Firmware < 2.1.7 (e.g. 1.0.19, 2.1.0, 2.1)
+    # 2. 1.0.19 is documented NO; versions between 1.0.19 and 2.1.7 are not
+    # documented and are treated conservatively as without CEN+.
     for old_fw in ["1.0.19", "2.1.0", (2, 1), [1, 0, 19]]:
         profile = get_gateway_profile("F453AV", firmware_version=old_fw)
         assert isinstance(profile, F453AVProfile)
         assert profile.supports_who(WHO_CEN_PLUS) is False
-        assert "CEN+ requires FW >= 2.1.7" in profile.extra_features
+        assert note in profile.extra_features
 
-    # 3. Firmware >= 2.1.7 (e.g. 2.1.7, 3.0.0, (2, 1, 7))
-    for new_fw in ["2.1.7", "3.0.0", (2, 1, 7), [2, 1, 7]]:
+    # 3. 2.1.7 is documented YES; later versions keep it.
+    for new_fw in ["2.1.7", "3.0.14", (2, 1, 7), [2, 1, 7]]:
         profile = get_gateway_profile("F453AV", firmware_version=new_fw)
         assert isinstance(profile, F453AVProfile)
-        assert profile.supports_who(WHO_CEN_PLUS) is True
-        assert "CEN+ requires FW >= 2.1.7" not in profile.extra_features
-        assert profile.features_summary == "Legacy password auth"
+        assert profile.supported_who == DEFAULT_SUPPORTED_WHO
+        assert note not in profile.extra_features
 
     # Direct F453AVProfile construction with tuple/list
     profile_list = F453AVProfile(firmware_version=[2, 1, 7])
@@ -410,12 +403,20 @@ def test_f453av_profile_firmware_discrimination() -> None:
         empty_prof = F453AVProfile(firmware_version=empty_fw)
         assert empty_prof.firmware_version is None
         assert empty_prof.supports_who(WHO_CEN_PLUS) is False
-        assert "CEN+ requires FW >= 2.1.7" in empty_prof.extra_features
+        assert note in empty_prof.extra_features
+
+
+def test_firmware_version_is_keyword_only() -> None:
+    """Adding firmware_version must not shift positional profile construction."""
+    profile = GatewayProfile("X", 4)
+    assert profile.max_command_sessions == 4
+    assert profile.firmware_version is None
+    assert GatewayProfile("X", firmware_version="1.0").firmware_version == "1.0"
 
 
 def test_catalog_aliases_resolution() -> None:
-    """Verify Legrand/BTicino catalog item numbers resolve to appropriate profiles."""
-    # 573992 (Arteor F453AV)
+    """Item numbers resolve only where a public Legrand/BTicino page ties them to a model."""
+    # 573992 (Arteor F453AV): WHO_25.pdf p. 13
     f453av_cat = get_gateway_profile("573992")
     assert isinstance(f453av_cat, F453AVProfile)
     assert not f453av_cat.supports_who(WHO_CEN_PLUS)
@@ -428,23 +429,23 @@ def test_catalog_aliases_resolution() -> None:
     assert isinstance(get_gateway_profile("Arteor 573992", "2.1.7"), F453AVProfile)
     assert isinstance(get_gateway_profile("Arteor F453AV"), F453AVProfile)
 
-    # 003598 / 03598 (F454)
+    # 003598 / 03598 (F454): MyHOME_Suite Version History
     assert isinstance(get_gateway_profile("003598"), F454Profile)
     assert isinstance(get_gateway_profile("03598"), F454Profile)
     assert isinstance(get_gateway_profile("0 035 98"), F454Profile)
 
-    # 003594 / 03594 (F455)
+    # 003594 / 03594 (F455): MyHOME_Suite Version History
     assert isinstance(get_gateway_profile("003594"), F455Profile)
     assert isinstance(get_gateway_profile("03594"), F455Profile)
     assert isinstance(get_gateway_profile("0 035 94"), F455Profile)
 
-    # 03565 / 003565 (MH200N)
+    # 03565 / 003565 (MH200N): WHO_25.pdf p. 13, MyHOME_Suite Version History
     assert isinstance(get_gateway_profile("03565"), MH200NProfile)
     assert isinstance(get_gateway_profile("003565"), MH200NProfile)
 
-    # 003535 / 03535 (MH202)
-    assert isinstance(get_gateway_profile("003535"), MH202Profile)
-    assert isinstance(get_gateway_profile("03535"), MH202Profile)
+    # 003535 has no public source naming it MH202, so it is not an alias.
+    assert not isinstance(get_gateway_profile("003535"), MH202Profile)
+    assert not isinstance(get_gateway_profile("03535"), MH202Profile)
 
 
 def test_owngateway_reactive_profile_upgrade_on_firmware() -> None:
@@ -455,13 +456,13 @@ def test_owngateway_reactive_profile_upgrade_on_firmware() -> None:
     gw = OWNGateway({"address": "192.168.1.50", "modelName": "F453AV"})
     assert gw.firmware is None
     assert gw.profile.supports_who(WHO_CEN_PLUS) is False
-    assert "CEN+ requires FW >= 2.1.7" in gw.profile.features_summary
+    assert "CEN+ documented from FW 2.1.7" in gw.profile.features_summary
 
     # Reactive update when firmware is learned
     gw.firmware = "2.1.7"
     assert gw.firmware == "2.1.7"
     assert gw.profile.supports_who(WHO_CEN_PLUS) is True
-    assert "CEN+ requires FW >= 2.1.7" not in gw.profile.features_summary
+    assert "CEN+ documented from FW 2.1.7" not in gw.profile.features_summary
 
     # Downgrade / older firmware
     gw.firmware = "1.0.19"
