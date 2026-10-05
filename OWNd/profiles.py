@@ -78,6 +78,9 @@ class GatewayProfile:
     supports_audio: bool = True
     supports_hmac: bool = False
     auth_measured: bool = True
+    # False when no WHO 16/22 reply from this gateway is captured; sound support
+    # is then the class default and is labelled "Sound unmeasured".
+    audio_measured: bool = True
     supports_native_transitions: bool = False
     supports_extended_frames: bool = False
     supported_who: tuple[int, ...] = DEFAULT_SUPPORTED_WHO
@@ -143,7 +146,10 @@ class GatewayProfile:
         if self.supports_extended_frames:
             features.append("Extended frames")
         if self.supports_who(WHO_SOUND) or self.supports_audio:
-            features.append("Sound system (WHO 16)")
+            if self.audio_measured:
+                features.append("Sound system (WHO 16)")
+            else:
+                features.append("Sound unmeasured")
         if self.supports_who(WHO_ALARM):
             features.append("Burglar alarm (WHO 5)")
         features.extend(self.extra_features)
@@ -187,6 +193,7 @@ class F452Profile(GatewayProfile):
             model_name="F452",
             command_queue_delay=0.15,
             auth_measured=False,
+            audio_measured=False,
             supported_who=_DEFAULT_WITHOUT_CEN_PLUS,
         )
 
@@ -208,6 +215,7 @@ class F452VProfile(GatewayProfile):
             model_name="F452V",
             command_queue_delay=0.15,
             auth_measured=False,
+            audio_measured=False,
             supported_who=_DEFAULT_WITHOUT_CEN_PLUS,
         )
 
@@ -240,6 +248,7 @@ class F453Profile(GatewayProfile):
             model_name="F453",
             command_queue_delay=0.15,
             auth_measured=False,
+            audio_measured=False,
         )
 
 
@@ -291,6 +300,7 @@ class F453AVProfile(GatewayProfile):
             firmware_version=fw_str,
             command_queue_delay=0.15,
             auth_measured=False,
+            audio_measured=False,
             supported_who=(
                 DEFAULT_SUPPORTED_WHO if has_cen_plus else _DEFAULT_WITHOUT_CEN_PLUS
             ),
@@ -305,6 +315,7 @@ class F454Profile(GatewayProfile):
             max_command_sessions=4,
             max_queue_size=250,
             event_keepalive_interval=90,
+            audio_measured=False,
             supports_hmac=True,
             supports_native_transitions=True,
             supports_extended_frames=True,
@@ -359,6 +370,7 @@ class F461Profile(GatewayProfile):
             command_queue_delay=0.05,
             max_queue_size=250,
             event_keepalive_interval=90,
+            audio_measured=False,
             supports_hmac=True,
             supports_native_transitions=True,
             supports_extended_frames=True,
@@ -435,6 +447,7 @@ class MH201Profile(GatewayProfile):
             model_name="MH201",
             command_queue_delay=0.10,
             max_queue_size=100,
+            audio_measured=False,
             supports_extended_frames=True,
             extra_features=("Clock diagnostics",),
         )
@@ -455,6 +468,7 @@ class MH202Profile(GatewayProfile):
             model_name="MH202",
             max_command_sessions=2,
             command_queue_delay=0.10,
+            audio_measured=False,
             supports_hmac=True,
             supports_extended_frames=True,
             supported_who=(*DEFAULT_SUPPORTED_WHO, WHO_ALARM),
@@ -469,9 +483,11 @@ class H4890Profile(GatewayProfile):
     disarmed panel's status dump (*5*1*0##, *5*9*0##) and zone states (WHAT
     11/18); no arm transition or alarm event is captured. ``supported_who`` is
     the class default plus WHO 5: the captures do not show the screen dropping
-    heating, CEN or scenarios, so absence in a trace is not inferred. Sessions,
-    pacing and authentication are the class defaults, not measurements. WHO 5
-    here means reading the alarm: the plant owner reports the central unit
+    heating, CEN or scenarios, so absence in a trace is not inferred. Sound is
+    captured: the MyHOME#466 H4890 sweep and trace (firmware 4.0.15) carry
+    received WHO 16 and WHO 22 state frames (``*16*3*Z##``, ``*16*13*Z##``,
+    ``*22*...##``, ``*#22*...*12*...##``). Sessions, pacing and authentication
+    are the class defaults, not measurements. WHO 5 here means reading the alarm: the plant owner reports the central unit
     rejects SCS arm/disarm from any gateway and arms through WHO 9 AUX frames
     instead (see OWNAlarmCommand).
     """
@@ -492,6 +508,7 @@ class MyHomeServer1Profile(GatewayProfile):
             default_command_sessions=2,
             command_queue_delay=0.02,
             max_queue_size=300,
+            audio_measured=False,
             supports_hmac=True,
             supports_native_transitions=True,
             supports_extended_frames=True,

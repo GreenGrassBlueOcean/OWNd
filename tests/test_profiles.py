@@ -180,10 +180,42 @@ def test_canonical_order_covers_registry() -> None:
 
 
 def test_sound_system_feature_matches_capabilities() -> None:
-    """Every profile advertises Sound system iff it supports WHO 16 or audio."""
+    """Sound is labelled iff a profile supports WHO 16 or audio, and measured only when audio_measured."""
     for profile in _PROFILES.values():
         has_sound = profile.supports_who(WHO_SOUND) or profile.supports_audio
-        assert ("Sound system (WHO 16)" in profile.features_summary) is has_sound
+        summary = profile.features_summary
+        assert ("Sound system (WHO 16)" in summary) is (
+            has_sound and profile.audio_measured
+        )
+        assert ("Sound unmeasured" in summary) is (
+            has_sound and not profile.audio_measured
+        )
+
+
+def test_sound_is_measured_only_where_a_reply_is_captured() -> None:
+    """Only MH200, MH200N and H4890 have captured WHO 16/22 replies (MyHOME#53, #427, #466)."""
+    measured = {
+        key
+        for key, profile in _PROFILES.items()
+        if "Sound system (WHO 16)" in profile.features_summary
+    }
+    assert measured == {"mh200", "mh200n", "h4890"}
+    for key in (
+        "f452",
+        "f452v",
+        "f453",
+        "f453av",
+        "f454",
+        "f461",
+        "mh201",
+        "mh202",
+        "myhomeserver1",
+    ):
+        profile = _PROFILES[key]
+        assert profile.supports_audio is True
+        assert profile.audio_measured is False
+        assert "Sound unmeasured" in profile.features_summary
+    assert get_gateway_profile("F453AV", "2.1.7").audio_measured is False
 
 
 def test_hmac_profiles_never_show_legacy_auth() -> None:
@@ -221,7 +253,7 @@ def test_gateway_profile_summary_properties() -> None:
     assert mhs1.keepalive_summary == "OS TCP only"
     assert (
         mhs1.features_summary
-        == "HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16)"
+        == "HMAC-SHA2, Native transitions, Extended frames, Sound unmeasured"
     )
 
     f454 = get_gateway_profile("F454")
@@ -230,7 +262,7 @@ def test_gateway_profile_summary_properties() -> None:
     assert f454.keepalive_summary == "90 s"
     assert (
         f454.features_summary
-        == "HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16)"
+        == "HMAC-SHA2, Native transitions, Extended frames, Sound unmeasured"
     )
 
     f455 = get_gateway_profile("F455")
