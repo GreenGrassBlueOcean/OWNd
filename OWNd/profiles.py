@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import re
 
 WHO_LIGHTING = 1
 WHO_AUTOMATION = 2
@@ -30,6 +31,36 @@ DEFAULT_SUPPORTED_WHO = (
 )
 
 
+def parse_firmware_version(
+    version: str | tuple[int, ...] | list[int] | None,
+) -> tuple[int, ...]:
+    """Parse and normalize firmware version into a comparable integer tuple.
+
+    Zero-pads to at least 3 parts (V, R, B) to guarantee semantic comparison
+    without tuple-length comparison flaws (e.g. (2, 1) < (2, 1, 7)).
+    """
+    if version is None:
+        return (0, 0, 0)
+    if isinstance(version, (list, tuple)):
+        parts: list[int] = []
+        for item in version:
+            if isinstance(item, int):
+                parts.append(item)
+            elif isinstance(item, str):
+                parts.extend(int(m) for m in re.findall(r"\d+", item))
+            else:
+                pass
+    elif isinstance(version, str):
+        parts = [int(m) for m in re.findall(r"\d+", version)]
+    elif isinstance(version, int):
+        parts = [version]
+    else:
+        parts = []
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts)
+
+
 @dataclass(frozen=True, slots=True)
 class GatewayProfile:
     """Capabilities and safe defaults for an OpenWebNet gateway family."""
@@ -47,10 +78,14 @@ class GatewayProfile:
     supports_audio: bool = True
     supports_hmac: bool = False
     auth_measured: bool = True
+    # False when no WHO 16/22 reply from this gateway is captured; sound support
+    # is then the class default and is labelled "Sound unmeasured".
+    audio_measured: bool = True
     supports_native_transitions: bool = False
     supports_extended_frames: bool = False
     supported_who: tuple[int, ...] = DEFAULT_SUPPORTED_WHO
     extra_features: tuple[str, ...] = ()
+    firmware_version: str | None = field(default=None, kw_only=True)
 
     @property
     def max_workers(self) -> int:
@@ -111,7 +146,10 @@ class GatewayProfile:
         if self.supports_extended_frames:
             features.append("Extended frames")
         if self.supports_who(WHO_SOUND) or self.supports_audio:
-            features.append("Sound system (WHO 16)")
+            if self.audio_measured:
+                features.append("Sound system (WHO 16)")
+            else:
+                features.append("Sound unmeasured")
         if self.supports_who(WHO_ALARM):
             features.append("Burglar alarm (WHO 5)")
         features.extend(self.extra_features)
@@ -129,6 +167,147 @@ class GatewayProfile:
         return self.supports_session_count(count)
 
 
+# Class default minus CEN+ (WHO 25), for gateways the Legrand tables list as NO.
+_DEFAULT_WITHOUT_CEN_PLUS = tuple(
+    who for who in DEFAULT_SUPPORTED_WHO if who != WHO_CEN_PLUS
+)
+
+# Firmware at which Legrand documents CEN+ on the F453AV (WHO 25 p. 13).
+_F453AV_CEN_PLUS_FIRMWARE = (2, 1, 7)
+
+
+class F452Profile(GatewayProfile):
+    """The F452 Web Server.
+
+    Only WHO 25 is documented: Legrand's WHO 25 specification (p. 13,
+    https://developer.legrand.com/uploads/2019/12/WHO_25.pdf) and WHO 15-25
+    specification (p. 24, https://developer.legrand.com/uploads/2019/12/WHO_15-25.pdf)
+    list the F452 as NO for CEN+ and dry contact / IR state, so WHO 25 is
+    dropped. Every other subsystem is the class default and unverified.
+    Sessions and authentication are the class defaults, not measurements;
+    pacing is copied from the MH200 because nothing is measured.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            model_name="F452",
+            command_queue_delay=0.15,
+            auth_measured=False,
+            audio_measured=False,
+            supported_who=_DEFAULT_WITHOUT_CEN_PLUS,
+        )
+
+
+class F452VProfile(GatewayProfile):
+    """The F452V Web Server.
+
+    Only WHO 25 is documented: Legrand's WHO 25 specification (p. 13,
+    https://developer.legrand.com/uploads/2019/12/WHO_25.pdf) and WHO 15-25
+    specification (p. 24, https://developer.legrand.com/uploads/2019/12/WHO_15-25.pdf)
+    list the F452V as NO for CEN+ and dry contact / IR state, so WHO 25 is
+    dropped. Every other subsystem is the class default and unverified.
+    Sessions and authentication are the class defaults, not measurements;
+    pacing is copied from the MH200 because nothing is measured.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            model_name="F452V",
+            command_queue_delay=0.15,
+            auth_measured=False,
+            audio_measured=False,
+            supported_who=_DEFAULT_WITHOUT_CEN_PLUS,
+        )
+
+
+class F453Profile(GatewayProfile):
+    """The F453 Web Server.
+
+    Documented:
+    - WHO 25: YES in Legrand's WHO 25 specification (p. 13,
+      https://developer.legrand.com/uploads/2019/12/WHO_25.pdf) and WHO 15-25
+      specification (p. 24, https://developer.legrand.com/uploads/2019/12/WHO_15-25.pdf).
+    - WHO 18: the TiF453 user guide has an Energy Management chapter (load
+      control and energy data pages, pp. 39-40,
+      https://www.bticino.be/sites/default/files/Service-en-support/software-en-schemas2/My%20Home/Tif453/TiF453%20Version2_0_07/Software_Manual_F453_EN.pdf).
+      That shows the gateway handles energy on its own web pages, not that
+      it relays WHO 18 to OpenWebNet clients.
+    - Authentication: the same guide (p. 17) configures only an OPEN
+      password (default 12345). The F454 user manual (p. 69,
+      https://dar.bticino.com/asset/Documents/O1755J_U_EN.pdf) offers OPEN or
+      HMAC; the F453 guide has no HMAC option, so ``supports_hmac`` stays
+      False. No handshake is captured, so ``auth_measured`` is False.
+
+    Every other subsystem, including sound (WHO 16/22), is the class default
+    and unverified. Sessions are the class default; pacing is copied from the
+    MH200 because nothing is measured.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            model_name="F453",
+            command_queue_delay=0.15,
+            auth_measured=False,
+            audio_measured=False,
+        )
+
+
+class F453AVProfile(GatewayProfile):
+    """The F453AV Web Server (Legrand Arteor 573992).
+
+    Documented:
+    - WHO 25: Legrand's WHO 25 specification (p. 13,
+      https://developer.legrand.com/uploads/2019/12/WHO_25.pdf) and WHO 15-25
+      specification (p. 24, https://developer.legrand.com/uploads/2019/12/WHO_15-25.pdf)
+      list F453AV v1.0.19 as NO and F453AV / 573992 v2.1.7 as YES. Behaviour
+      between those two versions is not documented. Firmware below 2.1.7, or
+      unknown firmware, is treated as without CEN+; that is a conservative
+      choice, not a documented threshold.
+    - WHO 18: the TiF453AV user guide has an Energy Management chapter (pp.
+      39-40,
+      https://www.bticino.be/sites/default/files/Service-en-support/software-en-schemas2/My%20Home/TiF453AV/Version%203_0_64/Software_Manual_F453AV_EN.pdf).
+      That shows the gateway handles energy on its own web pages, not that
+      it relays WHO 18 to OpenWebNet clients.
+    - Authentication: the same guide (p. 18) configures only an OPEN
+      password (default 12345) and, unlike the F454 user manual (p. 69,
+      https://dar.bticino.com/asset/Documents/O1755J_U_EN.pdf), offers no HMAC
+      option, so ``supports_hmac`` stays False. No handshake is captured, so
+      ``auth_measured`` is False.
+    - WHO 7: Legrand's WHO 7 specification names the F453AV as its device
+      (p. 1, https://developer.legrand.com/uploads/2019/12/WHO_7.pdf). OWNd does
+      not model WHO 7, so it is not listed in ``supported_who``.
+
+    Every other subsystem, including sound (WHO 16/22), is the class default
+    and unverified. Sessions are the class default; pacing is copied from the
+    MH200 because nothing is measured.
+    """
+
+    def __init__(
+        self,
+        firmware_version: str | tuple[int, ...] | list[int] | None = None,
+    ) -> None:
+        if not firmware_version:
+            fw_str = None
+        elif isinstance(firmware_version, (list, tuple)):
+            fw_str = ".".join(str(p) for p in firmware_version)
+        else:
+            fw_str = str(firmware_version)
+        has_cen_plus = (
+            parse_firmware_version(firmware_version) >= _F453AV_CEN_PLUS_FIRMWARE
+        )
+        super().__init__(
+            model_name="F453AV",
+            firmware_version=fw_str,
+            command_queue_delay=0.15,
+            auth_measured=False,
+            audio_measured=False,
+            supported_who=(
+                DEFAULT_SUPPORTED_WHO if has_cen_plus else _DEFAULT_WITHOUT_CEN_PLUS
+            ),
+            extra_features=() if has_cen_plus else ("CEN+ documented from FW 2.1.7",),
+        )
+
+
 class F454Profile(GatewayProfile):
     def __init__(self) -> None:
         super().__init__(
@@ -136,6 +315,7 @@ class F454Profile(GatewayProfile):
             max_command_sessions=4,
             max_queue_size=250,
             event_keepalive_interval=90,
+            audio_measured=False,
             supports_hmac=True,
             supports_native_transitions=True,
             supports_extended_frames=True,
@@ -190,6 +370,7 @@ class F461Profile(GatewayProfile):
             command_queue_delay=0.05,
             max_queue_size=250,
             event_keepalive_interval=90,
+            audio_measured=False,
             supports_hmac=True,
             supports_native_transitions=True,
             supports_extended_frames=True,
@@ -204,10 +385,14 @@ class MH200Profile(GatewayProfile):
     state frame for every amplifier and source within 0.6 s, and the bare
     ``*#16*0##`` returned none (#53). Pacing, queue size, keepalive and the other
     subsystems are copied from the MH200N profile and have not been
-    measured on an MH200. As documented in the BTicino TiMH200N release
-    notes, support for CEN+ (WHO 25) and virtual objects was newly introduced
-    specifically for the MH200N; the legacy MH200 firmware predates and
-    does not support CEN+, supporting only classic CEN (WHO 15).
+    measured on an MH200.
+
+    WHO 25 covers both CEN+ and dry contact / IR state functions (WHAT 31/32).
+    As documented in Legrand's WHO 25 specification ("Dry contact and IR state
+    functions", v1.0.0, 2010, https://developer.legrand.com/uploads/2019/12/WHO_25.pdf,
+    page 13 "Gateways that allow the function": MH200 NO, MH200N 03565 YES),
+    the legacy MH200 firmware supports neither, supporting only classic
+    CEN (WHO 15).
     """
 
     def __init__(self) -> None:
@@ -262,6 +447,7 @@ class MH201Profile(GatewayProfile):
             model_name="MH201",
             command_queue_delay=0.10,
             max_queue_size=100,
+            audio_measured=False,
             supports_extended_frames=True,
             extra_features=("Clock diagnostics",),
         )
@@ -282,6 +468,7 @@ class MH202Profile(GatewayProfile):
             model_name="MH202",
             max_command_sessions=2,
             command_queue_delay=0.10,
+            audio_measured=False,
             supports_hmac=True,
             supports_extended_frames=True,
             supported_who=(*DEFAULT_SUPPORTED_WHO, WHO_ALARM),
@@ -296,9 +483,11 @@ class H4890Profile(GatewayProfile):
     disarmed panel's status dump (*5*1*0##, *5*9*0##) and zone states (WHAT
     11/18); no arm transition or alarm event is captured. ``supported_who`` is
     the class default plus WHO 5: the captures do not show the screen dropping
-    heating, CEN or scenarios, so absence in a trace is not inferred. Sessions,
-    pacing and authentication are the class defaults, not measurements. WHO 5
-    here means reading the alarm: the plant owner reports the central unit
+    heating, CEN or scenarios, so absence in a trace is not inferred. Sound is
+    captured: the MyHOME#466 H4890 sweep and trace (firmware 4.0.15) carry
+    received WHO 16 and WHO 22 state frames (``*16*3*Z##``, ``*16*13*Z##``,
+    ``*22*...##``, ``*#22*...*12*...##``). Sessions, pacing and authentication
+    are the class defaults, not measurements. WHO 5 here means reading the alarm: the plant owner reports the central unit
     rejects SCS arm/disarm from any gateway and arms through WHO 9 AUX frames
     instead (see OWNAlarmCommand).
     """
@@ -319,6 +508,7 @@ class MyHomeServer1Profile(GatewayProfile):
             default_command_sessions=2,
             command_queue_delay=0.02,
             max_queue_size=300,
+            audio_measured=False,
             supports_hmac=True,
             supports_native_transitions=True,
             supports_extended_frames=True,
@@ -333,6 +523,10 @@ class GenericGatewayProfile(GatewayProfile):
 _GENERIC = GenericGatewayProfile()
 
 _PROFILES = {
+    "f452": F452Profile(),
+    "f452v": F452VProfile(),
+    "f453": F453Profile(),
+    "f453av": F453AVProfile(),
     "f454": F454Profile(),
     "f455": F455Profile(),
     "f461": F461Profile(),
@@ -346,6 +540,10 @@ _PROFILES = {
 
 CANONICAL_PROFILE_ORDER = (
     "myhomeserver1",
+    "f452",
+    "f452v",
+    "f453",
+    "f453av",
     "f454",
     "f455",
     "f461",
@@ -369,11 +567,32 @@ _ALIASES = {
     "ln4890": "h4890",
     "ln4890a": "h4890",
     "4890": "h4890",
+    # Item numbers. MHCatalogue.db (MyHOME_Suite 3.5.38, fingerprinted in
+    # OpenWebNet-Encyclopedia sources/manifest.yaml) gives each gateway a name
+    # row and a number row sharing one EN_DEVICE.id_item: MH202/003535 (1902),
+    # F454/003598 (1455), F455/003594 (2064), MH200N/003565 (1331).
+    # 573992 is its own Legrand Arteor item; WHO_25.pdf p. 13 lists it with the
+    # F453AV. Public pages: WHO_25.pdf p. 13 (03565, 573992) and the MyHOME_Suite
+    # Version History (003598, 003594, 003565, 573992); none shows 003535.
+    "573992": "f453av",
+    "arteor573992": "f453av",
+    "arteorf453av": "f453av",
+    "003598": "f454",
+    "03598": "f454",
+    "003594": "f455",
+    "03594": "f455",
+    "03565": "mh200n",
+    "003565": "mh200n",
+    "003535": "mh202",
+    "03535": "mh202",
 }
 
 
-def get_gateway_profile(model_name: str | None) -> GatewayProfile:
-    """Resolve a model name to a profile, falling back conservatively."""
+def get_gateway_profile(
+    model_name: str | None,
+    firmware_version: str | tuple[int, ...] | list[int] | None = None,
+) -> GatewayProfile:
+    """Resolve a model name and optional firmware version to a profile, falling back conservatively."""
     if not model_name:
         return _GENERIC
 
@@ -381,6 +600,8 @@ def get_gateway_profile(model_name: str | None) -> GatewayProfile:
         character for character in model_name.lower() if character.isalnum()
     )
     normalized = _ALIASES.get(normalized, normalized)
+    if normalized == "f453av":
+        return F453AVProfile(firmware_version=firmware_version)
     profile = _PROFILES.get(normalized)
     if profile is not None:
         return profile

@@ -170,6 +170,15 @@ class OWNGatewayEvent(OWNEvent):
                 f"Gateway's distribution version is: {self._distribution_version}."
             )
 
+    @property
+    def firmware_version(self) -> str | None:
+        """Return the decoded gateway firmware version string."""
+        return self._firmware_version
+
+    @property
+    def device_type(self) -> str | None:
+        """Return the decoded gateway device type string."""
+        return self._device_type
 
 
 class OWNGatewayCommand(OWNCommand):
