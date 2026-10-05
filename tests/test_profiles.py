@@ -11,13 +11,23 @@ from OWNd.profiles import (
     CANONICAL_PROFILE_ORDER,
     DEFAULT_SUPPORTED_WHO,
     WHO_ALARM,
+    WHO_AUTOMATION,
     WHO_CEN,
     WHO_CEN_PLUS,
+    WHO_ENERGY,
+    WHO_HEATING,
     WHO_LIGHTING,
     WHO_LOAD_CONTROL,
+    WHO_SCENARIO,
     WHO_SOUND,
     WHO_SOUND_DIFFUSION,
     _PROFILES,
+    F452Profile,
+    F452VProfile,
+    F453Profile,
+    F453AVProfile,
+    F454Profile,
+    F455Profile,
     GatewayProfile,
     H4890Profile,
     MH200NProfile,
@@ -25,6 +35,7 @@ from OWNd.profiles import (
     MH202Profile,
     canonical_profiles,
     get_gateway_profile,
+    parse_firmware_version,
 )
 
 
@@ -48,7 +59,7 @@ def test_mh200_keeps_the_mh200n_pacing() -> None:
     assert mh200.command_queue_delay == mh200n.command_queue_delay
     assert mh200.max_queue_size == mh200n.max_queue_size
     assert mh200.event_keepalive_interval == mh200n.event_keepalive_interval
-    # TiMH200N release notes: MH200N added CEN+ (WHO 25); legacy MH200 only supports classic CEN (WHO 15)
+    # Legrand WHO 25 spec (2010, p. 13): MH200 lacks WHO 25 (CEN+ / dry contact & IR); MH200N supports it.
     assert set(mh200n.supported_who) - set(mh200.supported_who) == {WHO_CEN_PLUS}
     assert mh200.supports_who(WHO_CEN) is True
     assert not mh200.supports_who(WHO_CEN_PLUS)
@@ -69,8 +80,7 @@ def test_profile_lookup_accepts_common_name_variants() -> None:
 
     assert profile.model_name == "MyHomeServer1"
     assert profile.supports_session_count(4)
-    assert not profile.supports_who(WHO_SOUND)
-    assert profile.supports_audio is False
+    assert profile.supports_who(WHO_SOUND)
 
 
 def test_f461_profile_lookup() -> None:
@@ -170,10 +180,42 @@ def test_canonical_order_covers_registry() -> None:
 
 
 def test_sound_system_feature_matches_capabilities() -> None:
-    """Every profile advertises Sound system iff it supports WHO 16 or audio."""
+    """Sound is labelled iff a profile supports WHO 16 or audio, and measured only when audio_measured."""
     for profile in _PROFILES.values():
         has_sound = profile.supports_who(WHO_SOUND) or profile.supports_audio
-        assert ("Sound system (WHO 16)" in profile.features_summary) is has_sound
+        summary = profile.features_summary
+        assert ("Sound system (WHO 16)" in summary) is (
+            has_sound and profile.audio_measured
+        )
+        assert ("Sound unmeasured" in summary) is (
+            has_sound and not profile.audio_measured
+        )
+
+
+def test_sound_is_measured_only_where_a_reply_is_captured() -> None:
+    """Only MH200, MH200N and H4890 have captured WHO 16/22 replies (MyHOME#53, #427, #466)."""
+    measured = {
+        key
+        for key, profile in _PROFILES.items()
+        if "Sound system (WHO 16)" in profile.features_summary
+    }
+    assert measured == {"mh200", "mh200n", "h4890"}
+    for key in (
+        "f452",
+        "f452v",
+        "f453",
+        "f453av",
+        "f454",
+        "f461",
+        "mh201",
+        "mh202",
+        "myhomeserver1",
+    ):
+        profile = _PROFILES[key]
+        assert profile.supports_audio is True
+        assert profile.audio_measured is False
+        assert "Sound unmeasured" in profile.features_summary
+    assert get_gateway_profile("F453AV", "2.1.7").audio_measured is False
 
 
 def test_hmac_profiles_never_show_legacy_auth() -> None:
@@ -211,7 +253,7 @@ def test_gateway_profile_summary_properties() -> None:
     assert mhs1.keepalive_summary == "OS TCP only"
     assert (
         mhs1.features_summary
-        == "HMAC-SHA2, Native transitions, Extended frames"
+        == "HMAC-SHA2, Native transitions, Extended frames, Sound unmeasured"
     )
 
     f454 = get_gateway_profile("F454")
@@ -220,7 +262,7 @@ def test_gateway_profile_summary_properties() -> None:
     assert f454.keepalive_summary == "90 s"
     assert (
         f454.features_summary
-        == "HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16)"
+        == "HMAC-SHA2, Native transitions, Extended frames, Sound unmeasured"
     )
 
     f455 = get_gateway_profile("F455")
@@ -263,4 +305,248 @@ def test_readme_gateway_profiles_table_is_in_sync() -> None:
         "README.md gateway profiles table is out of date. "
         "Run 'python scripts/update_readme_profiles.py' to update it."
     )
+
+
+def test_parse_firmware_version_normalization_and_edges() -> None:
+    """Verify parse_firmware_version normalizes inputs and prevents comparison flaws."""
+    # None and empty
+    assert parse_firmware_version(None) == (0, 0, 0)
+    assert parse_firmware_version("") == (0, 0, 0)
+    assert parse_firmware_version([]) == (0, 0, 0)
+    assert parse_firmware_version(()) == (0, 0, 0)
+
+    # Standard dotted strings
+    assert parse_firmware_version("2.1.7") == (2, 1, 7)
+    assert parse_firmware_version("1.0.19") == (1, 0, 19)
+    assert parse_firmware_version("3.0.0") == (3, 0, 0)
+
+    # Shorter strings / tuples zero-padded to at least 3 parts (V, R, B)
+    assert parse_firmware_version("2.1") == (2, 1, 0)
+    assert parse_firmware_version("2") == (2, 0, 0)
+    assert parse_firmware_version((2, 1)) == (2, 1, 0)
+    assert parse_firmware_version([2, 1]) == (2, 1, 0)
+    assert parse_firmware_version((2,)) == (2, 0, 0)
+
+    # Integer inputs
+    assert parse_firmware_version(2) == (2, 0, 0)
+
+    # Lists / tuples of strings
+    assert parse_firmware_version(["2", "1", "7"]) == (2, 1, 7)
+    assert parse_firmware_version(("2", "1")) == (2, 1, 0)
+    assert parse_firmware_version(["v2", "1"]) == (2, 1, 0)
+    assert parse_firmware_version([2, None, 1]) == (2, 1, 0)
+
+    # Longer tuples preserved
+    assert parse_firmware_version("2.1.7.4") == (2, 1, 7, 4)
+    assert parse_firmware_version((2, 1, 7, 4)) == (2, 1, 7, 4)
+
+    # Prefixed strings
+    assert parse_firmware_version("v1.0.19") == (1, 0, 19)
+    assert parse_firmware_version("FW 2.1.7") == (2, 1, 7)
+
+    # Non-digit string or unparseable fallback
+    assert parse_firmware_version("unknown") == (0, 0, 0)
+    assert parse_firmware_version(3.14) == (0, 0, 0)
+
+    # Crucial tuple comparison bug prevention:
+    assert parse_firmware_version((2, 1)) >= (2, 1, 0)
+    assert parse_firmware_version("2.1") >= (2, 1, 0)
+    assert parse_firmware_version("2.1") < (2, 1, 7)
+
+
+def test_f452_and_f452v_profiles() -> None:
+    """F452/F452V drop only WHO 25, the one subsystem Legrand documents (as NO)."""
+    for model, cls in (("F452", F452Profile), ("F452V", F452VProfile)):
+        profile = get_gateway_profile(model)
+        assert isinstance(profile, cls)
+        assert profile.model_name == model
+        assert profile.max_command_sessions == 1
+        # Nothing is measured: pacing copied from the MH200, auth unmeasured.
+        assert profile.command_queue_delay == MH200Profile().command_queue_delay
+        assert profile.auth_measured is False
+        assert "Auth unmeasured" in profile.features_summary
+        assert "Legacy password auth" not in profile.features_summary
+        # WHO_25.pdf p. 13 / WHO_15-25.pdf p. 24: F452 and F452V NO.
+        assert not profile.supports_who(WHO_CEN_PLUS)
+        assert profile.supports_who(WHO_CEN)
+        # Everything else is the undocumented class default, not an exclusion.
+        dropped = set(DEFAULT_SUPPORTED_WHO) - set(profile.supported_who)
+        assert dropped == {WHO_CEN_PLUS}
+        assert profile.supports_audio is GatewayProfile("X").supports_audio
+
+
+def test_f453_profile() -> None:
+    """F453 keeps the class default: WHO 25 is documented YES, nothing is dropped."""
+    f453 = get_gateway_profile("F453")
+    assert isinstance(f453, F453Profile)
+    assert f453.model_name == "F453"
+    assert f453.max_command_sessions == 1
+    assert f453.command_queue_delay == MH200Profile().command_queue_delay
+    assert f453.supported_who == DEFAULT_SUPPORTED_WHO
+    assert f453.supports_who(WHO_CEN_PLUS)
+    assert f453.supports_who(WHO_ENERGY)
+    # The TiF453 guide offers only an OPEN password; no handshake is captured.
+    assert f453.supports_hmac is False
+    assert f453.auth_measured is False
+    assert "Auth unmeasured" in f453.features_summary
+
+
+def test_f453av_profile_firmware_discrimination() -> None:
+    """F453AV adds WHO 25 from firmware 2.1.7, the first version Legrand lists as YES."""
+    note = "CEN+ documented from FW 2.1.7"
+
+    # 1. Unknown firmware: conservative, without CEN+.
+    f453av_default = get_gateway_profile("F453AV")
+    assert isinstance(f453av_default, F453AVProfile)
+    assert f453av_default.firmware_version is None
+    assert f453av_default.supports_who(WHO_CEN) is True
+    assert f453av_default.supports_who(WHO_CEN_PLUS) is False
+    assert set(DEFAULT_SUPPORTED_WHO) - set(f453av_default.supported_who) == {
+        WHO_CEN_PLUS
+    }
+    assert note in f453av_default.extra_features
+    assert note in f453av_default.features_summary
+    assert f453av_default.auth_measured is False
+    assert f453av_default.supports_hmac is False
+    assert f453av_default.command_queue_delay == MH200Profile().command_queue_delay
+
+    # 2. 1.0.19 is documented NO; versions between 1.0.19 and 2.1.7 are not
+    # documented and are treated conservatively as without CEN+.
+    for old_fw in ["1.0.19", "2.1.0", (2, 1), [1, 0, 19]]:
+        profile = get_gateway_profile("F453AV", firmware_version=old_fw)
+        assert isinstance(profile, F453AVProfile)
+        assert profile.supports_who(WHO_CEN_PLUS) is False
+        assert note in profile.extra_features
+
+    # 3. 2.1.7 is documented YES; later versions keep it.
+    for new_fw in ["2.1.7", "3.0.14", (2, 1, 7), [2, 1, 7]]:
+        profile = get_gateway_profile("F453AV", firmware_version=new_fw)
+        assert isinstance(profile, F453AVProfile)
+        assert profile.supported_who == DEFAULT_SUPPORTED_WHO
+        assert note not in profile.extra_features
+
+    # Direct F453AVProfile construction with tuple/list
+    profile_list = F453AVProfile(firmware_version=[2, 1, 7])
+    assert profile_list.firmware_version == "2.1.7"
+    assert profile_list.supports_who(WHO_CEN_PLUS) is True
+
+    # Empty inputs resolve to None firmware_version and conservative profile
+    for empty_fw in ["", [], (), None]:
+        empty_prof = F453AVProfile(firmware_version=empty_fw)
+        assert empty_prof.firmware_version is None
+        assert empty_prof.supports_who(WHO_CEN_PLUS) is False
+        assert note in empty_prof.extra_features
+
+
+def test_firmware_version_is_keyword_only() -> None:
+    """Adding firmware_version must not shift positional profile construction."""
+    profile = GatewayProfile("X", 4)
+    assert profile.max_command_sessions == 4
+    assert profile.firmware_version is None
+    assert GatewayProfile("X", firmware_version="1.0").firmware_version == "1.0"
+
+
+def test_catalog_aliases_resolution() -> None:
+    """Item numbers resolve to the gateway that shares their MHCatalogue.db item."""
+    # 573992 (Arteor F453AV): WHO_25.pdf p. 13
+    f453av_cat = get_gateway_profile("573992")
+    assert isinstance(f453av_cat, F453AVProfile)
+    assert not f453av_cat.supports_who(WHO_CEN_PLUS)
+
+    f453av_cat_fw = get_gateway_profile("573992", "2.1.7")
+    assert isinstance(f453av_cat_fw, F453AVProfile)
+    assert f453av_cat_fw.supports_who(WHO_CEN_PLUS) is True
+
+    # Named Arteor variants
+    assert isinstance(get_gateway_profile("Arteor 573992", "2.1.7"), F453AVProfile)
+    assert isinstance(get_gateway_profile("Arteor F453AV"), F453AVProfile)
+
+    # 003598 / 03598 (F454): MyHOME_Suite Version History
+    assert isinstance(get_gateway_profile("003598"), F454Profile)
+    assert isinstance(get_gateway_profile("03598"), F454Profile)
+    assert isinstance(get_gateway_profile("0 035 98"), F454Profile)
+
+    # 003594 / 03594 (F455): MyHOME_Suite Version History
+    assert isinstance(get_gateway_profile("003594"), F455Profile)
+    assert isinstance(get_gateway_profile("03594"), F455Profile)
+    assert isinstance(get_gateway_profile("0 035 94"), F455Profile)
+
+    # 03565 / 003565 (MH200N): WHO_25.pdf p. 13, MyHOME_Suite Version History
+    assert isinstance(get_gateway_profile("03565"), MH200NProfile)
+    assert isinstance(get_gateway_profile("003565"), MH200NProfile)
+
+    # 003535 / 03535 (MH202): MHCatalogue.db EN_DEVICE id_item 1902 only;
+    # no public page shows the pair.
+    assert isinstance(get_gateway_profile("003535"), MH202Profile)
+    assert isinstance(get_gateway_profile("03535"), MH202Profile)
+
+
+def test_owngateway_reactive_profile_upgrade_on_firmware() -> None:
+    """OWNGateway dynamically upgrades profile when firmware is updated or supplied at discovery."""
+    from OWNd.connection import OWNGateway
+
+    # Initialize without firmware: conservative F453AV
+    gw = OWNGateway({"address": "192.168.1.50", "modelName": "F453AV"})
+    assert gw.firmware is None
+    assert gw.profile.supports_who(WHO_CEN_PLUS) is False
+    assert "CEN+ documented from FW 2.1.7" in gw.profile.features_summary
+
+    # Reactive update when firmware is learned
+    gw.firmware = "2.1.7"
+    assert gw.firmware == "2.1.7"
+    assert gw.profile.supports_who(WHO_CEN_PLUS) is True
+    assert "CEN+ documented from FW 2.1.7" not in gw.profile.features_summary
+
+    # Downgrade / older firmware
+    gw.firmware = "1.0.19"
+    assert gw.profile.supports_who(WHO_CEN_PLUS) is False
+
+    # Empty string resets firmware to None and conservative profile
+    gw.firmware = ""
+    assert gw.firmware is None
+    assert gw.profile.supports_who(WHO_CEN_PLUS) is False
+
+    # Initialize with firmware in discovery_info
+    gw_with_fw = OWNGateway({
+        "address": "192.168.1.50",
+        "modelName": "F453AV",
+        "modelNumber": "2.1.7",
+    })
+    assert gw_with_fw.firmware == "2.1.7"
+    assert gw_with_fw.profile.supports_who(WHO_CEN_PLUS) is True
+
+    # Initialize with empty string in discovery_info
+    gw_empty_fw = OWNGateway({
+        "address": "192.168.1.50",
+        "modelName": "F453AV",
+        "modelNumber": "",
+    })
+    assert gw_empty_fw.firmware is None
+    assert gw_empty_fw.profile.supports_who(WHO_CEN_PLUS) is False
+
+
+def test_owngateway_event_properties() -> None:
+    """OWNGatewayEvent exposes public firmware_version and device_type properties."""
+    from OWNd.message.gateway import OWNGatewayEvent
+
+    evt_fw = OWNGatewayEvent("*#13**16*2*1*7##")
+    assert evt_fw.firmware_version == "2.1.7"
+    assert evt_fw.device_type is None
+
+    evt_dev = OWNGatewayEvent("*#13**15*200##")
+    assert evt_dev.device_type == "F454"
+    assert evt_dev.firmware_version is None
+
+
+def test_profile_no_auth_features() -> None:
+    """A profile with neither HMAC nor password auth reports neither in features_summary."""
+    profile = GatewayProfile(
+        model_name="OpenGateway",
+        supports_hmac=False,
+        requires_password=False,
+        supports_audio=False,
+    )
+    assert "Legacy password auth" not in profile.features_summary
+    assert "HMAC-SHA2" not in profile.features_summary
+
 

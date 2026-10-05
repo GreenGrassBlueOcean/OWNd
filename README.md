@@ -95,13 +95,17 @@ Gateways have varying processing limitations, socket budgets, and pacing require
 <!-- START_GATEWAY_PROFILES_TABLE -->
 | Gateway Model | Concurrency | Queue Delay | Event keepalive | Features |
 |:---|:---:|:---:|:---:|:---|
-| **MyHomeServer1** | 4 sessions (2 default) | 20 ms | OS TCP only | HMAC-SHA2, Native transitions, Extended frames |
-| **F454** | 4 sessions | 50 ms | 90 s | HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16) |
+| **MyHomeServer1** | 4 sessions (2 default) | 20 ms | OS TCP only | HMAC-SHA2, Native transitions, Extended frames, Sound unmeasured |
+| **F452** | 1 session | 150 ms | OS TCP only | Safe pacing, Auth unmeasured, Sound unmeasured |
+| **F452V** | 1 session | 150 ms | OS TCP only | Safe pacing, Auth unmeasured, Sound unmeasured |
+| **F453** | 1 session | 150 ms | OS TCP only | Safe pacing, Auth unmeasured, Sound unmeasured |
+| **F453AV** | 1 session | 150 ms | OS TCP only | Safe pacing, Auth unmeasured, Sound unmeasured, CEN+ documented from FW 2.1.7 |
+| **F454** | 4 sessions | 50 ms | 90 s | HMAC-SHA2, Native transitions, Extended frames, Sound unmeasured |
 | **F455** | 4 sessions (2 default) | 50 ms | OS TCP only | HMAC-SHA2, Native transitions, Extended frames |
-| **F461** | 4 sessions | 50 ms | 90 s | HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16) |
+| **F461** | 4 sessions | 50 ms | 90 s | HMAC-SHA2, Native transitions, Extended frames, Sound unmeasured |
 | **H4890** | 1 session | 50 ms | OS TCP only | Auth unmeasured, Sound system (WHO 16), Burglar alarm (WHO 5) |
-| **MH202** | 2 sessions | 100 ms | OS TCP only | HMAC-SHA2, Extended frames, Sound system (WHO 16), Burglar alarm (WHO 5) |
-| **MH201** | 1 session | 100 ms | OS TCP only | Legacy password auth, Extended frames, Sound system (WHO 16), Clock diagnostics |
+| **MH202** | 2 sessions | 100 ms | OS TCP only | HMAC-SHA2, Extended frames, Sound unmeasured, Burglar alarm (WHO 5) |
+| **MH201** | 1 session | 100 ms | OS TCP only | Legacy password auth, Extended frames, Sound unmeasured, Clock diagnostics |
 | **MH200** | 1 session | 150 ms | 90 s | Safe pacing, Legacy password auth, Sound system (WHO 16) |
 | **MH200N** | 1 session | 150 ms | 90 s | Safe pacing, Legacy password auth, Sound system (WHO 16) |
 | **Generic Gateway** | 1 session | 50 ms | OS TCP only | Conservative fallback |

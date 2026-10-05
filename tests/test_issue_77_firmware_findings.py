@@ -39,7 +39,6 @@ from OWNd.message import (
     OWNLightingCommand,
     OWNMessage,
 )
-from OWNd.profiles import WHO_SOUND, get_gateway_profile
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -166,7 +165,7 @@ def test_fix4_actuator_status_without_actuator_falls_back_to_actuator_1(
     event = OWNEvent.parse(frame)
 
     assert isinstance(event, OWNHeatingEvent)
-    assert event._actuator == 1
+    assert event._actuator == "1"
     assert event.is_active() is False
 
 
@@ -359,20 +358,3 @@ def test_fix10_matrix_examples_all_parse() -> None:
         message = OWNMessage.parse(frame)
         assert message is not None, frame
         assert message.is_valid, frame
-
-
-# ── B1: MyHomeServer1 and WHO 16 ────────────────────────────────────────────
-
-
-def test_b1_myhomeserver1_does_not_advertise_who16() -> None:
-    """Firmware: the sound program (``bt_multi``) translates WHO 22 only.
-
-    472 WHO 16 commands produced no bus frame, and 3,888 bus frames decode to
-    ``*22*``. The gateway router (``openserver``) was not emulated, and the real
-    gateway's refusal of ``*#16*0##`` may only mean that no sound system is
-    installed, so this rests on the emulation alone.
-    """
-    profile = get_gateway_profile("MyHomeServer1")
-
-    assert profile.supports_audio is False
-    assert not profile.supports_who(WHO_SOUND)

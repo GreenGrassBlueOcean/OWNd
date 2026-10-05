@@ -411,7 +411,7 @@ class OWNHeatingEvent(OWNEvent):
             self._type = MESSAGE_TYPE_ACTION
             self._is_active = self._dimension_value[0] in _actuator_active_states
             self._actuator = (
-                self._where_param[0] if self._where_param else 1
+                self._where_param[0] if self._where_param else "1"
             )
             _value = int(self._dimension_value[0])
             if _value == 0:
@@ -682,6 +682,7 @@ class OWNHeatingCommand(OWNCommand):
     def set_fan_speed(
         cls, where: str | int, speed: int, standalone: bool = False
     ) -> OWNHeatingCommand:
+        """Build a fan speed command; ``standalone`` is ignored (kept for compatibility)."""
         where_str = str(where)
         if where_str in ("#0", "0") or where_str.startswith("#0#"):
             raise ValueError(
