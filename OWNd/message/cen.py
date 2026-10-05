@@ -280,6 +280,8 @@ def _parse_who25_event(data: str) -> OWNEvent:
         what_code = None
     if what_code is not None and 21 <= what_code <= 28:
         return OWNCENPlusEvent(data)
+    if what_code is not None and what_code not in (31, 32):
+        return OWNEvent(data)
     return OWNDryContactEvent(data)
 
 

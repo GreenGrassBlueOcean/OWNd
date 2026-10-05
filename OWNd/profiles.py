@@ -322,6 +322,10 @@ class MyHomeServer1Profile(GatewayProfile):
             supports_hmac=True,
             supports_native_transitions=True,
             supports_extended_frames=True,
+            supports_audio=False,
+            supported_who=tuple(
+                who for who in DEFAULT_SUPPORTED_WHO if who != WHO_SOUND
+            ),
         )
 
 

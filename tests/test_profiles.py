@@ -69,7 +69,8 @@ def test_profile_lookup_accepts_common_name_variants() -> None:
 
     assert profile.model_name == "MyHomeServer1"
     assert profile.supports_session_count(4)
-    assert profile.supports_who(WHO_SOUND)
+    assert not profile.supports_who(WHO_SOUND)
+    assert profile.supports_audio is False
 
 
 def test_f461_profile_lookup() -> None:
@@ -210,7 +211,7 @@ def test_gateway_profile_summary_properties() -> None:
     assert mhs1.keepalive_summary == "OS TCP only"
     assert (
         mhs1.features_summary
-        == "HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16)"
+        == "HMAC-SHA2, Native transitions, Extended frames"
     )
 
     f454 = get_gateway_profile("F454")

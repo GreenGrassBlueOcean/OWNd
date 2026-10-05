@@ -95,7 +95,7 @@ Gateways have varying processing limitations, socket budgets, and pacing require
 <!-- START_GATEWAY_PROFILES_TABLE -->
 | Gateway Model | Concurrency | Queue Delay | Event keepalive | Features |
 |:---|:---:|:---:|:---:|:---|
-| **MyHomeServer1** | 4 sessions (2 default) | 20 ms | OS TCP only | HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16) |
+| **MyHomeServer1** | 4 sessions (2 default) | 20 ms | OS TCP only | HMAC-SHA2, Native transitions, Extended frames |
 | **F454** | 4 sessions | 50 ms | 90 s | HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16) |
 | **F455** | 4 sessions (2 default) | 50 ms | OS TCP only | HMAC-SHA2, Native transitions, Extended frames |
 | **F461** | 4 sessions | 50 ms | 90 s | HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16) |

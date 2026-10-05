@@ -73,7 +73,7 @@ class OWNMessage:
         r"^\*#(?P<who>\d+)\*(?P<where>#?\d+)?(?P<where_param>(?:#\d+)*)?\*#(?P<dimension>\d+)(?P<dimension_param>(?:#\d+)*)?(?P<dimension_value>(?:\*\d*)+)##$"  # pylint: disable=line-too-long
     )  #  *#WHO*WHERE*#DIMENSION*VAL1*VALn##
     _DIMENSION_REQUEST = re.compile(
-        r"^\*#(?P<who>\d+)\*(?P<where>#?\d+)?(?P<where_param>(?:#\d+)*)?\*(?P<dimension>\d+)##$"
+        r"^\*#(?P<who>\d+)\*(?P<where>#?\d+)?(?P<where_param>(?:#\d+)*)?\*(?P<dimension>\d+)(?P<dimension_param>(?:#\d+)*)?##$"
     )  #  *#WHO*WHERE*DIMENSION##
     _DIMENSION_REQUEST_REPLY = re.compile(
         r"^\*#(?P<who>\d+)\*(?P<where>#?\d+)?(?P<where_param>(?:#\d+)*)?\*(?P<dimension>\d+)(?P<dimension_param>(?:#\d+)*)?(?P<dimension_value>(?:\*\d*)+)##$"  # pylint: disable=line-too-long
@@ -146,6 +146,7 @@ class OWNMessage:
             self._where = match.group("where") or ""
             self._where_param = (match.group("where_param") or "").split("#")[1:]
             self._dimension = int(match.group("dimension"))
+            self._dimension_param = (match.group("dimension_param") or "").split("#")[1:]
 
         elif match := self._DIMENSION_REQUEST_REPLY.match(self._raw):
             self._is_valid_message = True
@@ -231,7 +232,7 @@ class OWNMessage:
         """The 'where' parameter corresponding to the bus interface of the subject of this message"""
         return (
             self._where_param[1]
-            if self._who in [1, 2, 15]
+            if self._who in [0, 1, 2, 14, 15]
             and len(self._where_param) > 1
             and self._where_param[0] == "4"
             else None
