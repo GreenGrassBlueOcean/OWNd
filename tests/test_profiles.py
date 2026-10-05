@@ -415,7 +415,7 @@ def test_firmware_version_is_keyword_only() -> None:
 
 
 def test_catalog_aliases_resolution() -> None:
-    """Item numbers resolve only where a public Legrand/BTicino page ties them to a model."""
+    """Item numbers resolve to the gateway that shares their MHCatalogue.db item."""
     # 573992 (Arteor F453AV): WHO_25.pdf p. 13
     f453av_cat = get_gateway_profile("573992")
     assert isinstance(f453av_cat, F453AVProfile)
@@ -443,9 +443,10 @@ def test_catalog_aliases_resolution() -> None:
     assert isinstance(get_gateway_profile("03565"), MH200NProfile)
     assert isinstance(get_gateway_profile("003565"), MH200NProfile)
 
-    # 003535 has no public source naming it MH202, so it is not an alias.
-    assert not isinstance(get_gateway_profile("003535"), MH202Profile)
-    assert not isinstance(get_gateway_profile("03535"), MH202Profile)
+    # 003535 / 03535 (MH202): MHCatalogue.db EN_DEVICE id_item 1902 only;
+    # no public page shows the pair.
+    assert isinstance(get_gateway_profile("003535"), MH202Profile)
+    assert isinstance(get_gateway_profile("03535"), MH202Profile)
 
 
 def test_owngateway_reactive_profile_upgrade_on_firmware() -> None:

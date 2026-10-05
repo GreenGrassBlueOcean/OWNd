@@ -550,6 +550,13 @@ _ALIASES = {
     "ln4890": "h4890",
     "ln4890a": "h4890",
     "4890": "h4890",
+    # Item numbers. MHCatalogue.db (MyHOME_Suite 3.5.38, fingerprinted in
+    # OpenWebNet-Encyclopedia sources/manifest.yaml) gives each gateway a name
+    # row and a number row sharing one EN_DEVICE.id_item: MH202/003535 (1902),
+    # F454/003598 (1455), F455/003594 (2064), MH200N/003565 (1331).
+    # 573992 is its own Legrand Arteor item; WHO_25.pdf p. 13 lists it with the
+    # F453AV. Public pages: WHO_25.pdf p. 13 (03565, 573992) and the MyHOME_Suite
+    # Version History (003598, 003594, 003565, 573992); none shows 003535.
     "573992": "f453av",
     "arteor573992": "f453av",
     "arteorf453av": "f453av",
@@ -559,6 +566,8 @@ _ALIASES = {
     "03594": "f455",
     "03565": "mh200n",
     "003565": "mh200n",
+    "003535": "mh202",
+    "03535": "mh202",
 }
 
 
