@@ -55,16 +55,23 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
         (CLIMATE_MODE_COOL, 0, CLIMATE_MODE_COOL),
         (CLIMATE_MODE_AUTO, 311, CLIMATE_MODE_AUTO),
         ("antifreeze", 102, CLIMATE_MODE_OFF),
-        ("protection", 202, CLIMATE_MODE_OFF),
+        ("protection", 302, CLIMATE_MODE_OFF),
     ],
 )
 def test_fix1_central_mode_uses_the_who4_what_table(
     where: str, mode: str, what: int, parsed_mode: str
 ) -> None:
-    """Central-unit modes use WHAT 303 / 1 / 0 / 311 / 102 / 202.
+    """Central-unit modes use WHAT 303 / 1 / 0 / 311 / 102 / 302.
 
-    Firmware: these six produce a bus frame for ``#0`` and ``#0#2``; the old
-    100 / 101 / 110 produce none, and 102 / 103 / 111 mean something else.
+    Firmware: 303, 1, 0, 311 and 102 produce a bus frame for ``#0`` and ``#0#2``;
+    the old 100 / 101 / 110 produce none, and the old 102 (cool), 103 and 111
+    are forwarded but mean something else.
+    BTicino client (libqtdevices TS10_1_0_23 ``thermal_device.cpp`` and
+    ``test/test_thermal_device.cpp``): the central unit is sent ``*4*303*#0##``
+    (off), ``*4*1*#0##`` (winter), ``*4*0*#0##`` (summer) and ``*4*302*#0##``
+    (protection). Its enum names 102 winter protection, 202 summer protection
+    and 302 generic protection, so "protection" is 302: 202 would also switch
+    the plant to summer.
     Encyclopedia: ``functional/who-4-temperature-control/what.md`` lists 0 cooling,
     1 heating, 102 antifreeze, 202 thermal protection, 303 OFF generic and
     311 automatic generic.

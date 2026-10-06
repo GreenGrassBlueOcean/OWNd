@@ -715,14 +715,23 @@ class OWNHeatingCommand(OWNCommand):
     def set_central_mode(
         cls, where: str = "#0", mode: str = CLIMATE_MODE_HEAT
     ) -> OWNHeatingCommand:
-        """Set operation mode for Central Unit (3550 99-zone or 4695 4-zone)."""
+        """Set operation mode for Central Unit (3550 99-zone or 4695 4-zone).
+
+        The codes are the ones BTicino's touch-screen client sends to a central
+        unit (libqtdevices ``thermal_device.cpp``): 303 generic off, 1 winter,
+        0 summer, 302 generic protection. 102 is the winter (antifreeze)
+        protection; 202, the summer protection, is not offered because it
+        would also switch the plant to summer. 311 is the generic automatic
+        command libqtdevices sends to zones; on ``#0`` it puts every zone back
+        on the central unit's program.
+        """
         mode_map = {
             CLIMATE_MODE_OFF: 303,
             CLIMATE_MODE_HEAT: 1,
             CLIMATE_MODE_COOL: 0,
             CLIMATE_MODE_AUTO: 311,
             "antifreeze": 102,
-            "protection": 202,
+            "protection": 302,
         }
         mode_code = mode_map.get(mode)
         if mode_code is None:
