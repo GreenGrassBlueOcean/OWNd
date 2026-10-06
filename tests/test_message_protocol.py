@@ -278,7 +278,7 @@ def test_heating_fan_speed_dimension_has_message_type() -> None:
     assert event.message_type == MESSAGE_TYPE_FAN_SPEED
     assert event.fan_speed == 2
     assert event.fan_on is True
-    assert str(OWNHeatingCommand.set_fan_speed("1", 2)) == "*#4*#1*#11*2##"
+    assert str(OWNHeatingCommand.set_fan_speed("1", 2)) == "*#4*1*#11*2##"
 
     automatic = OWNHeatingEvent("*#4*1*11*0##")
     assert automatic.fan_speed == 0

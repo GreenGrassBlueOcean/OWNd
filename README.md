@@ -336,7 +336,7 @@ OWNd maintains an automated test suite with strict **100.0% line coverage** (3,0
 | [`OWNd/message/heating.py`](OWNd/message/heating.py) | **100%** | WHO 4: Thermoregulation, heating/cooling zone control, and temperature decoders |
 | [`OWNd/message/lighting.py`](OWNd/message/lighting.py) | **100%** | WHO 1: Lighting controls, dimming, RGB/HSV color, and motion/PIR sensors |
 | [`OWNd/message/scenario.py`](OWNd/message/scenario.py) | **100%** | WHO 0, WHO 9, WHO 17: Scenario activation, auxiliary commands, and MH200/MH202 scenes |
-| [`OWNd/message/sound.py`](OWNd/message/sound.py) | **100%** | WHO 16, WHO 22: Sound system and audio/video matrix routing |
+| [`OWNd/message/sound.py`](OWNd/message/sound.py) | **100%** | WHO 16: Sound system and audio/video matrix routing (WHO 22 is not implemented) |
 | [`OWNd/profiles.py`](OWNd/profiles.py) | **100%** | Declarative hardware gateway models (F454, MH200, MH200N, MH201, MH202, MyHomeServer1) |
 | [`OWNd/transport/__init__.py`](OWNd/transport/__init__.py) | **100%** | Transport subpackage exports |
 | [`OWNd/transport/base.py`](OWNd/transport/base.py) | **100%** | Abstract transport layer and event listener notification contracts |

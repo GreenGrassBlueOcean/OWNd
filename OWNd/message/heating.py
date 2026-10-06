@@ -339,7 +339,11 @@ class OWNHeatingEvent(OWNEvent):
                 else:
                     self._human_readable_log = f"Zone {self._zone}'s temperature probe is reporting a temperature of {self._secondary_temperature}°C."
 
-        elif self._dimension == 19:  # Valves status
+        elif (
+            self._dimension == 19
+            and len(self._dimension_value) >= 2
+            and all(self._dimension_value[:2])
+        ):  # Valves status
             self._type = MESSAGE_TYPE_ACTION
             self._is_cooling = self._dimension_value[0] in _valve_active_states
             self._is_heating = self._dimension_value[1] in _valve_active_states
@@ -399,11 +403,15 @@ class OWNHeatingEvent(OWNEvent):
                     self._is_active = False
                     self._human_readable_log += "; heating fan is off."
 
-        elif self._dimension == 20:  # Actuator status
+        elif (
+            self._dimension == 20
+            and self._dimension_value
+            and self._dimension_value[0]
+        ):  # Actuator status
             self._type = MESSAGE_TYPE_ACTION
             self._is_active = self._dimension_value[0] in _actuator_active_states
             self._actuator = (
-                self._where_param[0] if self._where_param[0] is not None else 1
+                self._where_param[0] if self._where_param else "1"
             )
             _value = int(self._dimension_value[0])
             if _value == 0:
@@ -613,6 +621,10 @@ class OWNHeatingCommand(OWNCommand):
         if mode == CLIMATE_MODE_OFF:
             mode_code = 303
         elif mode == CLIMATE_MODE_AUTO:
+            # The firmware forwards 311 only as *4*311*#Z## (OWNd#77, A3), the
+            # form libqtdevices sends too, so ``standalone`` does not apply.
+            if not zone.startswith("#"):
+                zone = f"#{zone}"
             mode_code = 311
         else:
             return None
@@ -672,24 +684,32 @@ class OWNHeatingCommand(OWNCommand):
     def set_fan_speed(
         cls, where: str | int, speed: int, standalone: bool = False
     ) -> OWNHeatingCommand:
-        central_local = re.compile(r"^#0#\d+$")
-        if central_local.match(str(where)):
-            zone = str(where)
-            zone_name = f"zone {int(str(where).split('#')[-1])}"
-        else:
-            zone_number = (
-                int(str(where).split("#")[-1]) if str(where).startswith("#") else int(where)
+        """Build a fan speed command; ``standalone`` is ignored (kept for compatibility)."""
+        where_str = str(where)
+        if where_str in ("#0", "0") or where_str.startswith("#0#"):
+            raise ValueError(
+                f"Fan speed cannot be set on central unit or general zone: {where}"
             )
-            zone_name = f"zone {zone_number}" if zone_number > 0 else "general"
-            if standalone:
-                zone = f"#{zone_number}" if zone_number == 0 else str(zone_number)
-            else:
-                zone = f"#{zone_number}"
+        try:
+            zone_number = (
+                int(where_str.split("#")[-1])
+                if where_str.startswith("#")
+                else int(where)
+            )
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid zone address: {where}")
+        if not (1 <= zone_number <= 99):
+            raise ValueError(f"Invalid zone number: {zone_number}. Zone must be 1..99")
+        try:
+            speed_code = int(speed)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid fan speed: {speed}")
+        if not (0 <= speed_code <= 3):
+            raise ValueError(f"Invalid fan speed: {speed_code}. Speed must be 0..3")
 
-        speed_code = int(speed)
-        message = cls(f"*#4*{zone}*#11*{speed_code}##")
+        message = cls(f"*#4*{zone_number}*#11*{speed_code}##")
         message._human_readable_log = (
-            f"Setting {zone_name} fan speed to {speed_code}."
+            f"Setting zone {zone_number} fan speed to {speed_code}."
         )
         return message
 
@@ -697,14 +717,23 @@ class OWNHeatingCommand(OWNCommand):
     def set_central_mode(
         cls, where: str = "#0", mode: str = CLIMATE_MODE_HEAT
     ) -> OWNHeatingCommand:
-        """Set operation mode for Central Unit (3550 99-zone or 4695 4-zone)."""
+        """Set operation mode for Central Unit (3550 99-zone or 4695 4-zone).
+
+        The codes are the ones BTicino's touch-screen client sends to a central
+        unit (libqtdevices ``thermal_device.cpp``): 303 generic off, 1 winter,
+        0 summer, 302 generic protection. 102 is the winter (antifreeze)
+        protection; 202, the summer protection, is not offered because it
+        would also switch the plant to summer. 311 is the generic automatic
+        command libqtdevices sends to zones; on ``#0`` it puts every zone back
+        on the central unit's program.
+        """
         mode_map = {
-            CLIMATE_MODE_OFF: 100,
-            CLIMATE_MODE_HEAT: 101,
-            CLIMATE_MODE_COOL: 102,
-            CLIMATE_MODE_AUTO: 103,
-            "antifreeze": 110,
-            "protection": 111,
+            CLIMATE_MODE_OFF: 303,
+            CLIMATE_MODE_HEAT: 1,
+            CLIMATE_MODE_COOL: 0,
+            CLIMATE_MODE_AUTO: 311,
+            "antifreeze": 102,
+            "protection": 302,
         }
         mode_code = mode_map.get(mode)
         if mode_code is None:

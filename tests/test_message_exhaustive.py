@@ -483,7 +483,8 @@ class TestMessageExhaustiveCoverage:
         assert OWNHeatingCommand.get_temperature("1") is not None
         assert OWNHeatingCommand.set_mode("1", "unknown") is None
         assert OWNHeatingCommand.turn_off("1") is not None
-        assert OWNHeatingCommand.set_fan_speed("#0#1", 1) is not None
+        with pytest.raises(ValueError):
+            OWNHeatingCommand.set_fan_speed("#0#1", 1)
         assert OWNHeatingCommand.set_fan_speed("1", 1, standalone=True) is not None
 
         # Gateway command dimension 22

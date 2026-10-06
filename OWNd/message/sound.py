@@ -1,4 +1,4 @@
-"""WHO 16 & 22: Sound diffusion and audio/video door entry events and commands."""
+"""WHO 16: Sound diffusion and audio/video door entry events and commands."""
 
 from __future__ import annotations
 

@@ -412,8 +412,12 @@ class OWNLightingCommand(OWNCommand):
     def set_brightness(
         cls, where: str | int, _level: int = 30, _transition: int = 0
     ) -> OWNLightingCommand:
-        command_level = int(_level) + 100
-        transition_speed = _transition if _transition >= 0 and _transition <= 255 else 0
+        transition_speed = _transition if 0 <= _transition <= 255 else 0
+        if int(_level) <= 0:
+            return cls.switch_off(
+                where, transition_speed if transition_speed > 0 else None
+            )
+        command_level = min(int(_level), 100) + 100
         message = cls(f"*#1*{where}*#1*{command_level}*{transition_speed}##")
         message._human_readable_log = (
             f"Setting light {message._where}{message._interface_log_text} brightness to {_level}% with transition speed {transition_speed}."  # pylint: disable=line-too-long
