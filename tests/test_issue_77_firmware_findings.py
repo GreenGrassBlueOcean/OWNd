@@ -172,6 +172,20 @@ def test_zone_builders_take_the_zone_from_the_first_field(where: str) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "bad_where",
+    ["##23", "invalid", "-1"],
+)
+def test_zone_builders_refuse_invalid_addresses(bad_where: str) -> None:
+    """Code: set_mode, set_temperature and set_fan_speed reject malformed addresses."""
+    with pytest.raises(ValueError, match="Invalid zone address"):
+        OWNHeatingCommand.set_mode(bad_where, CLIMATE_MODE_OFF)
+    with pytest.raises(ValueError, match="Invalid zone address"):
+        OWNHeatingCommand.set_temperature(bad_where, 21.0, CLIMATE_MODE_HEAT)
+    with pytest.raises(ValueError, match="Invalid zone address"):
+        OWNHeatingCommand.set_fan_speed(bad_where, 1)
+
+
 def test_central_status_is_deprecated_and_unchanged() -> None:
     """Capture + Gateway: gateways refuse ``*#4*#0*14##``; ``*#4*#0##`` is answered.
 

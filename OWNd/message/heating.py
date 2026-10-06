@@ -105,7 +105,19 @@ def _zone_number(where: str | int) -> int:
     libqtdevices TS10_1_0_23 addresses a probe ``#23#1`` and still writes zone 23
     (``*#4*23*#11*3##``). Callers handle the 4-zone central form ``#0#N`` first.
     """
-    return int(str(where).lstrip("#").split("#")[0])
+    where_str = str(where)
+    if where_str.startswith("##"):
+        raise ValueError(f"Invalid zone address: {where}")
+    if where_str.startswith("#"):
+        where_str = where_str[1:]
+    part = where_str.split("#")[0]
+    try:
+        val = int(part)
+        if val < 0:
+            raise ValueError(f"Invalid zone address: {where}")
+        return val
+    except (ValueError, TypeError):
+        raise ValueError(f"Invalid zone address: {where}")
 
 
 class OWNHeatingEvent(OWNEvent):
@@ -764,10 +776,11 @@ class OWNHeatingCommand(OWNCommand):
     def central_status(cls, where: str = "#0") -> OWNHeatingCommand:
         """Deprecated: builds ``*#4*WHERE*14##``, which gateways refuse.
 
-        An F454 (MyHOME#629) and a real MyHomeServer1 3.1.8 (OWNd#77 gateway
-        probe) answer ``*#*0##``; the F454 answers ``status("#0")``
-        (``*#4*#0##``) within 0.13 s. Use ``status(where)`` to poll a central
-        unit. The frame is kept unchanged for existing callers.
+        A real MyHomeServer1 3.1.8 (OWNd#77 gateway probe) answers ``*#*0##``
+        (NACK); on an F454 (MyHOME#629) dimension 14 silently timed out while
+        ``status("#0")`` (``*#4*#0##``) answered within 0.13 s. Use
+        ``status(where)`` to poll a central unit. The frame is kept unchanged
+        for existing callers.
         """
         warnings.warn(
             "OWNHeatingCommand.central_status() builds *#4*WHERE*14##, which gateways "

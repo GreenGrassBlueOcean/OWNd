@@ -1201,6 +1201,19 @@
     "_file": "who04_thermo.yaml"
   },
   {
+    "id": "thermo.cmd.mode.thermal_protection.zone1",
+    "frame": "*4*202*#1##",
+    "direction": "command",
+    "who": 4,
+    "what": 202,
+    "where": "#1",
+    "source": "encyclopedia",
+    "mcp_valid": true,
+    "mcp_notes": "Set Zone 1 (through the central unit) to Thermal Protection (cooling protection), WHAT 202 (Encyclopedia functional/who-4-temperature-control/what.md, zone setup: *4*202*#WHERE##; WHO_4.pdf conditioning: thermal protection). No builder block: set_central_mode does not offer 202 because setting cooling protection on a central unit switches the entire plant to cooling",
+    "roundtrip": true,
+    "_file": "who04_thermo.yaml"
+  },
+  {
     "id": "thermo.resp.probe.status.neg_temp",
     "frame": "*#4*6*12*1048*3##",
     "direction": "dimension_response",
