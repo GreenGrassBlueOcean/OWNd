@@ -29,8 +29,10 @@ from OWNd.message import (
     CLIMATE_MODE_COOL,
     CLIMATE_MODE_HEAT,
     CLIMATE_MODE_OFF,
+    OWNCenPlusCommand,
     OWNCENPlusEvent,
     OWNCommand,
+    OWNDryContactCommand,
     OWNDryContactEvent,
     OWNEnergyCommand,
     OWNEvent,
@@ -141,6 +143,17 @@ def test_fix2_fan_speed_refuses_input_that_is_not_a_zone_or_speed() -> None:
         OWNHeatingCommand.set_fan_speed("invalid", 1)
     with pytest.raises(ValueError, match="Invalid fan speed"):
         OWNHeatingCommand.set_fan_speed(1, "invalid")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("where", ["#23#1", "23#1", "#23#2"])
+def test_fix2_fan_speed_takes_the_zone_from_the_first_field(where: str) -> None:
+    """BTicino client: a probe addressed ``#23#1`` sets its fan coil as zone 23.
+
+    libqtdevices TS10_1_0_23 ``ControlledProbeDevice::setFancoilSpeed`` writes
+    the plain zone, test ``sendSetFancoilSpeed``: ``*#4*23*#11*3##``. Taking the
+    last ``#`` field instead built zone 1 (review of OWNd#82, finding 3).
+    """
+    assert str(OWNHeatingCommand.set_fan_speed(where, 3)) == "*#4*23*#11*3##"
 
 
 # ── Fix 3: AUTO on a standalone zone ────────────────────────────────────────
@@ -279,6 +292,22 @@ def test_fix7_brightness_never_writes_level_100(level: int) -> None:
         assert frame == f"*#1*31*#1*{min(level, 100) + 100}*5##"
 
 
+@pytest.mark.parametrize(
+    ("level", "transition", "logged"),
+    [
+        (120, 0, "brightness to 100% (requested 120%)."),
+        (120, 5, "brightness to 100% (requested 120%) with transition speed 5."),
+        (100, 0, "brightness to 100%."),
+        (50, 0, "brightness to 50%."),
+    ],
+)
+def test_fix7_log_shows_the_level_that_is_sent(level: int, transition: int, logged: str) -> None:
+    """Code: a capped level is logged as sent, with the request alongside (review of OWNd#82, finding 5)."""
+    command = OWNLightingCommand.set_brightness("31", level, transition)
+
+    assert command.human_readable_log.endswith(logged)
+
+
 # ── Fix 8: interface for WHO 0 and WHO 14 ───────────────────────────────────
 
 
@@ -324,6 +353,30 @@ def test_fix9_other_who25_messages_are_not_dry_contacts(frame: str) -> None:
 def test_fix9_captured_who25_messages_keep_their_class(frame: str, cls: type) -> None:
     """Capture: WHO 25 frames from the MyHOME trace fixtures (MyHOME#453, #466)."""
     assert isinstance(OWNEvent.parse(frame), cls)
+
+
+@pytest.mark.parametrize(
+    ("frame", "cls"),
+    [
+        ("*25*11#121*10##", OWNCommand),
+        ("*25*12*131##", OWNCommand),
+        ("*25*31#1*339##", OWNDryContactCommand),
+        ("*25*32#1*33##", OWNDryContactCommand),
+        ("*#25*331##", OWNDryContactCommand),
+        ("*25*21#1*21##", OWNCenPlusCommand),
+        ("*25*bad*21##", OWNDryContactCommand),
+    ],
+)
+def test_fix9_command_parser_uses_the_same_who25_rule(frame: str, cls: type) -> None:
+    """Code: the command parser follows the event parser (review of OWNd#82, finding 4).
+
+    Only WHAT 31/32 (and ``*#25*`` status requests) are dry contacts; 21..28 are
+    CEN+; any other numeric WHAT is a plain command. A WHAT that is not a number
+    stays a dry contact, as in the event parser.
+    """
+    command = OWNCommand.parse(frame)
+
+    assert type(command) is cls
 
 
 # ── Fix 10: conformance matrix ──────────────────────────────────────────────

@@ -417,12 +417,14 @@ class OWNLightingCommand(OWNCommand):
             return cls.switch_off(
                 where, transition_speed if transition_speed > 0 else None
             )
-        command_level = min(int(_level), 100) + 100
+        level = min(int(_level), 100)
+        command_level = level + 100
         message = cls(f"*#1*{where}*#1*{command_level}*{transition_speed}##")
+        capped = f" (requested {_level}%)" if int(_level) > 100 else ""
         message._human_readable_log = (
-            f"Setting light {message._where}{message._interface_log_text} brightness to {_level}% with transition speed {transition_speed}."  # pylint: disable=line-too-long
+            f"Setting light {message._where}{message._interface_log_text} brightness to {level}%{capped} with transition speed {transition_speed}."  # pylint: disable=line-too-long
             if transition_speed > 0
-            else f"Setting light {message._where}{message._interface_log_text} brightness to {_level}%."
+            else f"Setting light {message._where}{message._interface_log_text} brightness to {level}%{capped}."
         )
         return message
 

@@ -690,12 +690,11 @@ class OWNHeatingCommand(OWNCommand):
             raise ValueError(
                 f"Fan speed cannot be set on central unit or general zone: {where}"
             )
+        # The zone is the first field: a probe or actuator address such as
+        # ``#23#1`` or ``23#1`` still sets the fan coil of zone 23, the plain
+        # address libqtdevices sends (``*#4*23*#11*3##`` for probe ``#23#1``).
         try:
-            zone_number = (
-                int(where_str.split("#")[-1])
-                if where_str.startswith("#")
-                else int(where)
-            )
+            zone_number = int(where_str.lstrip("#").split("#")[0])
         except (ValueError, TypeError):
             raise ValueError(f"Invalid zone address: {where}")
         if not (1 <= zone_number <= 99):
