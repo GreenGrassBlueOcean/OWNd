@@ -146,15 +146,21 @@ def test_fix2_fan_speed_refuses_input_that_is_not_a_zone_or_speed() -> None:
 # ── Fix 3: AUTO on a standalone zone ────────────────────────────────────────
 
 
-def test_fix3_auto_is_not_built_for_a_plain_zone() -> None:
+def test_fix3_auto_is_always_built_for_the_hash_zone() -> None:
     """Firmware: ``*4*311*1##`` produces no bus frame; ``*4*311*#1##`` does.
 
-    ``*4*303*1##`` (off) works in the plain form, so off is still built.
+    So AUTO is built as ``#Z`` even for a zone flagged standalone. MyHOME flags
+    every zone that is not a central unit standalone by default, so returning
+    None here would drop AUTO for zones that do run under a central unit.
+    BTicino client (libqtdevices TS10_1_0_23 ``ControlledProbeDevice::setAutomatic``,
+    test ``sendSetAutomatic``): ``*4*311*#23#1##``, the ``#`` form.
+    ``*4*303*1##`` (off) works in the plain form, so off still follows ``standalone``.
     Encyclopedia: automatic mode is commanded through the central unit,
     ``*4*311*#WHERE##``.
     """
-    assert OWNHeatingCommand.set_mode("1", CLIMATE_MODE_AUTO, standalone=True) is None
+    assert str(OWNHeatingCommand.set_mode("1", CLIMATE_MODE_AUTO, standalone=True)) == "*4*311*#1##"
     assert str(OWNHeatingCommand.set_mode("1", CLIMATE_MODE_AUTO)) == "*4*311*#1##"
+    assert str(OWNHeatingCommand.set_mode("#0", CLIMATE_MODE_AUTO, standalone=True)) == "*4*311*#0##"
     assert str(OWNHeatingCommand.set_mode("1", CLIMATE_MODE_OFF, standalone=True)) == "*4*303*1##"
 
 

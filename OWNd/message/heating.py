@@ -621,8 +621,10 @@ class OWNHeatingCommand(OWNCommand):
         if mode == CLIMATE_MODE_OFF:
             mode_code = 303
         elif mode == CLIMATE_MODE_AUTO:
+            # The firmware forwards 311 only as *4*311*#Z## (OWNd#77, A3), the
+            # form libqtdevices sends too, so ``standalone`` does not apply.
             if not zone.startswith("#"):
-                return None
+                zone = f"#{zone}"
             mode_code = 311
         else:
             return None
