@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import warnings
 
 from .base import OWNCommand, OWNEvent, register_command_parser, register_event_parser
 from .lighting import MESSAGE_TYPE_ACTION
@@ -97,6 +98,14 @@ def _zone_state_text(values: list[str]) -> str | None:
         return f"{context} {state} at {temperature}°C"
     return f"{context} {state}"
 
+
+def _zone_number(where: str | int) -> int:
+    """Zone of a WHO 4 address: the first field, so ``#23#1`` and ``23#1`` are zone 23.
+
+    libqtdevices TS10_1_0_23 addresses a probe ``#23#1`` and still writes zone 23
+    (``*#4*23*#11*3##``). Callers handle the 4-zone central form ``#0#N`` first.
+    """
+    return int(str(where).lstrip("#").split("#")[0])
 
 
 class OWNHeatingEvent(OWNEvent):
@@ -607,9 +616,7 @@ class OWNHeatingCommand(OWNCommand):
             zone = str(where)
             zone_name = f"zone {int(str(where).split('#')[-1])}"
         else:
-            zone_number = (
-                int(str(where).split("#")[-1]) if str(where).startswith("#") else int(where)
-            )
+            zone_number = _zone_number(where)
             zone_name = f"zone {zone_number}" if zone_number > 0 else "general"
 
             if standalone:
@@ -649,9 +656,7 @@ class OWNHeatingCommand(OWNCommand):
             zone = str(where)
             zone_name = f"zone {int(str(where).split('#')[-1])}"
         else:
-            zone_number = (
-                int(str(where).split("#")[-1]) if str(where).startswith("#") else int(where)
-            )
+            zone_number = _zone_number(where)
             zone_name = f"zone {zone_number}" if zone_number > 0 else "general"
 
             if standalone:
@@ -690,11 +695,8 @@ class OWNHeatingCommand(OWNCommand):
             raise ValueError(
                 f"Fan speed cannot be set on central unit or general zone: {where}"
             )
-        # The zone is the first field: a probe or actuator address such as
-        # ``#23#1`` or ``23#1`` still sets the fan coil of zone 23, the plain
-        # address libqtdevices sends (``*#4*23*#11*3##`` for probe ``#23#1``).
         try:
-            zone_number = int(where_str.lstrip("#").split("#")[0])
+            zone_number = _zone_number(where_str)
         except (ValueError, TypeError):
             raise ValueError(f"Invalid zone address: {where}")
         if not (1 <= zone_number <= 99):
@@ -760,7 +762,19 @@ class OWNHeatingCommand(OWNCommand):
 
     @classmethod
     def central_status(cls, where: str = "#0") -> OWNHeatingCommand:
-        """Query Central Unit status."""
+        """Deprecated: builds ``*#4*WHERE*14##``, which gateways refuse.
+
+        An F454 (MyHOME#629) and a real MyHomeServer1 3.1.8 (OWNd#77 gateway
+        probe) answer ``*#*0##``; the F454 answers ``status("#0")``
+        (``*#4*#0##``) within 0.13 s. Use ``status(where)`` to poll a central
+        unit. The frame is kept unchanged for existing callers.
+        """
+        warnings.warn(
+            "OWNHeatingCommand.central_status() builds *#4*WHERE*14##, which gateways "
+            "refuse; use OWNHeatingCommand.status(where) instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         message = cls(f"*#4*{where}*14##")
         message._human_readable_log = f"Requesting Central Unit {where} status."
         return message

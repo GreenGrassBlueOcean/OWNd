@@ -156,6 +156,36 @@ def test_fix2_fan_speed_takes_the_zone_from_the_first_field(where: str) -> None:
     assert str(OWNHeatingCommand.set_fan_speed(where, 3)) == "*#4*23*#11*3##"
 
 
+@pytest.mark.parametrize("where", ["#23#1", "23#1", "#23"])
+def test_zone_builders_take_the_zone_from_the_first_field(where: str) -> None:
+    """Code: set_mode and set_temperature parse WHERE like set_fan_speed (review of #83).
+
+    They took the last ``#`` field for an address starting with ``#`` (zone 1 for
+    ``#23#1``) and raised ValueError for ``23#1``.
+    """
+    assert str(OWNHeatingCommand.set_mode(where, CLIMATE_MODE_OFF)) == "*4*303*#23##"
+    assert str(OWNHeatingCommand.set_mode(where, CLIMATE_MODE_OFF, standalone=True)) == "*4*303*23##"
+    assert str(OWNHeatingCommand.set_mode(where, CLIMATE_MODE_AUTO, standalone=True)) == "*4*311*#23##"
+    assert (
+        str(OWNHeatingCommand.set_temperature(where, 21.0, CLIMATE_MODE_HEAT))
+        == "*#4*#23*#14*0210*1##"
+    )
+
+
+def test_central_status_is_deprecated_and_unchanged() -> None:
+    """Capture + Gateway: gateways refuse ``*#4*#0*14##``; ``*#4*#0##`` is answered.
+
+    An F454 answered ``*#4*#0##`` within 0.13 s and nothing for dimension 14
+    (MyHOME#629); a real MyHomeServer1 3.1.8 refuses ``*#4*#0*14##`` (gateway
+    probe). central_status() keeps its frame for existing callers but warns.
+    """
+    with pytest.warns(DeprecationWarning, match=r"use OWNHeatingCommand\.status"):
+        command = OWNHeatingCommand.central_status("#0")
+
+    assert str(command) == "*#4*#0*14##"
+    assert str(OWNHeatingCommand.status("#0")) == "*#4*#0##"
+
+
 # ── Fix 3: AUTO on a standalone zone ────────────────────────────────────────
 
 
