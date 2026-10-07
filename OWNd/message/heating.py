@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import warnings
 
 from .base import OWNCommand, OWNEvent, register_command_parser, register_event_parser
 from .lighting import MESSAGE_TYPE_ACTION
@@ -98,6 +99,57 @@ def _zone_state_text(values: list[str]) -> str | None:
     return f"{context} {state}"
 
 
+def _zone_number(where: str | int) -> int:
+    """Zone of a WHO 4 address: the first field, so ``#23#1`` and ``23#1`` are zone 23.
+
+    libqtdevices TS10_1_0_23 addresses a probe ``#23#1`` and writes the plain
+    zone for fan speed (``*#4*23*#11*3##``, test_probe_device.cpp line 139).
+    """
+    where_str = str(where)
+    if where_str.startswith("##"):
+        raise ValueError(f"Invalid zone address: {where}")
+    clean = where_str[1:] if where_str.startswith("#") else where_str
+    parts = clean.split("#")
+    if not parts or any(not p.isdigit() for p in parts) or len(parts) > 2:
+        raise ValueError(f"Invalid zone address: {where}")
+    return int(parts[0])
+
+
+def _zone_address_and_name(
+    where: str | int, standalone: bool = False
+) -> tuple[str, str]:
+    """Parse a WHO 4 WHERE address into (zone_str, zone_name).
+
+    Preserves full compound addresses for central-unit controlled devices
+    (e.g. ``#0#1`` -> ``#0#1``, ``#23#1`` / ``23#1`` -> ``#23#1``) as expected
+    by central units and libqtdevices TS10_1_0_23 (test_probe_device.cpp line 111,
+    automatic ``*4*311*#23#1##`` and setpoint ``*#4*#23#1*#14*0250*3##``).
+    """
+    where_str = str(where)
+    if where_str.startswith("##"):
+        raise ValueError(f"Invalid zone address: {where}")
+    clean = where_str[1:] if where_str.startswith("#") else where_str
+    parts = clean.split("#")
+    if not parts or any(not p.isdigit() for p in parts) or len(parts) > 2:
+        raise ValueError(f"Invalid zone address: {where}")
+
+    zone_number = int(parts[0])
+    if len(parts) > 1:
+        # Compound address: 4-zone central (#0#N) or probe under central (#Z#C / Z#C)
+        zone_str = f"#{clean}"
+        if zone_number == 0:
+            zone_name = f"zone {int(parts[1])}"
+        else:
+            zone_name = f"zone {zone_number}"
+    else:
+        zone_name = f"zone {zone_number}" if zone_number > 0 else "general"
+        if standalone:
+            zone_str = f"#{zone_number}" if zone_number == 0 else str(zone_number)
+        else:
+            zone_str = f"#{zone_number}"
+
+    return zone_str, zone_name
+
 
 class OWNHeatingEvent(OWNEvent):
     def __init__(self, data: str) -> None:
@@ -131,6 +183,9 @@ class OWNHeatingEvent(OWNEvent):
         self._measured_temperature = None
         self._secondary_temperature = None
         self._measured_humidity = None
+        self._holiday_end_date: tuple[int, int, int] | None = None
+        self._holiday_end_time: tuple[int, int] | None = None
+        self._manual_timed_duration: tuple[int, int] | None = None
 
         self._is_active = None
         self._is_heating = None
@@ -153,7 +208,7 @@ class OWNHeatingEvent(OWNEvent):
                     f"Zone {self._zone}'s mode is set to '{self._mode_name}'"
                 )
             elif (
-                self._mode in [0, 210, 211, 215]
+                self._mode in [0, 210, 211, 212, 215]
                 or (self._mode >= 2101 and self._mode <= 2103)
                 or (self._mode >= 2201 and self._mode <= 2216)
             ):
@@ -163,7 +218,7 @@ class OWNHeatingEvent(OWNEvent):
                     f"Zone {self._zone}'s mode is set to '{self._mode_name}'"
                 )
             elif (
-                self._mode in [1, 110, 111, 115]
+                self._mode in [1, 110, 111, 112, 115]
                 or (self._mode >= 1101 and self._mode <= 1103)
                 or (self._mode >= 1201 and self._mode <= 1216)
             ):
@@ -173,7 +228,10 @@ class OWNHeatingEvent(OWNEvent):
                     f"Zone {self._zone}'s mode is set to '{self._mode_name}'"
                 )
             elif (
-                self._mode in [310, 311, 315]
+                self._mode in [310, 311, 312, 315]
+                or (self._mode >= 3101 and self._mode <= 3116)
+                or (self._mode >= 3201 and self._mode <= 3216)
+                or (self._mode >= 33001 and self._mode <= 33255)
                 or (self._mode >= 23001 and self._mode <= 23255)
                 or (self._mode >= 13001 and self._mode <= 13255)
             ):
@@ -453,6 +511,49 @@ class OWNHeatingEvent(OWNEvent):
                     self._is_active = False
                     self._human_readable_log = f"Zone {self._zone}'s fan is off."
 
+        elif (
+            self._dimension == 30
+            and self._dimension_value
+            and len(self._dimension_value) >= 3
+            and all(v.isdigit() for v in self._dimension_value[:3])
+            and self._message_type != "DIMENSION_WRITING"
+        ):  # Holiday / weekend end date (DD*MM*YYYY)
+            d, m, y = (
+                int(self._dimension_value[0]),
+                int(self._dimension_value[1]),
+                int(self._dimension_value[2]),
+            )
+            self._holiday_end_date = (d, m, y)
+            self._human_readable_log = (
+                f"Zone {self._zone}'s holiday end date is {d:02d}/{m:02d}/{y:04d}."
+            )
+
+        elif (
+            self._dimension == 31
+            and self._dimension_value
+            and len(self._dimension_value) >= 2
+            and all(v.isdigit() for v in self._dimension_value[:2])
+            and self._message_type != "DIMENSION_WRITING"
+        ):  # Holiday / weekend end time (HH*MM)
+            h, m = int(self._dimension_value[0]), int(self._dimension_value[1])
+            self._holiday_end_time = (h, m)
+            self._human_readable_log = (
+                f"Zone {self._zone}'s holiday end time is {h:02d}:{m:02d}."
+            )
+
+        elif (
+            self._dimension == 32
+            and self._dimension_value
+            and len(self._dimension_value) >= 2
+            and all(v.isdigit() for v in self._dimension_value[:2])
+            and self._message_type != "DIMENSION_WRITING"
+        ):  # Timed manual duration (HH*MM)
+            h, m = int(self._dimension_value[0]), int(self._dimension_value[1])
+            self._manual_timed_duration = (h, m)
+            self._human_readable_log = (
+                f"Zone {self._zone}'s timed manual duration is {h:02d}h {m:02d}m."
+            )
+
         elif self._dimension == 60:  # Humidity
             self._type = MESSAGE_TYPE_MAIN_HUMIDITY
             self._measured_humidity = float(self._dimension_value[0])
@@ -556,6 +657,21 @@ class OWNHeatingEvent(OWNEvent):
     def cooling_fan_on(self) -> bool | None:
         return self._cooling_fan_on
 
+    @property
+    def holiday_end_date(self) -> tuple[int, int, int] | None:
+        """Holiday / weekend end date (day, month, year), or None."""
+        return self._holiday_end_date
+
+    @property
+    def holiday_end_time(self) -> tuple[int, int] | None:
+        """Holiday / weekend end time (hour, minute), or None."""
+        return self._holiday_end_time
+
+    @property
+    def manual_timed_duration(self) -> tuple[int, int] | None:
+        """Timed manual duration (hours, minutes), or None."""
+        return self._manual_timed_duration
+
 
 
 class OWNHeatingCommand(OWNCommand):
@@ -572,6 +688,25 @@ class OWNHeatingCommand(OWNCommand):
                 self._human_readable_log = f"Setting zone {self._where} to {text}."
             elif self._dimension == 5:
                 self._human_readable_log = f"Setting zone {self._where}'s local control (dimension 5) to {self._dimension_value[0]}."  # pylint: disable=line-too-long
+            elif self._dimension == 30 and len(self._dimension_value) >= 3:
+                day, month, year = (
+                    self._dimension_value[0],
+                    self._dimension_value[1],
+                    self._dimension_value[2],
+                )
+                self._human_readable_log = (
+                    f"Setting zone {self._where}'s holiday end date to {day}/{month}/{year}."
+                )
+            elif self._dimension == 31 and len(self._dimension_value) >= 2:
+                hour, minute = self._dimension_value[0], self._dimension_value[1]
+                self._human_readable_log = (
+                    f"Setting zone {self._where}'s holiday end time to {hour}:{minute}."
+                )
+            elif self._dimension == 32 and len(self._dimension_value) >= 2:
+                hour, minute = self._dimension_value[0], self._dimension_value[1]
+                self._human_readable_log = (
+                    f"Setting zone {self._where}'s timed manual duration to {hour}h {minute}m."
+                )
 
     @classmethod
     def status(cls, where: str | int) -> OWNHeatingCommand:
@@ -592,46 +727,96 @@ class OWNHeatingCommand(OWNCommand):
         return message
 
     @classmethod
-    def get_probe_temperature(cls, where: str | int) -> OWNHeatingCommand:
-        message = cls(f"*#4*{where}*15##")
-        message._human_readable_log = f"Requesting probe temperature status update for {message._where}{message._interface_log_text}."
+    def get_probe_temperature(
+        cls, where: str | int, sensor: int | None = None
+    ) -> OWNHeatingCommand:
+        """Request probe temperature status update (*#4*WHERE*15## or *#4*WHERE*15#SENSOR##)."""
+        if sensor is not None:
+            try:
+                sensor_num = int(sensor)
+            except (ValueError, TypeError):
+                raise ValueError(f"Invalid sensor number: {sensor}")
+            if sensor_num < 1:
+                raise ValueError(f"Invalid sensor number: {sensor}")
+            message = cls(f"*#4*{where}*15#{sensor_num}##")
+            message._human_readable_log = (
+                f"Requesting probe {sensor_num} temperature status update for "
+                f"{message._where}{message._interface_log_text}."
+            )
+        else:
+            message = cls(f"*#4*{where}*15##")
+            message._human_readable_log = (
+                f"Requesting probe temperature status update for "
+                f"{message._where}{message._interface_log_text}."
+            )
+        return message
+
+    @classmethod
+    def get_fan_speed(cls, where: str | int) -> OWNHeatingCommand:
+        """Request fan speed status update for a zone (*#4*ZONE*11##).
+
+        BTicino client (libqtdevices TS10_1_0_23 ControlledProbeDevice::requestFancoilStatus)
+        sends *#4*ZONE*11## using the plain zone number.
+        """
+        where_str = str(where)
+        if where_str in ("#0", "0") or where_str.startswith("#0#"):
+            raise ValueError(
+                f"Fan speed cannot be requested on central unit or general zone: {where}"
+            )
+        try:
+            zone_number = _zone_number(where_str)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid zone address: {where}")
+        if not (1 <= zone_number <= 99):
+            raise ValueError(f"Invalid zone number: {zone_number}. Zone must be 1..99")
+
+        message = cls(f"*#4*{zone_number}*11##")
+        message._human_readable_log = (
+            f"Requesting zone {zone_number} fan speed update{message._interface_log_text}."
+        )
         return message
 
     @classmethod
     def set_mode(
         cls, where: str | int, mode: str, standalone: bool = False
     ) -> OWNHeatingCommand | None:
-        central_local = re.compile(r"^#0#\d+$")
-        zone: str
-        if central_local.match(str(where)):
-            zone = str(where)
-            zone_name = f"zone {int(str(where).split('#')[-1])}"
-        else:
-            zone_number = (
-                int(str(where).split("#")[-1]) if str(where).startswith("#") else int(where)
-            )
-            zone_name = f"zone {zone_number}" if zone_number > 0 else "general"
+        """Set zone operation mode.
 
-            if standalone:
-                zone = f"#{zone_number}" if zone_number == 0 else str(zone_number)
-            else:
-                zone = f"#{zone_number}"
+        Supports standard off/auto as well as protection, antifreeze, and
+        thermal_protection matching libqtdevices ControlledProbeDevice::setProtection.
+        """
+        zone, zone_name = _zone_address_and_name(where, standalone=standalone)
 
         mode_name = mode
+        if mode in (CLIMATE_MODE_AUTO, "protection", "antifreeze", "thermal_protection"):
+            # The firmware and central unit forward these only as *4*WHAT*#Z##
+            # (libqtdevices ControlledProbeDevice and OWNd#77 A3), so standalone does not apply.
+            if not zone.startswith("#"):
+                zone = f"#{zone}"
+
         if mode == CLIMATE_MODE_OFF:
             mode_code = 303
         elif mode == CLIMATE_MODE_AUTO:
-            # The firmware forwards 311 only as *4*311*#Z## (OWNd#77, A3), the
-            # form libqtdevices sends too, so ``standalone`` does not apply.
-            if not zone.startswith("#"):
-                zone = f"#{zone}"
             mode_code = 311
+        elif mode == "protection":
+            mode_code = 302
+        elif mode == "antifreeze":
+            mode_code = 102
+        elif mode == "thermal_protection":
+            mode_code = 202
         else:
             return None
 
         message = cls(f"*4*{mode_code}*{zone}##")
         message._human_readable_log = f"Setting {zone_name} mode to '{mode_name}'."
         return message
+
+    @classmethod
+    def set_protection(
+        cls, where: str | int, mode: str = "protection", standalone: bool = False
+    ) -> OWNHeatingCommand | None:
+        """Set zone protection mode ('protection', 'antifreeze', or 'thermal_protection')."""
+        return cls.set_mode(where=where, mode=mode, standalone=standalone)
 
     @classmethod
     def turn_off(
@@ -643,21 +828,7 @@ class OWNHeatingCommand(OWNCommand):
     def set_temperature(
         cls, where: str | int, temperature: float, mode: str, standalone: bool = False
     ) -> OWNHeatingCommand:
-        central_local = re.compile(r"^#0#\d+$")
-        zone: str
-        if central_local.match(str(where)):
-            zone = str(where)
-            zone_name = f"zone {int(str(where).split('#')[-1])}"
-        else:
-            zone_number = (
-                int(str(where).split("#")[-1]) if str(where).startswith("#") else int(where)
-            )
-            zone_name = f"zone {zone_number}" if zone_number > 0 else "general"
-
-            if standalone:
-                zone = f"#{zone_number}" if zone_number == 0 else str(zone_number)
-            else:
-                zone = f"#{zone_number}"
+        zone, zone_name = _zone_address_and_name(where, standalone=standalone)
 
         temperature = round(temperature * 2) / 2
         if temperature < 5.0:
@@ -691,11 +862,7 @@ class OWNHeatingCommand(OWNCommand):
                 f"Fan speed cannot be set on central unit or general zone: {where}"
             )
         try:
-            zone_number = (
-                int(where_str.split("#")[-1])
-                if where_str.startswith("#")
-                else int(where)
-            )
+            zone_number = _zone_number(where_str)
         except (ValueError, TypeError):
             raise ValueError(f"Invalid zone address: {where}")
         if not (1 <= zone_number <= 99):
@@ -760,8 +927,217 @@ class OWNHeatingCommand(OWNCommand):
         return message
 
     @classmethod
+    def set_central_program(
+        cls, where: str = "#0", program: int = 1
+    ) -> OWNHeatingCommand:
+        """Select weekly program (1..16) on Central Unit (*4*31PP*WHERE##).
+
+        BTicino client (libqtdevices TS10_1_0_23 ThermalDevice::setWeekProgram)
+        sends *4*3100+prog*WHERE##.
+        """
+        try:
+            prog_num = int(program)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid program number: {program}")
+        if not (1 <= prog_num <= 16):
+            raise ValueError(
+                f"Invalid program number: {program}. Program must be 1..16"
+            )
+        what = 3100 + prog_num
+        message = cls(f"*4*{what}*{where}##")
+        message._human_readable_log = (
+            f"Setting Central Unit {where} weekly program to {prog_num} (code {what})."
+        )
+        return message
+
+    @classmethod
+    def set_central_scenario(
+        cls, where: str = "#0", scenario: int = 1
+    ) -> OWNHeatingCommand:
+        """Select preset scenario (1..16) on 99-zone Central Unit (*4*32SS*WHERE##).
+
+        BTicino client (libqtdevices TS10_1_0_23 ThermalDevice99Zones::setScenario)
+        sends *4*3200+scen*WHERE##.
+        """
+        try:
+            scen_num = int(scenario)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid scenario number: {scenario}")
+        if not (1 <= scen_num <= 16):
+            raise ValueError(
+                f"Invalid scenario number: {scenario}. Scenario must be 1..16"
+            )
+        what = 3200 + scen_num
+        message = cls(f"*4*{what}*{where}##")
+        message._human_readable_log = (
+            f"Setting Central Unit {where} scenario to {scen_num} (code {what})."
+        )
+        return message
+
+    @classmethod
+    def set_timed_manual(
+        cls,
+        where: str | int,
+        temperature: float,
+        hours: int = 2,
+        standalone: bool = False,
+    ) -> OWNHeatingCommand:
+        """Set timed manual operation temperature (*4*312#TTTT#H*WHERE##).
+
+        BTicino client (libqtdevices TS10_1_0_23 ThermalDevice4Zones::setManualTempTimed)
+        sends *4*312#TTTT#H*WHERE##.
+        """
+        zone, zone_name = _zone_address_and_name(where, standalone=standalone)
+        temperature = round(temperature * 2) / 2
+        temperature = max(5.0, min(40.0, temperature))
+        temp_code = int(temperature * 10)
+        try:
+            h = int(hours)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid duration hours: {hours}")
+        if not (1 <= h <= 24):
+            raise ValueError(f"Invalid duration hours: {hours}. Hours must be 1..24")
+
+        message = cls(f"*4*312#{temp_code:04d}#{h}*{zone}##")
+        message._human_readable_log = (
+            f"Setting {zone_name} timed manual to {temperature}°C for {h} hours."
+        )
+        return message
+
+    @classmethod
+    def set_central_weekend(
+        cls, where: str = "#0", program: int = 1
+    ) -> OWNHeatingCommand:
+        """Set Central Unit weekend mode to run program (1..16) (*4*315#31PP*WHERE##).
+
+        BTicino client (libqtdevices TS10_1_0_23 ThermalDevice::setWeekendDateTime)
+        sends *4*315#3100+prog*WHERE##.
+        """
+        try:
+            prog_num = int(program)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid program number: {program}")
+        if not (1 <= prog_num <= 16):
+            raise ValueError(
+                f"Invalid program number: {program}. Program must be 1..16"
+            )
+        prog_code = 3100 + prog_num
+        message = cls(f"*4*315#{prog_code}*{where}##")
+        message._human_readable_log = (
+            f"Setting Central Unit {where} weekend mode with program {prog_num}."
+        )
+        return message
+
+    @classmethod
+    def set_central_holiday(
+        cls, where: str = "#0", days: int = 1, program: int = 1
+    ) -> OWNHeatingCommand:
+        """Set Central Unit holiday mode for days (1..255) with program (1..16) (*4*33DDD#31PP*WHERE##).
+
+        BTicino client (libqtdevices TS10_1_0_23 ThermalDevice::setHolidayDateTime)
+        sends *4*33000+days#3100+prog*WHERE##.
+        """
+        try:
+            d = int(days)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid holiday days: {days}")
+        if not (1 <= d <= 255):
+            raise ValueError(f"Invalid holiday days: {days}. Days must be 1..255")
+        try:
+            prog_num = int(program)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid program number: {program}")
+        if not (1 <= prog_num <= 16):
+            raise ValueError(
+                f"Invalid program number: {program}. Program must be 1..16"
+            )
+        holiday_code = 33000 + d
+        prog_code = 3100 + prog_num
+        message = cls(f"*4*{holiday_code}#{prog_code}*{where}##")
+        message._human_readable_log = (
+            f"Setting Central Unit {where} holiday mode for {d} days with program {prog_num}."
+        )
+        return message
+
+    @classmethod
+    def set_holiday_end_date(
+        cls, where: str = "#0", day: int = 1, month: int = 1, year: int = 2026
+    ) -> OWNHeatingCommand:
+        """Set holiday / weekend end date (*#4*WHERE*#30*DD*MM*YYYY##).
+
+        BTicino client (libqtdevices TS10_1_0_23 ThermalDevice::setHolidayEndDate)
+        sends *#4*WHERE*#30*DD*MM*YYYY##.
+        """
+        try:
+            d, m, y = int(day), int(month), int(year)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid date: {day}/{month}/{year}")
+        if not (1 <= d <= 31 and 1 <= m <= 12 and 2000 <= y <= 2099):
+            raise ValueError(f"Invalid date values: {d}/{m}/{y}")
+        message = cls(f"*#4*{where}*#30*{d:02d}*{m:02d}*{y:04d}##")
+        message._human_readable_log = (
+            f"Setting Central Unit {where} holiday end date to {d:02d}/{m:02d}/{y:04d}."
+        )
+        return message
+
+    @classmethod
+    def set_holiday_end_time(
+        cls, where: str = "#0", hour: int = 0, minute: int = 0
+    ) -> OWNHeatingCommand:
+        """Set holiday / weekend end time (*#4*WHERE*#31*HH*MM##).
+
+        BTicino client (libqtdevices TS10_1_0_23 ThermalDevice::setHolidayEndTime)
+        sends *#4*WHERE*#31*HH*MM##.
+        """
+        try:
+            h, m = int(hour), int(minute)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid time: {hour}:{minute}")
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            raise ValueError(f"Invalid time values: {h}:{m}")
+        message = cls(f"*#4*{where}*#31*{h:02d}*{m:02d}##")
+        message._human_readable_log = (
+            f"Setting Central Unit {where} holiday end time to {h:02d}:{m:02d}."
+        )
+        return message
+
+    @classmethod
+    def set_timed_manual_end_time(
+        cls, where: str = "#0", hour: int = 0, minute: int = 0
+    ) -> OWNHeatingCommand:
+        """Set timed manual duration/end time (*#4*WHERE*#32*HH*MM##).
+
+        BTicino client (libqtdevices TS10_1_0_23 ThermalDevice4Zones::setEndTime)
+        sends *#4*WHERE*#32*HH*MM##.
+        """
+        try:
+            h, m = int(hour), int(minute)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid time: {hour}:{minute}")
+        if not (0 <= h <= 24 and 0 <= m <= 59):
+            raise ValueError(f"Invalid time values: {h}:{m}")
+        message = cls(f"*#4*{where}*#32*{h:02d}*{m:02d}##")
+        message._human_readable_log = (
+            f"Setting Central Unit {where} timed manual duration to {h:02d}h {m:02d}m."
+        )
+        return message
+
+    @classmethod
     def central_status(cls, where: str = "#0") -> OWNHeatingCommand:
-        """Query Central Unit status."""
+        """Deprecated: builds ``*#4*WHERE*14##``, which gateways refuse.
+
+        A real MyHomeServer1 3.1.8 (OWNd#77 gateway probe) answers ``*#*0##``
+        (NACK); on an F454 (MyHOME#629) dimension 14 silently timed out while
+        ``status("#0")`` (``*#4*#0##``) answered within 0.13 s. Use
+        ``status(where)`` to poll a central unit. The frame is kept unchanged
+        for existing callers.
+        """
+        warnings.warn(
+            "OWNHeatingCommand.central_status() builds *#4*WHERE*14##, which gateways "
+            "refuse; use OWNHeatingCommand.status(where) instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         message = cls(f"*#4*{where}*14##")
         message._human_readable_log = f"Requesting Central Unit {where} status."
         return message

@@ -29,8 +29,10 @@ from OWNd.message import (
     CLIMATE_MODE_COOL,
     CLIMATE_MODE_HEAT,
     CLIMATE_MODE_OFF,
+    OWNCenPlusCommand,
     OWNCENPlusEvent,
     OWNCommand,
+    OWNDryContactCommand,
     OWNDryContactEvent,
     OWNEnergyCommand,
     OWNEvent,
@@ -141,6 +143,84 @@ def test_fix2_fan_speed_refuses_input_that_is_not_a_zone_or_speed() -> None:
         OWNHeatingCommand.set_fan_speed("invalid", 1)
     with pytest.raises(ValueError, match="Invalid fan speed"):
         OWNHeatingCommand.set_fan_speed(1, "invalid")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("where", ["#23#1", "23#1", "#23#2"])
+def test_fix2_fan_speed_takes_the_zone_from_the_first_field(where: str) -> None:
+    """BTicino client: a probe addressed ``#23#1`` sets its fan coil as zone 23.
+
+    libqtdevices TS10_1_0_23 ``ControlledProbeDevice::setFancoilSpeed`` writes
+    the plain zone, test ``sendSetFancoilSpeed``: ``*#4*23*#11*3##``. Taking the
+    last ``#`` field instead built zone 1 (review of OWNd#82, finding 3).
+    """
+    assert str(OWNHeatingCommand.set_fan_speed(where, 3)) == "*#4*23*#11*3##"
+
+
+@pytest.mark.parametrize("where", ["#23#1", "23#1"])
+def test_zone_builders_preserve_compound_probe_addresses(where: str) -> None:
+    """BTicino client: set_mode and set_temperature preserve the full address for compound probes.
+
+    libqtdevices TS10_1_0_23 test_probe_device.cpp (line 111, ControlledProbeDevice("23#1", ...))
+    expects:
+    - fan speed (line 139): *#4*23*#11*3## (plain zone)
+    - automatic (line 132): *4*311*#23#1## (full address)
+    - manual setpoint (line 125): *#4*#23#1*#14*0250*3## (full address)
+    """
+    assert str(OWNHeatingCommand.set_fan_speed(where, 3)) == "*#4*23*#11*3##"
+    assert str(OWNHeatingCommand.set_mode(where, CLIMATE_MODE_OFF)) == "*4*303*#23#1##"
+    assert str(OWNHeatingCommand.set_mode(where, CLIMATE_MODE_OFF, standalone=True)) == "*4*303*#23#1##"
+    assert str(OWNHeatingCommand.set_mode(where, CLIMATE_MODE_AUTO, standalone=True)) == "*4*311*#23#1##"
+    assert (
+        str(OWNHeatingCommand.set_temperature(where, 21.0, CLIMATE_MODE_HEAT))
+        == "*#4*#23#1*#14*0210*1##"
+    )
+    assert (
+        str(OWNHeatingCommand.set_temperature(where, 21.0, CLIMATE_MODE_HEAT, standalone=True))
+        == "*#4*#23#1*#14*0210*1##"
+    )
+
+
+def test_zone_builders_simple_zone_addresses() -> None:
+    """Simple zone addresses build standard plain or # frames."""
+    assert str(OWNHeatingCommand.set_mode("#23", CLIMATE_MODE_OFF)) == "*4*303*#23##"
+    assert str(OWNHeatingCommand.set_mode("23", CLIMATE_MODE_OFF, standalone=True)) == "*4*303*23##"
+    assert str(OWNHeatingCommand.set_mode("23", CLIMATE_MODE_AUTO, standalone=True)) == "*4*311*#23##"
+    assert (
+        str(OWNHeatingCommand.set_temperature("#23", 21.0, CLIMATE_MODE_HEAT))
+        == "*#4*#23*#14*0210*1##"
+    )
+    assert (
+        str(OWNHeatingCommand.set_temperature("23", 21.0, CLIMATE_MODE_HEAT, standalone=True))
+        == "*#4*23*#14*0210*1##"
+    )
+
+
+@pytest.mark.parametrize(
+    "bad_where",
+    ["##23", "invalid", "-1", "#23#invalid", "#23#-1", "23#1#2", ""],
+)
+def test_zone_builders_refuse_invalid_addresses(bad_where: str) -> None:
+    """Code: set_mode, set_temperature and set_fan_speed reject malformed addresses."""
+    with pytest.raises(ValueError, match="Invalid zone address"):
+        OWNHeatingCommand.set_mode(bad_where, CLIMATE_MODE_OFF)
+    with pytest.raises(ValueError, match="Invalid zone address"):
+        OWNHeatingCommand.set_temperature(bad_where, 21.0, CLIMATE_MODE_HEAT)
+    with pytest.raises(ValueError, match="Invalid zone address"):
+        OWNHeatingCommand.set_fan_speed(bad_where, 1)
+
+
+def test_central_status_is_deprecated_and_unchanged() -> None:
+    """Capture + Gateway: gateways refuse ``*#4*#0*14##``; ``*#4*#0##`` is answered.
+
+    An F454 answered ``*#4*#0##`` within 0.13 s and nothing for dimension 14
+    (MyHOME#629); a real MyHomeServer1 3.1.8 refuses ``*#4*#0*14##`` (gateway
+    probe). central_status() keeps its frame for existing callers but warns.
+    """
+    with pytest.warns(DeprecationWarning, match=r"use OWNHeatingCommand\.status"):
+        command = OWNHeatingCommand.central_status("#0")
+
+    assert str(command) == "*#4*#0*14##"
+    assert str(OWNHeatingCommand.status("#0")) == "*#4*#0##"
 
 
 # ── Fix 3: AUTO on a standalone zone ────────────────────────────────────────
@@ -279,6 +359,22 @@ def test_fix7_brightness_never_writes_level_100(level: int) -> None:
         assert frame == f"*#1*31*#1*{min(level, 100) + 100}*5##"
 
 
+@pytest.mark.parametrize(
+    ("level", "transition", "logged"),
+    [
+        (120, 0, "brightness to 100% (requested 120%)."),
+        (120, 5, "brightness to 100% (requested 120%) with transition speed 5."),
+        (100, 0, "brightness to 100%."),
+        (50, 0, "brightness to 50%."),
+    ],
+)
+def test_fix7_log_shows_the_level_that_is_sent(level: int, transition: int, logged: str) -> None:
+    """Code: a capped level is logged as sent, with the request alongside (review of OWNd#82, finding 5)."""
+    command = OWNLightingCommand.set_brightness("31", level, transition)
+
+    assert command.human_readable_log.endswith(logged)
+
+
 # ── Fix 8: interface for WHO 0 and WHO 14 ───────────────────────────────────
 
 
@@ -326,6 +422,30 @@ def test_fix9_captured_who25_messages_keep_their_class(frame: str, cls: type) ->
     assert isinstance(OWNEvent.parse(frame), cls)
 
 
+@pytest.mark.parametrize(
+    ("frame", "cls"),
+    [
+        ("*25*11#121*10##", OWNCommand),
+        ("*25*12*131##", OWNCommand),
+        ("*25*31#1*339##", OWNDryContactCommand),
+        ("*25*32#1*33##", OWNDryContactCommand),
+        ("*#25*331##", OWNDryContactCommand),
+        ("*25*21#1*21##", OWNCenPlusCommand),
+        ("*25*bad*21##", OWNDryContactCommand),
+    ],
+)
+def test_fix9_command_parser_uses_the_same_who25_rule(frame: str, cls: type) -> None:
+    """Code: the command parser follows the event parser (review of OWNd#82, finding 4).
+
+    Only WHAT 31/32 (and ``*#25*`` status requests) are dry contacts; 21..28 are
+    CEN+; any other numeric WHAT is a plain command. A WHAT that is not a number
+    stays a dry contact, as in the event parser.
+    """
+    command = OWNCommand.parse(frame)
+
+    assert type(command) is cls
+
+
 # ── Fix 10: conformance matrix ──────────────────────────────────────────────
 
 _MATRIX = REPO_ROOT / "docs" / "protocol_conformance_matrix.md"
@@ -371,3 +491,165 @@ def test_fix10_matrix_examples_all_parse() -> None:
         message = OWNMessage.parse(frame)
         assert message is not None, frame
         assert message.is_valid, frame
+
+
+# ── Libqtdevices TS10_1_0_23 parity tests ─────────────────────────────────────
+
+
+def test_libqtdevices_probe_device_commands() -> None:
+    """Test parity with NonControlledProbeDevice and ControlledProbeDevice."""
+    # NonControlledProbeDevice: status request for internal probe vs external probe (sensor 1)
+    assert str(OWNHeatingCommand.get_probe_temperature("11")) == "*#4*11*15##"
+    assert str(OWNHeatingCommand.get_probe_temperature("11", sensor=1)) == "*#4*11*15#1##"
+
+    with pytest.raises(ValueError, match="Invalid sensor number"):
+        OWNHeatingCommand.get_probe_temperature("11", sensor="invalid")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Invalid sensor number"):
+        OWNHeatingCommand.get_probe_temperature("11", sensor=0)
+
+    # ControlledProbeDevice::requestFancoilStatus: *#4*ZONE*11##
+    assert str(OWNHeatingCommand.get_fan_speed("23")) == "*#4*23*11##"
+    assert str(OWNHeatingCommand.get_fan_speed(1)) == "*#4*1*11##"
+    assert str(OWNHeatingCommand.get_fan_speed("#23#1")) == "*#4*23*11##"
+
+    with pytest.raises(ValueError, match="central unit or general zone"):
+        OWNHeatingCommand.get_fan_speed("#0")
+    with pytest.raises(ValueError, match="central unit or general zone"):
+        OWNHeatingCommand.get_fan_speed("0")
+    with pytest.raises(ValueError, match="central unit or general zone"):
+        OWNHeatingCommand.get_fan_speed("#0#1")
+    with pytest.raises(ValueError, match="Invalid zone address"):
+        OWNHeatingCommand.get_fan_speed("invalid")
+    with pytest.raises(ValueError, match="Invalid zone number"):
+        OWNHeatingCommand.get_fan_speed(100)
+
+    # ControlledProbeDevice::setProtection / setOff / setAutomatic
+    assert str(OWNHeatingCommand.set_mode("1", "protection", standalone=True)) == "*4*302*#1##"
+    assert str(OWNHeatingCommand.set_mode("#1", "protection")) == "*4*302*#1##"
+    assert str(OWNHeatingCommand.set_mode("#23#1", "protection")) == "*4*302*#23#1##"
+    assert str(OWNHeatingCommand.set_protection("1", "protection")) == "*4*302*#1##"
+    assert str(OWNHeatingCommand.set_mode("1", "antifreeze", standalone=True)) == "*4*102*#1##"
+    assert str(OWNHeatingCommand.set_mode("1", "thermal_protection", standalone=True)) == "*4*202*#1##"
+    assert OWNHeatingCommand.set_mode("1", "unknown_mode") is None
+
+
+def test_libqtdevices_thermal_device_commands() -> None:
+    """Test parity with ThermalDevice (4-zone and 99-zone central units)."""
+    # Weekly program selection: *4*31PP*#0##
+    assert str(OWNHeatingCommand.set_central_program("#0", 13)) == "*4*3113*#0##"
+    with pytest.raises(ValueError, match="Invalid program number"):
+        OWNHeatingCommand.set_central_program("#0", "invalid")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Program must be 1..16"):
+        OWNHeatingCommand.set_central_program("#0", 0)
+    with pytest.raises(ValueError, match="Program must be 1..16"):
+        OWNHeatingCommand.set_central_program("#0", 17)
+
+    # Preset scenario selection (99-zone): *4*32SS*#0##
+    assert str(OWNHeatingCommand.set_central_scenario("#0", 12)) == "*4*3212*#0##"
+    with pytest.raises(ValueError, match="Invalid scenario number"):
+        OWNHeatingCommand.set_central_scenario("#0", "invalid")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Scenario must be 1..16"):
+        OWNHeatingCommand.set_central_scenario("#0", 0)
+    with pytest.raises(ValueError, match="Scenario must be 1..16"):
+        OWNHeatingCommand.set_central_scenario("#0", 17)
+
+    # Timed manual (4-zone): *4*312#TTTT#H*#0##
+    assert str(OWNHeatingCommand.set_timed_manual("#0", 20.0, hours=2)) == "*4*312#0200#2*#0##"
+    assert str(OWNHeatingCommand.set_timed_manual("#23#1", 21.5, hours=3)) == "*4*312#0215#3*#23#1##"
+    assert str(OWNHeatingCommand.set_timed_manual("1", 2.0, hours=1, standalone=True)) == "*4*312#0050#1*1##"
+    assert str(OWNHeatingCommand.set_timed_manual("1", 50.0, hours=1)) == "*4*312#0400#1*#1##"
+    with pytest.raises(ValueError, match="Invalid duration hours"):
+        OWNHeatingCommand.set_timed_manual("1", 20.0, hours="invalid")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Hours must be 1..24"):
+        OWNHeatingCommand.set_timed_manual("1", 20.0, hours=0)
+    with pytest.raises(ValueError, match="Hours must be 1..24"):
+        OWNHeatingCommand.set_timed_manual("1", 20.0, hours=25)
+
+    # Weekend mode: *4*315#31PP*#0##
+    assert str(OWNHeatingCommand.set_central_weekend("#0", 12)) == "*4*315#3112*#0##"
+    with pytest.raises(ValueError, match="Invalid program number"):
+        OWNHeatingCommand.set_central_weekend("#0", "invalid")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Program must be 1..16"):
+        OWNHeatingCommand.set_central_weekend("#0", 0)
+    with pytest.raises(ValueError, match="Program must be 1..16"):
+        OWNHeatingCommand.set_central_weekend("#0", 17)
+
+    # Holiday mode: *4*33DDD#31PP*#0##
+    assert str(OWNHeatingCommand.set_central_holiday("#0", days=2, program=15)) == "*4*33002#3115*#0##"
+    with pytest.raises(ValueError, match="Invalid holiday days"):
+        OWNHeatingCommand.set_central_holiday("#0", days="invalid", program=1)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Days must be 1..255"):
+        OWNHeatingCommand.set_central_holiday("#0", days=0, program=1)
+    with pytest.raises(ValueError, match="Days must be 1..255"):
+        OWNHeatingCommand.set_central_holiday("#0", days=256, program=1)
+    with pytest.raises(ValueError, match="Invalid program number"):
+        OWNHeatingCommand.set_central_holiday("#0", days=2, program="invalid")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Program must be 1..16"):
+        OWNHeatingCommand.set_central_holiday("#0", days=2, program=0)
+    with pytest.raises(ValueError, match="Program must be 1..16"):
+        OWNHeatingCommand.set_central_holiday("#0", days=2, program=17)
+
+    # Dimensions 30, 31, 32 write frames
+    assert str(OWNHeatingCommand.set_holiday_end_date("#0", 29, 8, 2012)) == "*#4*#0*#30*29*08*2012##"
+    with pytest.raises(ValueError, match="Invalid date"):
+        OWNHeatingCommand.set_holiday_end_date("#0", "bad", 1, 2026)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Invalid date values"):
+        OWNHeatingCommand.set_holiday_end_date("#0", 32, 1, 2026)
+
+    assert str(OWNHeatingCommand.set_holiday_end_time("#0", 23, 8)) == "*#4*#0*#31*23*08##"
+    with pytest.raises(ValueError, match="Invalid time"):
+        OWNHeatingCommand.set_holiday_end_time("#0", "bad", 1)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Invalid time values"):
+        OWNHeatingCommand.set_holiday_end_time("#0", 25, 0)
+
+    assert str(OWNHeatingCommand.set_timed_manual_end_time("#0", 13, 5)) == "*#4*#0*#32*13*05##"
+    with pytest.raises(ValueError, match="Invalid time"):
+        OWNHeatingCommand.set_timed_manual_end_time("#0", "bad", 1)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Invalid time values"):
+        OWNHeatingCommand.set_timed_manual_end_time("#0", 25, 0)
+
+
+def test_libqtdevices_thermal_device_event_and_write_parsing() -> None:
+    """Test OWNHeatingEvent and OWNHeatingCommand parsing of libqtdevices frames."""
+    # Holiday date event: *#4*#0*30*29*08*2012##
+    evt_date = OWNEvent.parse("*#4*#0*30*29*08*2012##")
+    assert isinstance(evt_date, OWNHeatingEvent)
+    assert evt_date.holiday_end_date == (29, 8, 2012)
+    assert "29/08/2012" in evt_date.human_readable_log
+
+    # Holiday time event: *#4*#0*31*23*08##
+    evt_time = OWNEvent.parse("*#4*#0*31*23*08##")
+    assert isinstance(evt_time, OWNHeatingEvent)
+    assert evt_time.holiday_end_time == (23, 8)
+    assert "23:08" in evt_time.human_readable_log
+
+    # Timed manual duration event: *#4*#0*32*24*59##
+    evt_dur = OWNEvent.parse("*#4*#0*32*24*59##")
+    assert isinstance(evt_dur, OWNHeatingEvent)
+    assert evt_dur.manual_timed_duration == (24, 59)
+    assert "24h 59m" in evt_dur.human_readable_log
+
+    # Default event has None for holiday/duration properties
+    evt_plain = OWNHeatingEvent("*#4*1*0*0215##")
+    assert evt_plain.holiday_end_date is None
+    assert evt_plain.holiday_end_time is None
+    assert evt_plain.manual_timed_duration is None
+
+    # Dimension writing logs in OWNHeatingCommand
+    cmd_date = OWNHeatingCommand("*#4*#0*#30*29*08*2012##")
+    assert "holiday end date to 29/08/2012" in cmd_date.human_readable_log
+
+    cmd_time = OWNHeatingCommand("*#4*#0*#31*23*08##")
+    assert "holiday end time to 23:08" in cmd_time.human_readable_log
+
+    cmd_dur = OWNHeatingCommand("*#4*#0*#32*13*05##")
+    assert "timed manual duration to 13h 05m" in cmd_dur.human_readable_log
+
+    # Event mode parsing for timed manual, programs, scenarios, holiday
+    assert OWNHeatingEvent("*4*212*#0##").mode == CLIMATE_MODE_COOL
+    assert OWNHeatingEvent("*4*112*#0##").mode == CLIMATE_MODE_HEAT
+    assert OWNHeatingEvent("*4*312*#0##").mode == CLIMATE_MODE_AUTO
+    assert OWNHeatingEvent("*4*3113*#0##").mode == CLIMATE_MODE_AUTO
+    assert OWNHeatingEvent("*4*3212*#0##").mode == CLIMATE_MODE_AUTO
+    assert OWNHeatingEvent("*4*33002*#0##").mode == CLIMATE_MODE_AUTO
+

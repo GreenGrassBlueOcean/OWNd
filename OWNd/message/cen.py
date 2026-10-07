@@ -296,6 +296,9 @@ def _parse_who25_command(data: str) -> OWNCommand:
         what_code = None
     if what_code is not None and 21 <= what_code <= 28:
         return OWNCenPlusCommand(data)
+    # Same rule as _parse_who25_event: only WHAT 31/32 are dry contacts.
+    if what_code is not None and what_code not in (31, 32):
+        return OWNCommand(data)
     return OWNDryContactCommand(data)
 
 
