@@ -13,7 +13,20 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from OWNd.message import OWNLightingEvent, OWNMessage
+from OWNd.message import (
+    OWNCommand,
+    OWNEnergyCommand,
+    OWNEnergyEvent,
+    OWNEvent,
+    OWNIntercomCommand,
+    OWNIntercomEvent,
+    OWNLightingEvent,
+    OWNLoadCommand,
+    OWNLoadEvent,
+    OWNMessage,
+    OWNMultiroomCommand,
+    OWNMultiroomEvent,
+)
 from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -398,3 +411,43 @@ def test_multi_gateway_emulation_coverage():
         assert gateways[p]["status"] == "pending_emulation"
         assert gateways[p]["suites"] == []
         assert len(gateways[p]["image_sha256"]) == 64
+
+
+def test_oracle_empirical_dialects_parse_into_specialized_classes() -> None:
+    """Verify that all authentic oracle inputs for WHO 8, 3, 18, 22 parse into specialized classes."""
+    for inp in ALL_VERDICTS:
+        if inp.startswith("*8*") or inp.startswith("*#8*"):
+            cmd = OWNCommand.parse(inp)
+            assert cmd is not None, f"Failed to parse WHO 8 command: {inp}"
+            assert isinstance(cmd, OWNIntercomCommand), f"Expected OWNIntercomCommand for {inp}, got {type(cmd)}"
+
+            ev = OWNEvent.parse(inp)
+            assert ev is not None, f"Failed to parse WHO 8 event: {inp}"
+            assert isinstance(ev, OWNIntercomEvent), f"Expected OWNIntercomEvent for {inp}, got {type(ev)}"
+
+        elif inp.startswith("*3*") or inp.startswith("*#3*"):
+            cmd = OWNCommand.parse(inp)
+            assert cmd is not None, f"Failed to parse WHO 3 command: {inp}"
+            assert isinstance(cmd, OWNLoadCommand), f"Expected OWNLoadCommand for {inp}, got {type(cmd)}"
+
+            ev = OWNEvent.parse(inp)
+            assert ev is not None, f"Failed to parse WHO 3 event: {inp}"
+            assert isinstance(ev, OWNLoadEvent), f"Expected OWNLoadEvent for {inp}, got {type(ev)}"
+
+        elif inp.startswith("*18*") or inp.startswith("*#18*"):
+            cmd = OWNCommand.parse(inp)
+            assert cmd is not None, f"Failed to parse WHO 18 command: {inp}"
+            assert isinstance(cmd, OWNEnergyCommand), f"Expected OWNEnergyCommand for {inp}, got {type(cmd)}"
+
+            ev = OWNEvent.parse(inp)
+            assert ev is not None, f"Failed to parse WHO 18 event: {inp}"
+            assert isinstance(ev, OWNEnergyEvent), f"Expected OWNEnergyEvent for {inp}, got {type(ev)}"
+
+        elif inp.startswith("*22*") or inp.startswith("*#22*"):
+            cmd = OWNCommand.parse(inp)
+            assert cmd is not None, f"Failed to parse WHO 22 command: {inp}"
+            assert isinstance(cmd, OWNMultiroomCommand), f"Expected OWNMultiroomCommand for {inp}, got {type(cmd)}"
+
+            ev = OWNEvent.parse(inp)
+            assert ev is not None, f"Failed to parse WHO 22 event: {inp}"
+            assert isinstance(ev, OWNMultiroomEvent), f"Expected OWNMultiroomEvent for {inp}, got {type(ev)}"

@@ -18,7 +18,9 @@ _WHO_SUBMODULES: tuple[str, ...] = (
     "energy",
     "gateway",
     "heating",
+    "intercom",
     "lighting",
+    "load",
     "scenario",
     "sound",
 )
