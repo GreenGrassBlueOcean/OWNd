@@ -33,6 +33,8 @@ from .cen import (
     OWNCENPlusEvent,
     OWNCenCommand,
     OWNCenPlusCommand,
+    OWNScenarioPlusCommand,
+    OWNScenarioPlusEvent,
     OWNDryContactCommand,
     OWNDryContactEvent,
 )
