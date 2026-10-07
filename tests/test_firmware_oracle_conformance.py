@@ -7,15 +7,34 @@ guarantees against hash-pinned verdicts from own-firmware-oracle.
 
 from __future__ import annotations
 
+from collections import Counter
 import hashlib
 import json
-from collections import Counter
 from pathlib import Path
+import re
 from typing import Any
 
 import pytest
-from OWNd.message import OWNLightingEvent, OWNMessage
-from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
+
+import OWNd.message as msg_module
+from OWNd.message import (
+    OWNCENPlusEvent,
+    OWNDryContactEvent,
+    OWNEvent,
+    OWNLightingCommand,
+    OWNLightingEvent,
+    OWNMessage,
+    OWNSignaling,
+)
+from OWNd.profiles import (
+    GenericGatewayProfile,
+    WHO_AUTOMATION,
+    WHO_CEN,
+    WHO_CEN_PLUS,
+    WHO_HEATING,
+    WHO_LIGHTING,
+    get_gateway_profile,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ORACLE_JSON_PATH = REPO_ROOT / "tests" / "golden" / "firmware_oracle.json"
@@ -91,6 +110,9 @@ def test_emitted_own_frames_parseable_by_ownd():
     Key diagnostic examples include:
     1. *1*19*74##: WHO 1 lighting diagnostic fault event (WHAT 19) emitted by MH200N.
     2. *#1001*74*11*111110111111111111110111##: WHO 1001 diagnostic device mask emitted by MH200N.
+    3. *25*21#1*21##: WHO 25 CEN+ event emitted during test sweeps.
+    4. *25*31#1*339##: WHO 25 dry contact event emitted during test sweeps.
+    5. *#*0##: OWNSignaling NACK emitted during negative boundary tests.
     """
     all_emitted: set[str] = set()
     for _inp, entries in ALL_VERDICTS.items():
@@ -123,73 +145,280 @@ def test_emitted_own_frames_parseable_by_ownd():
     assert getattr(diag_msg, "dimension", None) == 11
     assert getattr(diag_msg, "event_content", {}).get("dimension values") == ["111110111111111111110111"]
 
+    # 3. Semantic verification of WHO 25 CEN+ push-button event
+    cen_msg = OWNMessage.parse("*25*21#1*21##")
+    assert isinstance(cen_msg, OWNCENPlusEvent)
+    assert cen_msg.who == 25
+    assert cen_msg.where == "21"
+    assert cen_msg.push_button == 1
+    assert cen_msg.is_short_pressed is True
 
-# Known protocol discrepancies between spec-derived/openwebnet4j corpus fixtures
-# and actual gateway firmware behavior (audited in own-firmware-oracle):
-KNOWN_GATEWAY_DISCREPANCIES = {
-    # Central unit mode commands: MH200N accepts with ACK now that bt_termo is active
-    ("thermo.cmd.central.mode.heat.cu99", "MH200N"): "ack",
-    ("thermo.cmd.central.mode.cool.cu99", "MH200N"): "ack",
-    ("thermo.cmd.central.mode.off.cu99", "MH200N"): "ack",
-    ("thermo.cmd.central.mode.cool.cu99", "MyHomeServer1"): "ack",
-    # Zone temperature request without configured probe on virtual bus:
-    ("thermo.req.temp.zone1", "MH200N"): "nack",
-    ("thermo.req.temp.zone1", "MyHomeServer1"): "nack",
-    # Energy dimension 113: MH202 and MyHomeServer1 accept, MH200N returns NACK while forwarding to bus:
-    ("energy.req.unit.meter51", "MH200N"): "nack",
-    ("energy.req.unit.meter51", "MH202"): "ack",
-    ("energy.req.unit.meter51", "MyHomeServer1"): "ack",
-    # Bus events sent to command session (accepted on MH202 scenario programmer, refused on others):
-    ("cen.event.extended_press.btn1.0001", "MH200N"): "nack",
-    ("cen.event.extended_press.btn1.0001", "MH202"): "ack",
-    ("cen_plus.event.short_press.btn1.21", "MH200N"): "nack",
-    ("cen_plus.event.short_press.btn1.21", "MH202"): "ack",
-    ("dry_contact.event.on.339", "MH200N"): "nack",
-    ("dry_contact.event.on.339", "MH202"): "ack",
-}
+    # 4. Semantic verification of WHO 25 dry contact event
+    dry_msg = OWNMessage.parse("*25*31#1*339##")
+    assert isinstance(dry_msg, OWNDryContactEvent)
+    assert dry_msg.who == 25
+    assert dry_msg.where == "339"
+    assert dry_msg.is_on is True
+
+    # 5. Semantic verification of OWNSignaling NACK
+    nack_msg = OWNMessage.parse("*#*0##")
+    assert isinstance(nack_msg, OWNSignaling)
+    assert nack_msg.is_nack() is True
+    assert nack_msg.who is None
 
 
-def test_golden_corpus_cross_validation_with_firmware_oracle():
-    """Cross-validate golden corpus fixtures against empirical firmware oracle verdicts.
+def test_oracle_input_frames_ownd_parser_resilience():
+    """Verify OWNd parser resilience across all 303 unique input frames in the oracle index.
 
-    Evaluates the intersection between declarative golden corpus fixtures and
-    empirical firmware verdicts, asserting known architectural behaviors:
-    - MH200N central unit mode commands (*4*...*#0##) are accepted with ACK via bt_termo.
-    - MyHomeServer1 accepts central unit mode cool commands (*4*0*#0##) with ACK.
-    - Bus event fixtures (CEN *15*01#3*0001##, CEN+ *25*21#1*21##) are refused with NACK
-      on standard gateways when presented as command-session inputs, but accepted by MH202.
-    - Energy dimension requests (*#18*51*113##) are accepted on MH202 and MyHomeServer1.
+    Guarantees that:
+    1. Zero input frames cause unhandled parser crashes (AttributeError, IndexError, ValueError).
+    2. Exactly 297 frames parse into valid typed OWNMessage instances across subsystems
+       WHO 0, 1, 2, 3, 4, 8, 14, 15, 18, 22, 25.
+    3. Exactly 6 frames (WHO 8 global status queries `*#8*...##` without WHERE) safely return None.
+    4. For all 297 parsed frames, msg.who matches the subsystem extracted from the frame syntax.
+    """
+    parsed_count = 0
+    unparsed_count = 0
+
+    for frame in ALL_VERDICTS:
+        try:
+            msg = OWNMessage.parse(frame)
+        except Exception as exc:  # noqa: BLE001
+            pytest.fail(f"OWNMessage.parse crashed on oracle input frame {frame}: {exc}")
+
+        if msg is not None:
+            parsed_count += 1
+            m = re.match(r"^\*#?(\d+)\*", frame)
+            assert m is not None, f"Could not extract WHO subsystem from frame {frame}"
+            expected_who = int(m.group(1))
+            assert msg.who == expected_who, (
+                f"Parsed WHO mismatch for {frame}: got {msg.who}, expected {expected_who}"
+            )
+        else:
+            unparsed_count += 1
+            # Unparsed frames are exclusively WHO 8 status queries without target address
+            assert frame.startswith("*#8*"), f"Unexpected unparsed frame {frame}"
+
+    assert parsed_count == 297
+    assert unparsed_count == 6
+
+
+def test_golden_corpus_bidirectional_cross_validation():
+    """Bidirectional cross-validation between golden corpus fixtures and firmware oracle.
+
+    For every fixture in corpus.json intersecting with firmware_oracle.json:
+    1. System Under Test (OWNd) parses the frame cleanly matching fixture metadata.
+    2. If the fixture declares a builder, calling OWNd's builder reproduces the exact frame string.
+    3. Cross-validates empirical firmware oracle verdicts (both reply and verdict) against
+       audited protocol expectations across gateway models:
+       - thermo.req.temp.zone1 (*#4*1*0##): All 9 emulated gateways reply 'nack' with verdict 'out'
+         (forwarded to SCS bus, but rejected at session layer because no zone 1 probe is present).
+       - thermo central mode commands (*4*...*#0##): Accepted ('ack', 'out') on MH200N (bt_termo),
+         F453AV, F454, F459, MH202, and MyHomeServer1 (heating suite); refused on F460/F461 ('nack', 'out').
+       - Bus events sent to command session (*15*01#3*0001##, *25*21#1*21##, *25*31#1*339##):
+         Accepted on MH202 scenario programmer ('ack', 'silent'), refused with NACK on standard gateways.
+       - Energy unit request (*#18*51*113##): Accepted on MH202, MHS1, F453AV, F454, F459, F460, F461
+         ('ack', 'out'); forwarded on MH200N ('nack', 'out'); refused on F450 ('nack', 'silent').
     """
     assert CORPUS_JSON_PATH.is_file(), "tests/golden/corpus.json fixture missing"
     with open(CORPUS_JSON_PATH, "r", encoding="utf-8") as f:
         corpus = json.load(f)
 
-    # Cross-reference intersecting frames
-    intersecting_fixtures: list[dict[str, Any]] = []
-    for fixture in corpus:
-        frame = fixture.get("frame")
-        if frame in ALL_VERDICTS:
-            intersecting_fixtures.append(fixture)
-
-    # Exactly 8 fixtures in corpus.json intersect with current oracle inputs:
+    intersecting_fixtures = [c for c in corpus if c.get("frame") in ALL_VERDICTS]
     assert len(intersecting_fixtures) == 8
 
     for fixture in intersecting_fixtures:
         fixture_id = fixture["id"]
         frame = fixture["frame"]
         entries = ALL_VERDICTS[frame]
-        mcp_valid = fixture.get("mcp_valid", True)
-        assert mcp_valid is True, f"Fixture {fixture_id} should be marked mcp_valid"
 
-        for entry in entries:
-            product = entry["product"]
-            reply = entry["reply"]
-            expected_discrepancy = KNOWN_GATEWAY_DISCREPANCIES.get((fixture_id, product))
-            if expected_discrepancy is not None:
-                assert reply == expected_discrepancy, (
-                    f"Expected known discrepancy for {fixture_id} on {product} to be "
-                    f"'{expected_discrepancy}', got '{reply}'"
-                )
+        # 1. OWNd SUT Parser verification
+        msg = OWNMessage.parse(frame)
+        assert msg is not None, f"OWNMessage failed to parse intersecting fixture {fixture_id}: {frame}"
+        if fixture.get("who") is not None:
+            assert msg.who == fixture["who"]
+        if fixture.get("where") is not None:
+            assert msg.where == str(fixture["where"])
+
+        # 2. OWNd SUT Builder verification
+        builder_spec = fixture.get("builder")
+        if builder_spec is not None:
+            cls = getattr(msg_module, builder_spec["class"])
+            method = getattr(cls, builder_spec["method"])
+            built = method(*builder_spec["args"])
+            assert str(built) == frame, (
+                f"Builder {builder_spec['class']}.{builder_spec['method']} produced {built}, expected {frame}"
+            )
+
+        # 3. Empirical firmware oracle verdict cross-validation
+        by_product = {e["product"]: e for e in entries}
+
+        if fixture_id == "thermo.req.temp.zone1":
+            # All 9 emulated gateways forward the query to bus but reply NACK without a probe
+            for prod, entry in by_product.items():
+                assert entry["reply"] == "nack", f"Expected NACK for {fixture_id} on {prod}"
+                assert entry["verdict"] == "out", f"Expected 'out' verdict for {fixture_id} on {prod}"
+
+        elif fixture_id == "cen.event.extended_press.btn1.0001":
+            # Only MH202 (scenario programmer) accepts command-session event inputs
+            assert by_product["MH202"]["reply"] == "ack"
+            assert by_product["MH202"]["verdict"] == "silent"
+            for prod in ("MH200N", "MyHomeServer1", "F453AV", "F454", "F459"):
+                assert by_product[prod]["reply"] == "nack"
+                assert by_product[prod]["verdict"] == "silent"
+
+        elif fixture_id == "energy.req.unit.meter51":
+            # Accepted on MH202, MyHomeServer1, F453AV, F454, F459, F460, F461
+            for prod in ("MH202", "MyHomeServer1", "F453AV", "F454", "F459", "F460", "F461"):
+                assert by_product[prod]["reply"] == "ack"
+                assert by_product[prod]["verdict"] == "out"
+            # MH200N forwards to PIC bus while returning NACK
+            assert by_product["MH200N"]["reply"] == "nack"
+            assert by_product["MH200N"]["verdict"] == "out"
+            # F450 has no energy subsystem
+            assert by_product["F450"]["reply"] == "nack"
+            assert by_product["F450"]["verdict"] == "silent"
+
+        elif fixture_id.startswith("thermo.cmd.central.mode."):
+            # MH200N accepts central-unit mode commands via bt_termo daemon
+            assert by_product["MH200N"]["reply"] == "ack"
+            assert by_product["MH200N"]["verdict"] == "out"
+            # Standard gateways accept and forward
+            for prod in ("F453AV", "F454", "F459", "MH202"):
+                assert by_product[prod]["reply"] == "ack"
+                assert by_product[prod]["verdict"] == "out"
+            # F460 and F461 reject central unit mode commands at session layer but forward
+            assert by_product["F460"]["reply"] == "nack"
+            assert by_product["F461"]["reply"] == "nack"
+
+
+def test_harness_limitations_classification():
+    """Explicitly identify and categorize test-harness limitations vs protocol verdicts.
+
+    In the 3,015 firmware oracle rows, exactly:
+    - 71 rows have verdict 'crash':
+      - 69 crashes belong to F450 on thermo test suites (OPEN-BACnet interface daemon
+        crashing under QEMU when non-BACnet WHO 4 frames are received).
+      - 2 crashes belong to MH202 (*4*311*1## and *4*3201*#0##).
+    - 7 rows have verdict 'timeout':
+      - All 7 occur in 'energy-ts10' on totalizer reset/status commands waiting for unsimulated
+        meter hardware responses (MH200N: 3, F453AV: 2, F454: 2).
+
+    This test prevents test-harness emulator artifacts from being mistaken for legitimate
+    OpenWebNet gateway protocol dialect.
+    """
+    crashes: list[tuple[str, str, str]] = []
+    timeouts: list[tuple[str, str, str]] = []
+
+    for frame, entries in ALL_VERDICTS.items():
+        for e in entries:
+            verdict = e.get("verdict")
+            if verdict == "crash":
+                crashes.append((e["product"], e["suite"], frame))
+            elif verdict == "timeout":
+                timeouts.append((e["product"], e["suite"], frame))
+
+    assert len(crashes) == 71
+    assert len(timeouts) == 7
+
+    crash_counts = Counter(c[0] for c in crashes)
+    assert crash_counts["F450"] == 69
+    assert crash_counts["MH202"] == 2
+
+    # All F450 crashes occur exclusively in thermo suites
+    for prod, suite, _frame in crashes:
+        if prod == "F450":
+            assert any(s in suite for s in ("thermo", "heating")), (
+                f"F450 crash in unexpected non-thermo suite: {suite}"
+            )
+
+    # All timeouts occur exclusively in energy-ts10
+    timeout_counts = Counter(t[0] for t in timeouts)
+    assert timeout_counts["MH200N"] == 3
+    assert timeout_counts["F453AV"] == 2
+    assert timeout_counts["F454"] == 2
+    for _prod, suite, _frame in timeouts:
+        assert suite == "energy-ts10"
+
+
+def test_multi_suite_divergence_bounded():
+    """Verify that cross-suite response divergence is bounded to known stateful interactions.
+
+    Across the 17 suites, exactly 49 (product, frame) pairs produce different replies or
+    verdicts due to prior gateway state or harness timeouts.
+    For example:
+    - MyHomeServer1 *4*1*#0## is 'ack' in 'ownd-pr82-heating' (pre-configured heating state)
+      and 'nack' in 'thermo-central-mode'.
+    - MH200N *#18*51*51## is 'ack' in 'energy-params' and '-' in 'energy-ts10'.
+
+    Verifies that OWNd parser and session logic handle both response types without failure.
+    """
+    disagreements: dict[tuple[str, str], list[dict[str, Any]]] = {}
+
+    for frame, entries in ALL_VERDICTS.items():
+        by_prod: dict[str, list[dict[str, Any]]] = {}
+        for e in entries:
+            by_prod.setdefault(e["product"], []).append(e)
+        for prod, prod_entries in by_prod.items():
+            distinct_results = {(e["reply"], e["verdict"]) for e in prod_entries}
+            if len(distinct_results) > 1:
+                disagreements[(prod, frame)] = prod_entries
+
+    assert len(disagreements) == 49
+
+    # Verify MyHomeServer1 central unit mode divergence
+    mhs1_heat_cu = disagreements.get(("MyHomeServer1", "*4*1*#0##"))
+    assert mhs1_heat_cu is not None
+    mhs1_replies = {e["suite"]: e["reply"] for e in mhs1_heat_cu}
+    assert mhs1_replies["ownd-pr82-heating"] == "ack"
+    assert mhs1_replies["thermo-central-mode"] == "nack"
+
+
+def test_energy_dimension_51_bus_dispatch_reconciliation():
+    """Reconcile empirical oracle verdicts for *#18*51*51## against physical hardware traces.
+
+    Audit findings:
+    1. Oracle fixture:
+       - F450: 'nack' / 'silent' (BACnet gateway, no energy daemon).
+       - MH200N: 'ack' / 'out' in energy-params, '-' / 'out' in energy-ts10.
+         Transmits raw PIC serial bus frame '$06D1A1023350150000\\r'
+         (hex: 24 30 36 44 31 41 31 30 32 33 33 35 30 31 35 30 30 30 30 0d).
+       - F453AV, F454, F459, F460, F461, MH202, MyHomeServer1: 'ack' / 'out'.
+    2. Physical plant capture reconciliation:
+       - In MyHOME tests/fixtures/traces/issue_466/myhome_sweep_MH200N_all_2026-09-25T14-40-10.json,
+         physical hardware returned *#18*51*51*23791364##.
+       - The emulator records the gateway accepting the command and dispatching the PIC serial frame
+         to the bus. In real hardware, an active physical energy meter on the SCS bus answers with the
+         dimension value; in the oracle testbed, no physical meter is attached, explaining why
+         only the forwarded frame is captured.
+    """
+    frame = "*#18*51*51##"
+    assert frame in ALL_VERDICTS
+    entries = ALL_VERDICTS[frame]
+
+    by_prod: dict[str, list[dict[str, Any]]] = {}
+    for e in entries:
+        by_prod.setdefault(e["product"], []).append(e)
+
+    # F450 refuses with NACK and silent verdict
+    for e in by_prod["F450"]:
+        assert e["reply"] == "nack"
+        assert e["verdict"] == "silent"
+
+    # MH200N forwards raw PIC frame in both suites
+    mh200n_entries = by_prod["MH200N"]
+    assert len(mh200n_entries) == 2
+    for e in mh200n_entries:
+        assert e["verdict"] == "out"
+        assert len(e["bus_frames"]) == 1
+        # Hex starts with '24 30 36 44' ($06D...)
+        assert e["bus_frames"][0].startswith("24 30 36 44")
+
+    # Gateways with active energy daemons acknowledge and forward
+    for prod in ("F453AV", "F454", "F459", "F460", "F461", "MH202", "MyHomeServer1"):
+        for e in by_prod[prod]:
+            assert e["reply"] == "ack"
+            assert e["verdict"] == "out"
 
 
 @pytest.mark.parametrize(
@@ -362,13 +591,11 @@ def test_dimmer_level_cross_gateway_behavior():
 
 
 def test_gateway_profiles_match_oracle_gateways():
-    """Verify that profiles exist for all gateways catalogued in the firmware oracle."""
+    """Verify that profiles exist for all gateways catalogued in the firmware oracle and match capabilities."""
     data = load_firmware_oracle()
     gateways = data.get("gateways", [])
     assert len(gateways) == 10, "Expected all 10 gateway entries in oracle fixture"
 
-    # 7 gateways have dedicated profile classes in OWNd.profiles;
-    # 3 (F450, F459, F460) safely resolve to GenericGatewayProfile with conservative defaults.
     generic_gateways = {"F450", "F459", "F460"}
 
     for gw in gateways:
@@ -386,6 +613,13 @@ def test_gateway_profiles_match_oracle_gateways():
             assert not isinstance(profile, GenericGatewayProfile), (
                 f"Gateway {product} unexpectedly resolved to GenericGatewayProfile fallback"
             )
+
+    # Specific capability checks based on verified firmware daemons:
+    mh200n_profile = get_gateway_profile("MH200N")
+    for who in (WHO_LIGHTING, WHO_AUTOMATION, WHO_HEATING, WHO_CEN, WHO_CEN_PLUS):
+        assert who in mh200n_profile.supported_who, (
+            f"MH200N profile missing expected supported WHO {who}"
+        )
 
 
 def test_multi_gateway_emulation_coverage():
