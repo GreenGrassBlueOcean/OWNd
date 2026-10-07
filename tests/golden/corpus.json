@@ -1167,11 +1167,11 @@
     "where": "#1",
     "source": "encyclopedia",
     "mcp_valid": true,
-    "mcp_notes": "Set Zone 1 (through the central unit) to Antifreeze, WHAT 102 (Encyclopedia functional/who-4-temperature-control/what.md, zone setup: *4*102*#WHERE##). Corrected from *4*110*1##: 110 is manual heating (same table; libqtdevices TS10_1_0_23 WIN_MANUAL) and the MyHomeServer1 firmware forwards nothing for it (OWNd#77). The MyHomeServer1 captures in this file report an antifreeze zone as *4*102*Z##. The judge's description of 102 is not used. Built by set_central_mode, whose 'antifreeze' is 102: set_mode only builds 303 and 311",
+    "mcp_notes": "Set Zone 1 (through the central unit) to Antifreeze, WHAT 102 (Encyclopedia functional/who-4-temperature-control/what.md, zone setup: *4*102*#WHERE##; libqtdevices TS10_1_0_23 PROT_ANTIFREEZE 102). Corrected from *4*110*1##: 110 is manual heating (same table; libqtdevices TS10_1_0_23 WIN_MANUAL) and the MyHomeServer1 firmware forwards nothing for it (OWNd#77). The MyHomeServer1 captures in this file report an antifreeze zone as *4*102*Z##. Built by set_mode.",
     "roundtrip": true,
     "builder": {
       "class": "OWNHeatingCommand",
-      "method": "set_central_mode",
+      "method": "set_mode",
       "args": [
         "#1",
         "antifreeze"
@@ -1188,11 +1188,11 @@
     "where": "#1",
     "source": "encyclopedia",
     "mcp_valid": true,
-    "mcp_notes": "Set Zone 1 (through the central unit) to generic protection, WHAT 302 (Encyclopedia what.md zone setup: *4*302*#WHERE##; libqtdevices TS10_1_0_23 ControlledProbeDevice::setProtection sends PROT_GENERIC 302 to #zone). Corrected from *4*111*1##: 111 is programmed/automatic heating (same table; libqtdevices WIN_AUTOMATIC), which the MyHomeServer1 firmware forwards as automatic heating (OWNd#77). The judge's description of 302 (manual cooling setpoint) is wrong. Built by set_central_mode, whose 'protection' is 302",
+    "mcp_notes": "Set Zone 1 (through the central unit) to generic protection, WHAT 302 (Encyclopedia what.md zone setup: *4*302*#WHERE##; libqtdevices TS10_1_0_23 ControlledProbeDevice::setProtection sends PROT_GENERIC 302 to #zone). Corrected from *4*111*1##: 111 is programmed/automatic heating (same table; libqtdevices WIN_AUTOMATIC), which the MyHomeServer1 firmware forwards as automatic heating (OWNd#77). Built by set_mode.",
     "roundtrip": true,
     "builder": {
       "class": "OWNHeatingCommand",
-      "method": "set_central_mode",
+      "method": "set_mode",
       "args": [
         "#1",
         "protection"
@@ -1209,8 +1209,16 @@
     "where": "#1",
     "source": "encyclopedia",
     "mcp_valid": true,
-    "mcp_notes": "Set Zone 1 (through the central unit) to Thermal Protection (cooling protection), WHAT 202 (Encyclopedia functional/who-4-temperature-control/what.md, zone setup: *4*202*#WHERE##; WHO_4.pdf conditioning: thermal protection). No builder block: set_central_mode does not offer 202 because setting cooling protection on a central unit switches the entire plant to cooling",
+    "mcp_notes": "Set Zone 1 (through the central unit) to Thermal Protection (cooling protection), WHAT 202 (Encyclopedia functional/who-4-temperature-control/what.md, zone setup: *4*202*#WHERE##; WHO_4.pdf conditioning: thermal protection). Built by set_mode.",
     "roundtrip": true,
+    "builder": {
+      "class": "OWNHeatingCommand",
+      "method": "set_mode",
+      "args": [
+        "#1",
+        "thermal_protection"
+      ]
+    },
     "_file": "who04_thermo.yaml"
   },
   {
