@@ -8,6 +8,7 @@ A declarative conformance suite of OpenWebNet frames providing cross-framework v
 |---|---|---|
 | **Judge** | Official Legrand PDFs via `openwebnet-mcp` | Validates whether a frame is syntactically legal (its semantics are not authoritative; see Provenance below) |
 | **Oracle** | `openwebnet4j` & openHAB binding (by Massimo Valla) | Provides mature reference factory outputs and empirical test vectors |
+| **Firmware Translation Oracle** | `own-firmware-oracle` (`tests/golden/firmware_oracle.json`) | Provides hash-pinned empirical verdicts, gateway reply codes, and bus frames from real emulated BTicino/Legrand gateway binaries |
 | **SUT** | `OWNd` / `custom_components/myhome` | System Under Test: verified against judge and oracle |
 
 ## Provenance: which fixtures may change
@@ -61,8 +62,10 @@ tools/golden/
   MASSI_OUTREACH.md             # Community proposal draft for Massi Valla
 tests/golden/
   corpus.json                   # Zero-dependency standard library runtime cache
+  firmware_oracle.json          # Hash-pinned empirical verdict index from own-firmware-oracle
 tests/
   test_golden_conformance.py    # Pytest suite running conformance tests
+  test_firmware_oracle_conformance.py # Pytest suite testing parser resilience against real firmware
 docs/
   protocol_conformance_matrix.md # Verifiable truth matrix across all 11 subsystems
 ```
@@ -74,7 +77,7 @@ To validate all YAML fixtures against `schema.json` and synchronize `corpus.json
 & "C:\Users\laurensvdb\Documents\GitHub\MyHOME\.venv\Scripts\python.exe" tools/golden/validate_corpus.py
 ```
 
-To run the automated pytest conformance suite (zero external dependencies required):
+To run the automated pytest conformance suite:
 ```powershell
-& "C:\Users\laurensvdb\Documents\GitHub\MyHOME\.venv\Scripts\python.exe" -m pytest tests/test_golden_conformance.py -v
+python -m pytest tests/test_golden_conformance.py tests/test_firmware_oracle_conformance.py -v
 ```
