@@ -102,22 +102,53 @@ def _zone_state_text(values: list[str]) -> str | None:
 def _zone_number(where: str | int) -> int:
     """Zone of a WHO 4 address: the first field, so ``#23#1`` and ``23#1`` are zone 23.
 
-    libqtdevices TS10_1_0_23 addresses a probe ``#23#1`` and still writes zone 23
-    (``*#4*23*#11*3##``). Callers handle the 4-zone central form ``#0#N`` first.
+    libqtdevices TS10_1_0_23 addresses a probe ``#23#1`` and writes the plain
+    zone for fan speed (``*#4*23*#11*3##``, test_probe_device.cpp line 139).
     """
     where_str = str(where)
     if where_str.startswith("##"):
         raise ValueError(f"Invalid zone address: {where}")
-    if where_str.startswith("#"):
-        where_str = where_str[1:]
-    part = where_str.split("#")[0]
-    try:
-        val = int(part)
-        if val < 0:
-            raise ValueError(f"Invalid zone address: {where}")
-        return val
-    except (ValueError, TypeError):
+    clean = where_str[1:] if where_str.startswith("#") else where_str
+    parts = clean.split("#")
+    if not parts or any(not p.isdigit() for p in parts) or len(parts) > 2:
         raise ValueError(f"Invalid zone address: {where}")
+    return int(parts[0])
+
+
+def _zone_address_and_name(
+    where: str | int, standalone: bool = False
+) -> tuple[str, str]:
+    """Parse a WHO 4 WHERE address into (zone_str, zone_name).
+
+    Preserves full compound addresses for central-unit controlled devices
+    (e.g. ``#0#1`` -> ``#0#1``, ``#23#1`` / ``23#1`` -> ``#23#1``) as expected
+    by central units and libqtdevices TS10_1_0_23 (test_probe_device.cpp line 111,
+    automatic ``*4*311*#23#1##`` and setpoint ``*#4*#23#1*#14*0250*3##``).
+    """
+    where_str = str(where)
+    if where_str.startswith("##"):
+        raise ValueError(f"Invalid zone address: {where}")
+    clean = where_str[1:] if where_str.startswith("#") else where_str
+    parts = clean.split("#")
+    if not parts or any(not p.isdigit() for p in parts) or len(parts) > 2:
+        raise ValueError(f"Invalid zone address: {where}")
+
+    zone_number = int(parts[0])
+    if len(parts) > 1:
+        # Compound address: 4-zone central (#0#N) or probe under central (#Z#C / Z#C)
+        zone_str = f"#{clean}"
+        if zone_number == 0:
+            zone_name = f"zone {int(parts[1])}"
+        else:
+            zone_name = f"zone {zone_number}"
+    else:
+        zone_name = f"zone {zone_number}" if zone_number > 0 else "general"
+        if standalone:
+            zone_str = f"#{zone_number}" if zone_number == 0 else str(zone_number)
+        else:
+            zone_str = f"#{zone_number}"
+
+    return zone_str, zone_name
 
 
 class OWNHeatingEvent(OWNEvent):
@@ -622,19 +653,7 @@ class OWNHeatingCommand(OWNCommand):
     def set_mode(
         cls, where: str | int, mode: str, standalone: bool = False
     ) -> OWNHeatingCommand | None:
-        central_local = re.compile(r"^#0#\d+$")
-        zone: str
-        if central_local.match(str(where)):
-            zone = str(where)
-            zone_name = f"zone {int(str(where).split('#')[-1])}"
-        else:
-            zone_number = _zone_number(where)
-            zone_name = f"zone {zone_number}" if zone_number > 0 else "general"
-
-            if standalone:
-                zone = f"#{zone_number}" if zone_number == 0 else str(zone_number)
-            else:
-                zone = f"#{zone_number}"
+        zone, zone_name = _zone_address_and_name(where, standalone=standalone)
 
         mode_name = mode
         if mode == CLIMATE_MODE_OFF:
@@ -662,19 +681,7 @@ class OWNHeatingCommand(OWNCommand):
     def set_temperature(
         cls, where: str | int, temperature: float, mode: str, standalone: bool = False
     ) -> OWNHeatingCommand:
-        central_local = re.compile(r"^#0#\d+$")
-        zone: str
-        if central_local.match(str(where)):
-            zone = str(where)
-            zone_name = f"zone {int(str(where).split('#')[-1])}"
-        else:
-            zone_number = _zone_number(where)
-            zone_name = f"zone {zone_number}" if zone_number > 0 else "general"
-
-            if standalone:
-                zone = f"#{zone_number}" if zone_number == 0 else str(zone_number)
-            else:
-                zone = f"#{zone_number}"
+        zone, zone_name = _zone_address_and_name(where, standalone=standalone)
 
         temperature = round(temperature * 2) / 2
         if temperature < 5.0:

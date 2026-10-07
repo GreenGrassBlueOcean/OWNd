@@ -156,25 +156,48 @@ def test_fix2_fan_speed_takes_the_zone_from_the_first_field(where: str) -> None:
     assert str(OWNHeatingCommand.set_fan_speed(where, 3)) == "*#4*23*#11*3##"
 
 
-@pytest.mark.parametrize("where", ["#23#1", "23#1", "#23"])
-def test_zone_builders_take_the_zone_from_the_first_field(where: str) -> None:
-    """Code: set_mode and set_temperature parse WHERE like set_fan_speed (review of #83).
+@pytest.mark.parametrize("where", ["#23#1", "23#1"])
+def test_zone_builders_preserve_compound_probe_addresses(where: str) -> None:
+    """BTicino client: set_mode and set_temperature preserve the full address for compound probes.
 
-    They took the last ``#`` field for an address starting with ``#`` (zone 1 for
-    ``#23#1``) and raised ValueError for ``23#1``.
+    libqtdevices TS10_1_0_23 test_probe_device.cpp (line 111, ControlledProbeDevice("23#1", ...))
+    expects:
+    - fan speed (line 139): *#4*23*#11*3## (plain zone)
+    - automatic (line 132): *4*311*#23#1## (full address)
+    - manual setpoint (line 125): *#4*#23#1*#14*0250*3## (full address)
     """
-    assert str(OWNHeatingCommand.set_mode(where, CLIMATE_MODE_OFF)) == "*4*303*#23##"
-    assert str(OWNHeatingCommand.set_mode(where, CLIMATE_MODE_OFF, standalone=True)) == "*4*303*23##"
-    assert str(OWNHeatingCommand.set_mode(where, CLIMATE_MODE_AUTO, standalone=True)) == "*4*311*#23##"
+    assert str(OWNHeatingCommand.set_fan_speed(where, 3)) == "*#4*23*#11*3##"
+    assert str(OWNHeatingCommand.set_mode(where, CLIMATE_MODE_OFF)) == "*4*303*#23#1##"
+    assert str(OWNHeatingCommand.set_mode(where, CLIMATE_MODE_OFF, standalone=True)) == "*4*303*#23#1##"
+    assert str(OWNHeatingCommand.set_mode(where, CLIMATE_MODE_AUTO, standalone=True)) == "*4*311*#23#1##"
     assert (
         str(OWNHeatingCommand.set_temperature(where, 21.0, CLIMATE_MODE_HEAT))
+        == "*#4*#23#1*#14*0210*1##"
+    )
+    assert (
+        str(OWNHeatingCommand.set_temperature(where, 21.0, CLIMATE_MODE_HEAT, standalone=True))
+        == "*#4*#23#1*#14*0210*1##"
+    )
+
+
+def test_zone_builders_simple_zone_addresses() -> None:
+    """Simple zone addresses build standard plain or # frames."""
+    assert str(OWNHeatingCommand.set_mode("#23", CLIMATE_MODE_OFF)) == "*4*303*#23##"
+    assert str(OWNHeatingCommand.set_mode("23", CLIMATE_MODE_OFF, standalone=True)) == "*4*303*23##"
+    assert str(OWNHeatingCommand.set_mode("23", CLIMATE_MODE_AUTO, standalone=True)) == "*4*311*#23##"
+    assert (
+        str(OWNHeatingCommand.set_temperature("#23", 21.0, CLIMATE_MODE_HEAT))
         == "*#4*#23*#14*0210*1##"
+    )
+    assert (
+        str(OWNHeatingCommand.set_temperature("23", 21.0, CLIMATE_MODE_HEAT, standalone=True))
+        == "*#4*23*#14*0210*1##"
     )
 
 
 @pytest.mark.parametrize(
     "bad_where",
-    ["##23", "invalid", "-1"],
+    ["##23", "invalid", "-1", "#23#invalid", "#23#-1", "23#1#2", ""],
 )
 def test_zone_builders_refuse_invalid_addresses(bad_where: str) -> None:
     """Code: set_mode, set_temperature and set_fan_speed reject malformed addresses."""
