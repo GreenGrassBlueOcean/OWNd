@@ -219,7 +219,7 @@ class OWNHeatingEvent(OWNEvent):
             elif self._mode == 0 or _season_digit == "2":
                 self._season = SEASON_CONDITIONING
 
-            if self._mode in (0, 1):
+            if self._mode in (0, 1) and not self._what_param:
                 # Zone operation mode frame: the zone (or the central unit)
                 # is operating in the heating (1) or conditioning (0) season.
                 # It is not an operating mode change: Legrand WHO 4 p. 13, 16,
@@ -241,7 +241,7 @@ class OWNHeatingEvent(OWNEvent):
                     f"Zone {self._zone}'s mode is set to '{self._mode_name}'"
                 )
             elif (
-                self._mode in [210, 211, 212, 215]
+                self._mode in [0, 210, 211, 212, 215]
                 or (self._mode >= 2101 and self._mode <= 2103)
                 or (self._mode >= 2201 and self._mode <= 2216)
                 or (self._mode >= 23001 and self._mode <= 23255)
@@ -256,7 +256,7 @@ class OWNHeatingEvent(OWNEvent):
                     f"Zone {self._zone}'s mode is set to '{self._mode_name}'"
                 )
             elif (
-                self._mode in [110, 111, 112, 115]
+                self._mode in [1, 110, 111, 112, 115]
                 or (self._mode >= 1101 and self._mode <= 1103)
                 or (self._mode >= 1201 and self._mode <= 1216)
                 or (self._mode >= 13001 and self._mode <= 13255)
