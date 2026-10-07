@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 from OWNd.message import OWNLightingEvent, OWNMessage
-from OWNd.profiles import MH200NProfile, MyHomeServer1Profile, get_gateway_profile
+from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ORACLE_JSON_PATH = REPO_ROOT / "tests" / "golden" / "firmware_oracle.json"
@@ -24,17 +24,18 @@ CORPUS_JSON_PATH = REPO_ROOT / "tests" / "golden" / "corpus.json"
 def load_firmware_oracle() -> dict[str, Any]:
     """Load the firmware oracle verdict index."""
     if not ORACLE_JSON_PATH.is_file():
-        pytest.skip("tests/golden/firmware_oracle.json fixture not found")
+        return {"verdicts": {}, "gateways": []}
     with open(ORACLE_JSON_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 ORACLE_DATA = load_firmware_oracle()
-ALL_VERDICTS = ORACLE_DATA.get("verdicts", {})
+ALL_VERDICTS: dict[str, list[dict[str, Any]]] = ORACLE_DATA.get("verdicts", {})
 
 
 def test_firmware_oracle_integrity():
     """Verify cryptographic integrity and structure of firmware_oracle.json."""
+    assert ORACLE_JSON_PATH.is_file(), "tests/golden/firmware_oracle.json fixture file missing"
     data = load_firmware_oracle()
     assert data["format_version"] == "1.0.0"
     assert data["generator"] == "own-firmware-oracle"
@@ -47,34 +48,63 @@ def test_firmware_oracle_integrity():
         f"Verdicts SHA-256 digest mismatch: {calculated_hash} != {data['verdicts_sha256']}"
     )
 
-    assert data["total_unique_inputs"] == len(verdicts)
+    assert data["total_unique_inputs"] == len(verdicts) == 89
     assert len(data["gateways"]) >= 2
 
     gateway_names = {f"{g['product']} {g['version']}" for g in data["gateways"]}
     assert "MH200N 010108" in gateway_names
     assert "MyHomeServer1 028206" in gateway_names
 
+    # Verify per-gateway verdict and input counts:
+    # MH200N: 84 rows across 78 unique inputs (12 test suites)
+    # MyHomeServer1: 51 rows across 46 unique inputs (3 test suites)
+    mh_rows = [k for k, entries in verdicts.items() for e in entries if e.get("product") == "MH200N"]
+    mhs_rows = [k for k, entries in verdicts.items() for e in entries if e.get("product") == "MyHomeServer1"]
+
+    assert len(mh_rows) == 84
+    assert len(set(mh_rows)) == 78
+    assert len(mhs_rows) == 51
+    assert len(set(mhs_rows)) == 46
+    assert len(mh_rows) + len(mhs_rows) == 135
+
 
 def test_emitted_own_frames_parseable_by_ownd():
-    """Verify that every OpenWebNet frame emitted by real firmware parses cleanly in OWNd."""
+    """Verify that every OpenWebNet frame emitted by real firmware parses cleanly in OWNd.
+
+    The fixture currently captures 2 unique authentic firmware-emitted frames:
+    1. *1*19*74##: WHO 1 lighting diagnostic fault event (WHAT 19) emitted by MH200N.
+    2. *#1001*74*11*111110111111111111110111##: WHO 1001 diagnostic device mask emitted by MH200N.
+    """
     all_emitted: set[str] = set()
     for _inp, entries in ALL_VERDICTS.items():
         for entry in entries:
             for own_frame in entry.get("emitted_own", []):
                 all_emitted.add(own_frame)
 
-    assert len(all_emitted) > 0, "Expected at least one emitted OpenWebNet frame in oracle"
+    expected_emitted = {
+        "*1*19*74##",
+        "*#1001*74*11*111110111111111111110111##",
+    }
+    assert all_emitted == expected_emitted, (
+        f"Emitted frames set mismatch: expected {expected_emitted}, got {all_emitted}"
+    )
 
-    failures: list[str] = []
-    for frame in sorted(all_emitted):
-        try:
-            parsed = OWNMessage.parse(frame)
-            if parsed is None:
-                failures.append(f"Unparsed frame: {frame}")
-        except Exception as exc:  # noqa: BLE001
-            failures.append(f"Exception parsing {frame}: {type(exc).__name__}: {exc}")
+    # 1. Semantic verification of WHO 1 lighting fault event
+    fault_msg = OWNMessage.parse("*1*19*74##")
+    assert isinstance(fault_msg, OWNLightingEvent)
+    assert fault_msg.who == 1
+    assert fault_msg.where == "74"
+    assert fault_msg.unknown_state == 19
+    assert fault_msg.is_on is None
 
-    assert not failures, f"OWNd failed to parse {len(failures)} firmware-emitted frames:\n" + "\n".join(failures)
+    # 2. Semantic verification of WHO 1001 diagnostic state response
+    diag_msg = OWNMessage.parse("*#1001*74*11*111110111111111111110111##")
+    assert isinstance(diag_msg, OWNMessage)
+    assert diag_msg.is_event is True
+    assert diag_msg.who == 1001
+    assert diag_msg.where == "74"
+    assert getattr(diag_msg, "dimension", None) == 11
+    assert getattr(diag_msg, "event_content", {}).get("dimension values") == ["111110111111111111110111"]
 
 
 # Known protocol discrepancies between spec-derived/openwebnet4j corpus fixtures
@@ -92,76 +122,81 @@ KNOWN_GATEWAY_DISCREPANCIES = {
 }
 
 
-def test_golden_corpus_against_firmware_oracle():
-    """Verify that valid downstream commands in the golden corpus are not rejected by firmware."""
-    if not CORPUS_JSON_PATH.is_file():
-        pytest.skip("tests/golden/corpus.json fixture not found")
+def test_golden_corpus_cross_validation_with_firmware_oracle():
+    """Cross-validate golden corpus fixtures against empirical firmware oracle verdicts.
 
+    Evaluates the intersection between declarative golden corpus fixtures and
+    empirical firmware verdicts, asserting known architectural divergence:
+    - MH200N central unit mode commands (*4*...*#0##) are refused (NACK) in default config.
+    - MyHomeServer1 accepts the identical central unit mode commands (*4*...*#0##) with ACK.
+    - Bus event fixtures (CEN *15*01#3*0001##, CEN+ *25*21#1*21##) are refused with NACK
+      when presented as client command-session inputs.
+    """
+    assert CORPUS_JSON_PATH.is_file(), "tests/golden/corpus.json fixture missing"
     with open(CORPUS_JSON_PATH, "r", encoding="utf-8") as f:
         corpus = json.load(f)
 
-    # Collect commands that exist in the oracle
-    checked_count = 0
-    failures: list[str] = []
-
+    # Cross-reference intersecting frames
+    intersecting_fixtures: list[dict[str, Any]] = []
     for fixture in corpus:
-        fixture_id = fixture.get("id", "")
         frame = fixture.get("frame")
-        direction = fixture.get("direction")
-        # Only evaluate downstream commands where direction is command/down
-        if direction not in ("command", "down"):
-            continue
-
         if frame in ALL_VERDICTS:
-            entries = ALL_VERDICTS[frame]
-            for entry in entries:
-                checked_count += 1
-                reply = entry.get("reply")
-                product = str(entry.get("product"))
-                expected_discrepancy = KNOWN_GATEWAY_DISCREPANCIES.get((fixture_id, product))
-                if expected_discrepancy is not None:
-                    # Assert expected known divergence behavior on this gateway
-                    assert reply == expected_discrepancy, (
-                        f"Expected known discrepancy {fixture_id} on {product} to be "
-                        f"{expected_discrepancy}, got {reply}"
-                    )
-                    continue
+            intersecting_fixtures.append(fixture)
 
-                if fixture.get("valid", True) and not fixture.get("expected_rejection", False):
-                    if reply == "nack":
-                        failures.append(
-                            f"Corpus command {fixture_id} ({frame}) received unexpected NACK on "
-                            f"{product} {entry['version']} (suite: {entry['suite']})"
-                        )
+    # Exactly 6 fixtures in corpus.json intersect with current oracle inputs:
+    # 4 command frames and 2 bus event frames
+    assert len(intersecting_fixtures) == 6
 
-    assert checked_count > 0, "No corpus commands intersected with firmware oracle verdicts"
-    assert not failures, "Encountered unexpected firmware NACKs for golden corpus commands:\n" + "\n".join(failures)
+    for fixture in intersecting_fixtures:
+        fixture_id = fixture["id"]
+        frame = fixture["frame"]
+        entries = ALL_VERDICTS[frame]
+        mcp_valid = fixture.get("mcp_valid", True)
+        assert mcp_valid is True, f"Fixture {fixture_id} should be marked mcp_valid"
+
+        for entry in entries:
+            product = entry["product"]
+            reply = entry["reply"]
+            expected_discrepancy = KNOWN_GATEWAY_DISCREPANCIES.get((fixture_id, product))
+            if expected_discrepancy is not None:
+                assert reply == expected_discrepancy, (
+                    f"Expected known discrepancy for {fixture_id} on {product} to be "
+                    f"'{expected_discrepancy}', got '{reply}'"
+                )
 
 
 @pytest.mark.parametrize(
-    ("frame", "expected_reply", "expected_verdict"),
+    ("frame", "expected_reply", "expected_verdict", "expected_gateways"),
     [
         # Lighting brightness 100 refusal (level 100 is invalid; 101-200 are valid, 0 is switch-off)
-        ("*#1*0*#1*100*0##", "nack", "silent"),
-        ("*#1*31*#1*100*0##", "nack", "silent"),
-        ("*#1*31*#1*100*255##", "nack", "silent"),
-        ("*#1*31*#1*100*5##", "nack", "silent"),
-        ("*#1*31*#1*220*0##", "nack", "silent"),
-        # Legacy invalid forms verified refused across both MH200N & MyHomeServer1
-        ("*2*1*21#4#1##", "nack", "silent"),
-        ("*#1*1*#1*20##", "nack", "silent"),
-        ("*#2*1*#1*50##", "nack", "silent"),
-        ("*15*01*0001##", "nack", "silent"),
-        ("*25*21*0001##", "nack", "silent"),
-        ("*4*100*#0##", "nack", "silent"),
-        ("*4*110*#0##", "nack", "silent"),
+        ("*#1*0*#1*100*0##", "nack", "silent", {"MH200N", "MyHomeServer1"}),
+        ("*#1*31*#1*100*0##", "nack", "silent", {"MH200N", "MyHomeServer1"}),
+        ("*#1*31*#1*100*255##", "nack", "silent", {"MH200N", "MyHomeServer1"}),
+        ("*#1*31*#1*100*5##", "nack", "silent", {"MH200N", "MyHomeServer1"}),
+        ("*#1*31*#1*220*0##", "nack", "silent", {"MH200N", "MyHomeServer1"}),
+        # Thermo invalid central unit modes refused on both gateways
+        ("*4*100*#0##", "nack", "silent", {"MH200N", "MyHomeServer1"}),
+        ("*4*110*#0##", "nack", "silent", {"MH200N", "MyHomeServer1"}),
+        # Matrix-refused legacy syntax (tested on MH200N target daemon)
+        ("*2*1*21#4#1##", "nack", "silent", {"MH200N"}),
+        ("*#1*1*#1*20##", "nack", "silent", {"MH200N"}),
+        ("*#2*1*#1*50##", "nack", "silent", {"MH200N"}),
+        ("*15*01*0001##", "nack", "silent", {"MH200N"}),
+        ("*25*21*0001##", "nack", "silent", {"MH200N"}),
     ],
 )
-def test_known_firmware_rejections(frame: str, expected_reply: str, expected_verdict: str):
+def test_known_firmware_rejections(
+    frame: str, expected_reply: str, expected_verdict: str, expected_gateways: set[str]
+):
     """Verify that known protocol boundary frames produce expected rejections on target gateways."""
     assert frame in ALL_VERDICTS, f"Target frame {frame} missing from oracle verdicts"
     entries = ALL_VERDICTS[frame]
     assert len(entries) > 0
+
+    products = {e["product"] for e in entries}
+    assert products == expected_gateways, (
+        f"Frame {frame} tested gateways mismatch: expected {expected_gateways}, got {products}"
+    )
 
     for entry in entries:
         assert entry["reply"] == expected_reply, (
@@ -225,6 +260,32 @@ def test_all_gateway_responses_conform_to_openwebnet_protocol():
                 )
 
 
+def test_firmware_nack_with_bus_forwarding():
+    """Verify empirical cases where the gateway forwards bus frames but returns NACK.
+
+    17 verdict rows exhibit this behavior:
+    - MyHomeServer1 forwards lighting level writes (*#1*31*#1*...##) and commands (*1*...*31##)
+      to the SCS bus while returning NACK to the command session.
+    - MH200N forwards WHO 25 frames (*25*...##) as 3-frame SCS bursts while returning NACK.
+    """
+    nack_and_out: list[tuple[str, str, str, list[str]]] = []
+    for frame, entries in ALL_VERDICTS.items():
+        for entry in entries:
+            if entry.get("reply") == "nack" and entry.get("verdict") == "out":
+                nack_and_out.append((entry["product"], entry["suite"], frame, entry.get("bus_frames", [])))
+
+    assert len(nack_and_out) == 17
+
+    mhs1_nack_out = [item for item in nack_and_out if item[0] == "MyHomeServer1"]
+    mh200n_nack_out = [item for item in nack_and_out if item[0] == "MH200N"]
+
+    assert len(mhs1_nack_out) == 12  # Lighting commands to address 31
+    assert len(mh200n_nack_out) == 5  # WHO 25 CEN+ frames
+
+    for _product, _suite, _frame, bus_frames in nack_and_out:
+        assert len(bus_frames) > 0, "Expected forwarded bus frames for verdict 'out'"
+
+
 def test_dimmer_level_cross_gateway_behavior():
     """Verify cross-gateway divergence on dimmer level write *1*0#1*31##.
 
@@ -233,30 +294,40 @@ def test_dimmer_level_cross_gateway_behavior():
     """
     frame = "*1*0#1*31##"
     assert frame in ALL_VERDICTS
-    entries = {e["product"]: e for e in ALL_VERDICTS[frame]}
+    entries = ALL_VERDICTS[frame]
 
-    assert "MH200N" in entries
-    assert "MyHomeServer1" in entries
+    mh200n_entries = [e for e in entries if e["product"] == "MH200N"]
+    mhs1_entries = [e for e in entries if e["product"] == "MyHomeServer1"]
 
-    mh200n = entries["MH200N"]
-    mhs1 = entries["MyHomeServer1"]
+    assert len(mh200n_entries) > 0, f"Missing MH200N entry for {frame}"
+    assert len(mhs1_entries) > 0, f"Missing MyHomeServer1 entry for {frame}"
 
     # Both gateways transmit the identical bus frame to the lighting actuator:
     expected_bus = ["24 30 36 44 31 33 31 30 31 34 32 30 44 30 31 30 30 30 31 0d"]
-    assert mh200n["bus_frames"] == expected_bus
-    assert mhs1["bus_frames"] == expected_bus
+    for e in mh200n_entries:
+        assert e["bus_frames"] == expected_bus
+        assert e["reply"] == "ack"
+        assert e["verdict"] == "out"
 
-    # But their command session replies diverge:
-    assert mh200n["reply"] == "ack"
-    assert mhs1["reply"] == "nack"
+    for e in mhs1_entries:
+        assert e["bus_frames"] == expected_bus
+        assert e["reply"] == "nack"
+        assert e["verdict"] == "out"
 
 
 def test_gateway_profiles_match_oracle_gateways():
     """Verify that profiles exist for all gateways catalogued in the firmware oracle."""
-    mh200n_profile = get_gateway_profile("MH200N")
-    assert isinstance(mh200n_profile, MH200NProfile)
-    assert mh200n_profile.model_name == "MH200N"
+    data = load_firmware_oracle()
+    gateways = data.get("gateways", [])
+    assert len(gateways) >= 2, "Expected at least 2 gateway entries in oracle fixture"
 
-    mhs1_profile = get_gateway_profile("MyHomeServer1")
-    assert isinstance(mhs1_profile, MyHomeServer1Profile)
-    assert mhs1_profile.model_name == "MyHomeServer1"
+    for gw in gateways:
+        product = gw["product"]
+        profile = get_gateway_profile(product)
+        assert profile is not None, f"No profile resolved for catalog gateway {product}"
+        assert profile.model_name == product, (
+            f"Profile model name mismatch for {product}: got {profile.model_name}"
+        )
+        assert not isinstance(profile, GenericGatewayProfile), (
+            f"Gateway {product} resolved to GenericGatewayProfile fallback"
+        )

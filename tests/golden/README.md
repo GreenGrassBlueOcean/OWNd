@@ -73,11 +73,11 @@ docs/
 ## Running Conformance Verification
 
 To validate all YAML fixtures against `schema.json` and synchronize `corpus.json`:
-```powershell
-& "C:\Users\laurensvdb\Documents\GitHub\MyHOME\.venv\Scripts\python.exe" tools/golden/validate_corpus.py
+```bash
+python tools/golden/validate_corpus.py
 ```
 
 To run the automated pytest conformance suite:
-```powershell
+```bash
 python -m pytest tests/test_golden_conformance.py tests/test_firmware_oracle_conformance.py -v
 ```
