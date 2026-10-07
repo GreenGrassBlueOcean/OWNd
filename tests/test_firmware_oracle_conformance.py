@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +40,7 @@ def test_firmware_oracle_integrity():
     data = load_firmware_oracle()
     assert data["format_version"] == "1.0.0"
     assert data["generator"] == "own-firmware-oracle"
-    assert data["schema_version"] == "1.0.0"
+    assert data["schema_version"] == "1.1.0"
 
     verdicts = data["verdicts"]
     canonical_verdicts = json.dumps(verdicts, sort_keys=True, separators=(",", ":"))
@@ -66,31 +67,28 @@ def test_firmware_oracle_integrity():
     }
     assert gateway_names == expected_gateways
 
-    # Verify per-gateway verdict and input counts across emulated gateways:
-    # MH200N: 303 rows across 292 unique inputs (16 test suites)
-    # MyHomeServer1: 270 rows across 265 unique inputs (7 test suites)
-    # MH202: 124 rows across 124 unique inputs (2 test suites)
-    # F454: 118 rows across 118 unique inputs (2 test suites)
-    mh_rows = [k for k, entries in verdicts.items() for e in entries if e.get("product") == "MH200N"]
-    mhs_rows = [k for k, entries in verdicts.items() for e in entries if e.get("product") == "MyHomeServer1"]
-    mh202_rows = [k for k, entries in verdicts.items() for e in entries if e.get("product") == "MH202"]
-    f454_rows = [k for k, entries in verdicts.items() for e in entries if e.get("product") == "F454"]
+    # Verify 9 emulated gateways × 335 rows across 17 test suites (3,015 rows total)
+    emulated_gateways = [g for g in data["gateways"] if g["status"] == "emulated"]
+    assert len(emulated_gateways) == 9
+    catalogued_gateways = [g for g in data["gateways"] if g["status"] == "catalogued"]
+    assert len(catalogued_gateways) == 1
+    assert catalogued_gateways[0]["product"] == "F455"
 
-    assert len(mh_rows) == 303
-    assert len(set(mh_rows)) == 292
-    assert len(mhs_rows) == 270
-    assert len(set(mhs_rows)) == 265
-    assert len(mh202_rows) == 124
-    assert len(set(mh202_rows)) == 124
-    assert len(f454_rows) == 118
-    assert len(set(f454_rows)) == 118
-    assert len(mh_rows) + len(mhs_rows) + len(mh202_rows) + len(f454_rows) == 815
+    total_rows = sum(len(entries) for entries in verdicts.values())
+    assert total_rows == 3015
+
+    for g in emulated_gateways:
+        prod = g["product"]
+        rows = [k for k, entries in verdicts.items() for e in entries if e.get("product") == prod]
+        assert len(rows) == 335
+        assert len(g["suites"]) == 17
 
 
 def test_emitted_own_frames_parseable_by_ownd():
     """Verify that every OpenWebNet frame emitted by real firmware parses cleanly in OWNd.
 
-    The fixture currently captures 2 unique authentic firmware-emitted frames:
+    The fixture captures 43 unique authentic firmware-emitted frames across the fleet.
+    Key diagnostic examples include:
     1. *1*19*74##: WHO 1 lighting diagnostic fault event (WHAT 19) emitted by MH200N.
     2. *#1001*74*11*111110111111111111110111##: WHO 1001 diagnostic device mask emitted by MH200N.
     """
@@ -100,13 +98,13 @@ def test_emitted_own_frames_parseable_by_ownd():
             for own_frame in entry.get("emitted_own", []):
                 all_emitted.add(own_frame)
 
-    expected_emitted = {
-        "*1*19*74##",
-        "*#1001*74*11*111110111111111111110111##",
-    }
-    assert all_emitted == expected_emitted, (
-        f"Emitted frames set mismatch: expected {expected_emitted}, got {all_emitted}"
-    )
+    assert len(all_emitted) == 43
+    for frame in all_emitted:
+        msg = OWNMessage.parse(frame)
+        assert msg is not None, f"Failed to parse authentic emitted frame {frame}"
+
+    assert "*1*19*74##" in all_emitted
+    assert "*#1001*74*11*111110111111111111110111##" in all_emitted
 
     # 1. Semantic verification of WHO 1 lighting fault event
     fault_msg = OWNMessage.parse("*1*19*74##")
@@ -129,24 +127,25 @@ def test_emitted_own_frames_parseable_by_ownd():
 # Known protocol discrepancies between spec-derived/openwebnet4j corpus fixtures
 # and actual gateway firmware behavior (audited in own-firmware-oracle):
 KNOWN_GATEWAY_DISCREPANCIES = {
-    # Central unit mode commands: MH200N refuses #0 central unit modes in default config:
-    ("thermo.cmd.central.mode.heat.cu99", "MH200N"): "nack",
-    ("thermo.cmd.central.mode.heat.cu99", "MyHomeServer1"): "ack",
-    ("thermo.cmd.central.mode.cool.cu99", "MH200N"): "nack",
+    # Central unit mode commands: MH200N accepts with ACK now that bt_termo is active
+    ("thermo.cmd.central.mode.heat.cu99", "MH200N"): "ack",
+    ("thermo.cmd.central.mode.cool.cu99", "MH200N"): "ack",
+    ("thermo.cmd.central.mode.off.cu99", "MH200N"): "ack",
     ("thermo.cmd.central.mode.cool.cu99", "MyHomeServer1"): "ack",
-    ("thermo.cmd.central.mode.off.cu99", "MH200N"): "nack",
-    ("thermo.cmd.central.mode.off.cu99", "MyHomeServer1"): "ack",
-    # Zone temperature request without configured probe on unconfigured daemon:
+    # Zone temperature request without configured probe on virtual bus:
     ("thermo.req.temp.zone1", "MH200N"): "nack",
     ("thermo.req.temp.zone1", "MyHomeServer1"): "nack",
-    # Energy dimension 113: MH202 and MyHomeServer1 accept, MH200N refuses without energy config:
+    # Energy dimension 113: MH202 and MyHomeServer1 accept, MH200N returns NACK while forwarding to bus:
     ("energy.req.unit.meter51", "MH200N"): "nack",
     ("energy.req.unit.meter51", "MH202"): "ack",
     ("energy.req.unit.meter51", "MyHomeServer1"): "ack",
-    # Bus events sent to command session:
+    # Bus events sent to command session (accepted on MH202 scenario programmer, refused on others):
     ("cen.event.extended_press.btn1.0001", "MH200N"): "nack",
+    ("cen.event.extended_press.btn1.0001", "MH202"): "ack",
     ("cen_plus.event.short_press.btn1.21", "MH200N"): "nack",
+    ("cen_plus.event.short_press.btn1.21", "MH202"): "ack",
     ("dry_contact.event.on.339", "MH200N"): "nack",
+    ("dry_contact.event.on.339", "MH202"): "ack",
 }
 
 
@@ -154,11 +153,11 @@ def test_golden_corpus_cross_validation_with_firmware_oracle():
     """Cross-validate golden corpus fixtures against empirical firmware oracle verdicts.
 
     Evaluates the intersection between declarative golden corpus fixtures and
-    empirical firmware verdicts, asserting known architectural divergence:
-    - MH200N central unit mode commands (*4*...*#0##) are refused (NACK) in default config.
-    - MyHomeServer1 accepts the identical central unit mode commands (*4*...*#0##) with ACK.
+    empirical firmware verdicts, asserting known architectural behaviors:
+    - MH200N central unit mode commands (*4*...*#0##) are accepted with ACK via bt_termo.
+    - MyHomeServer1 accepts central unit mode cool commands (*4*0*#0##) with ACK.
     - Bus event fixtures (CEN *15*01#3*0001##, CEN+ *25*21#1*21##) are refused with NACK
-      when presented as client command-session inputs.
+      on standard gateways when presented as command-session inputs, but accepted by MH202.
     - Energy dimension requests (*#18*51*113##) are accepted on MH202 and MyHomeServer1.
     """
     assert CORPUS_JSON_PATH.is_file(), "tests/golden/corpus.json fixture missing"
@@ -194,7 +193,7 @@ def test_golden_corpus_cross_validation_with_firmware_oracle():
 
 
 @pytest.mark.parametrize(
-    ("frame", "expected_reply", "expected_verdict", "expected_gateways"),
+    ("frame", "expected_reply", "expected_verdict", "target_gateways"),
     [
         # Lighting brightness 100 refusal (level 100 is invalid; 101-200 are valid, 0 is switch-off)
         ("*#1*0*#1*100*0##", "nack", "silent", {"MH200N", "MyHomeServer1"}),
@@ -214,19 +213,19 @@ def test_golden_corpus_cross_validation_with_firmware_oracle():
     ],
 )
 def test_known_firmware_rejections(
-    frame: str, expected_reply: str, expected_verdict: str, expected_gateways: set[str]
+    frame: str, expected_reply: str, expected_verdict: str, target_gateways: set[str]
 ):
     """Verify that known protocol boundary frames produce expected rejections on target gateways."""
     assert frame in ALL_VERDICTS, f"Target frame {frame} missing from oracle verdicts"
     entries = ALL_VERDICTS[frame]
     assert len(entries) > 0
 
-    products = {e["product"] for e in entries}
-    assert products == expected_gateways, (
-        f"Frame {frame} tested gateways mismatch: expected {expected_gateways}, got {products}"
+    target_entries = [e for e in entries if e["product"] in target_gateways]
+    assert len(target_entries) >= len(target_gateways), (
+        f"Frame {frame} missing entries for {target_gateways}"
     )
 
-    for entry in entries:
+    for entry in target_entries:
         assert entry["reply"] == expected_reply, (
             f"Frame {frame} on {entry['product']} expected reply {expected_reply}, got {entry['reply']}"
         )
@@ -264,7 +263,7 @@ def test_what19_fault_emitted_event():
 def test_all_gateway_responses_conform_to_openwebnet_protocol():
     """Verify that every verdict entry adheres strictly to OpenWebNet framing rules."""
     valid_replies = {"ack", "nack", "-"}
-    valid_verdicts = {"out", "silent", "timeout"}
+    valid_verdicts = {"out", "silent", "timeout", "crash"}
 
     for inp, entries in ALL_VERDICTS.items():
         assert inp.startswith("*") and inp.endswith("##"), f"Invalid input frame format: {inp}"
@@ -291,33 +290,46 @@ def test_all_gateway_responses_conform_to_openwebnet_protocol():
 def test_firmware_nack_with_bus_forwarding():
     """Verify empirical cases where the gateway forwards bus frames but returns NACK.
 
-    79 verdict rows exhibit this behavior:
-    - MyHomeServer1 forwards lighting level writes (*#1*31*#1*...##) and commands (*1*...*31##)
-      to the SCS bus while returning NACK to the command session (12 rows).
-    - MyHomeServer1 forwards energy dimension requests and commands in energy-ts10 (25 rows).
-    - MyHomeServer1 forwards sound diffusion commands in sound-who22 (15 rows).
-    - MyHomeServer1 forwards thermo status/commands in thermo-ts10 (6 rows).
-    - F454 forwards sound diffusion commands in sound-who22 (16 rows).
-    - MH200N forwards WHO 25 frames (*25*...##) as 3-frame SCS bursts while returning NACK (5 rows).
+    797 verdict rows exhibit this behavior across the fleet of 9 emulated gateways:
+    - F460 forwards lighting, thermo, and sound commands to the SCS bus while returning NACK (239 rows).
+    - F461 exhibits similar bus forwarding with NACK replies (238 rows).
+    - MyHomeServer1 forwards lighting level writes, energy, sound, and thermo to the SCS bus (94 rows).
+    - F454 forwards sound diffusion and energy commands (47 rows).
+    - MH202 forwards scenario, energy, and intercom frames (44 rows).
+    - F453AV forwards sound, video door entry, and energy frames (42 rows).
+    - F450 forwards thermo frames (37 rows).
+    - F459 forwards thermo and sound frames (36 rows).
+    - MH200N forwards energy requests, thermo status, and WHO 25 frames (20 rows).
     """
-    nack_and_out: list[tuple[str, str, str, list[str]]] = []
+    nack_and_out: list[tuple[str, str, str, list[str], list[str]]] = []
     for frame, entries in ALL_VERDICTS.items():
         for entry in entries:
             if entry.get("reply") == "nack" and entry.get("verdict") == "out":
-                nack_and_out.append((entry["product"], entry["suite"], frame, entry.get("bus_frames", [])))
+                nack_and_out.append((
+                    entry["product"],
+                    entry["suite"],
+                    frame,
+                    entry.get("bus_frames", []),
+                    entry.get("emitted_own", []),
+                ))
 
-    assert len(nack_and_out) == 79
+    assert len(nack_and_out) == 797
 
-    mhs1_nack_out = [item for item in nack_and_out if item[0] == "MyHomeServer1"]
-    f454_nack_out = [item for item in nack_and_out if item[0] == "F454"]
-    mh200n_nack_out = [item for item in nack_and_out if item[0] == "MH200N"]
+    counts = Counter(item[0] for item in nack_and_out)
+    assert counts["F460"] == 239
+    assert counts["F461"] == 238
+    assert counts["MyHomeServer1"] == 94
+    assert counts["F454"] == 47
+    assert counts["MH202"] == 44
+    assert counts["F453AV"] == 42
+    assert counts["F450"] == 37
+    assert counts["F459"] == 36
+    assert counts["MH200N"] == 20
 
-    assert len(mhs1_nack_out) == 58
-    assert len(f454_nack_out) == 16
-    assert len(mh200n_nack_out) == 5
-
-    for _product, _suite, _frame, bus_frames in nack_and_out:
-        assert len(bus_frames) > 0, "Expected forwarded bus frames for verdict 'out'"
+    for _product, _suite, _frame, bus_frames, emitted_own in nack_and_out:
+        assert len(bus_frames) > 0 or len(emitted_own) > 0, (
+            "Expected forwarded bus frames or emitted OWN frames for verdict 'out'"
+        )
 
 
 def test_dimmer_level_cross_gateway_behavior():
@@ -382,19 +394,24 @@ def test_multi_gateway_emulation_coverage():
     gateways = {g["product"]: g for g in data.get("gateways", [])}
     assert len(gateways) == 10
 
-    # 4 gateways have empirical emulation verdicts:
-    assert gateways["MH200N"]["status"] == "emulated"
-    assert len(gateways["MH200N"]["suites"]) == 16
-    assert gateways["MyHomeServer1"]["status"] == "emulated"
-    assert len(gateways["MyHomeServer1"]["suites"]) == 7
-    assert gateways["MH202"]["status"] == "emulated"
-    assert set(gateways["MH202"]["suites"]) == {"energy-ts10", "intercom-ts10"}
-    assert gateways["F454"]["status"] == "emulated"
-    assert set(gateways["F454"]["suites"]) == {"intercom-ts10", "sound-who22"}
-
-    # 6 gateways are catalogued and verified, pending emulation:
-    pending = {"F450", "F453AV", "F455", "F459", "F460", "F461"}
-    for p in pending:
-        assert gateways[p]["status"] == "pending_emulation"
-        assert gateways[p]["suites"] == []
+    # 9 gateways have full empirical emulation verdicts across all 17 test suites:
+    emulated_products = {
+        "F450",
+        "F453AV",
+        "F454",
+        "F459",
+        "F460",
+        "F461",
+        "MH200N",
+        "MH202",
+        "MyHomeServer1",
+    }
+    for p in emulated_products:
+        assert gateways[p]["status"] == "emulated"
+        assert len(gateways[p]["suites"]) == 17
         assert len(gateways[p]["image_sha256"]) == 64
+
+    # F455 is catalogued and verified, pending emulation (bare-metal ARM Cortex-M):
+    assert gateways["F455"]["status"] == "catalogued"
+    assert gateways["F455"]["suites"] == []
+    assert len(gateways["F455"]["image_sha256"]) == 64
