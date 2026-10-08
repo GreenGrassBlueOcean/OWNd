@@ -99,3 +99,19 @@ def test_holiday_days_without_a_parameter_keep_no_program():
     assert msg.holiday_days == 5
     assert msg.program is None
     assert msg.set_temperature is None
+
+
+def test_multi_day_vacation_uses_the_generic_return_program_in_every_season():
+    # Encyclopedia WHO 4 "Vacation, program and scenario forms": the multi-day
+    # vacation commands use 3101..3103 in all three contexts (13DDD / 23DDD /
+    # 33DDD), unlike the daily holiday plan (1101..1103 / 2101..2103).
+    # 3102 used to decode as a -10.2 degree setpoint.
+    heat = OWNEvent.parse("*4*13005#3102*#0##")
+    assert (heat.mode, heat.holiday_days, heat.program) == (CLIMATE_MODE_HEAT, 5, 2)
+    assert heat.set_temperature is None
+    assert heat.message_type == "hvac_mode"
+
+    cool = OWNEvent.parse("*4*23005#3102*#0##")
+    assert (cool.mode, cool.holiday_days, cool.program) == (CLIMATE_MODE_COOL, 5, 2)
+    assert cool.set_temperature is None
+    assert cool.message_type == "hvac_mode"
