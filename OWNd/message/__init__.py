@@ -36,6 +36,12 @@ from .cen import (
     OWNDryContactCommand,
     OWNDryContactEvent,
 )
+from .door_entry import (
+    OWNDoorEntryCommand,
+    OWNDoorEntryEvent,
+    OWNLockCommand,
+    OWNLockEvent,
+)
 from .energy import (
     MESSAGE_TYPE_ACTIVE_POWER,
     MESSAGE_TYPE_CURRENT_DAY_CONSUMPTION,
@@ -177,6 +183,11 @@ __all__ = [
     # Burglar Alarm (WHO 5)
     "OWNAlarmEvent",
     "OWNAlarmCommand",
+    # Door Entry & Lock (WHO 6 & 8)
+    "OWNDoorEntryEvent",
+    "OWNDoorEntryCommand",
+    "OWNLockEvent",
+    "OWNLockCommand",
     # Gateway (WHO 13)
     "_validate_gateway_clock_values",
     "_gateway_timezone",

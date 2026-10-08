@@ -66,6 +66,10 @@ class OWNMessage:
     _ALARM_EMPTY_WHERE = re.compile(
         r"^\*5\*(?P<what>\d+)(?P<what_param>(?:#\d+)*)\*##$"
     )  #  *5*WHAT*##
+    # WHO 6: camera OFF published form has no WHERE field (*6*9##)
+    _DOOR_ENTRY_SHORT = re.compile(
+        r"^\*6\*(?P<what>\d+)##$"
+    )  # *6*WHAT##
     _STATUS_REQUEST = re.compile(
         r"^\*#(?P<who>\d+)(?:\*(?P<where>#?\d+)(?P<where_param>(?:#\d+)*))?##$"
     )  #  *#WHO*WHERE## or *#WHO##
@@ -126,6 +130,15 @@ class OWNMessage:
             # Kept empty on purpose: gateways without a panel answer the *#5*0##
             # poll with these (*5*9*##), a panel sends *5*9*0##. Consumers must
             # not turn this spelling into a device.
+            self._where = ""
+
+        elif match := self._DOOR_ENTRY_SHORT.match(self._raw):
+            self._is_valid_message = True
+            self._match = match
+            self._family = "EVENT"
+            self._message_type = "STATUS"
+            self._who = 6
+            self._what = int(match.group("what"))
             self._where = ""
 
         elif match := self._STATUS_REQUEST.match(self._raw):
