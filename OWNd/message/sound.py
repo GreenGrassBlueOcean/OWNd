@@ -29,6 +29,14 @@ class OWNSoundEvent(OWNEvent):
         self._environment = self._zone[1] if self._is_routing_event else None
         self._routed_source = self._zone[2] if self._is_routing_event else None
         self._volume: int | None = None
+        self._frequency_khz: int | None = None
+        self._track: int | None = None
+        self._rds_text: str | None = None
+        self._is_source_busy: bool = False
+        self._track_step_forward: int | None = None
+        self._track_step_backward: int | None = None
+        self._is_seek_up: bool = False
+        self._is_seek_down: bool = False
 
         if self._is_source_event:
             subject = f"Audio Source {self._source_id}"
@@ -43,6 +51,25 @@ class OWNSoundEvent(OWNEvent):
             self._human_readable_log = f"{subject} is switched ON."
         elif self._state in (10, 13):
             self._human_readable_log = f"{subject} is switched OFF."
+        elif self._state == 100:
+            self._is_source_busy = True
+            self._human_readable_log = f"{subject} is BUSY."
+        elif self._state == 5000:
+            self._is_seek_up = True
+            self._human_readable_log = f"{subject} seek forward."
+        elif self._state == 5100:
+            self._is_seek_down = True
+            self._human_readable_log = f"{subject} seek backward."
+        elif self._state is not None and 6001 <= self._state <= 6015:
+            self._track_step_forward = self._state - 6000
+            self._human_readable_log = (
+                f"{subject} advance track/station by {self._track_step_forward} step(s)."
+            )
+        elif self._state is not None and 6101 <= self._state <= 6115:
+            self._track_step_backward = self._state - 6100
+            self._human_readable_log = (
+                f"{subject} return track/station by {self._track_step_backward} step(s)."
+            )
         elif self._state is not None:
             self._human_readable_log = f"{subject} received command: {self._state}."
         elif self._dimension == 1 and self._dimension_value:
@@ -52,6 +79,36 @@ class OWNSoundEvent(OWNEvent):
                 return
             self._human_readable_log = (
                 f"Audio zone {self._zone} volume is set to {self._volume}."
+            )
+        elif self._dimension == 6 and self._dimension_value:
+            try:
+                self._frequency_khz = int(self._dimension_value[-1])
+            except ValueError:
+                return
+            self._human_readable_log = (
+                f"{subject} frequency is {self._frequency_khz} kHz."
+            )
+        elif self._dimension == 7 and self._dimension_value:
+            try:
+                self._track = int(self._dimension_value[-1])
+            except ValueError:
+                return
+            self._human_readable_log = (
+                f"{subject} station/track is {self._track}."
+            )
+        elif self._dimension == 8 and self._dimension_value and len(self._dimension_value) == 8:
+            chars = []
+            for code in self._dimension_value:
+                try:
+                    val = int(code)
+                    if 32 <= val <= 126:
+                        chars.append(chr(val))
+                except ValueError:
+                    continue
+            text = "".join(chars).strip()
+            self._rds_text = text if text else None
+            self._human_readable_log = (
+                f"{subject} RDS text: '{self._rds_text or ''}'."
             )
 
     @property
@@ -93,6 +150,38 @@ class OWNSoundEvent(OWNEvent):
     @property
     def volume(self) -> int | None:
         return self._volume
+
+    @property
+    def frequency_khz(self) -> int | None:
+        return self._frequency_khz
+
+    @property
+    def track(self) -> int | None:
+        return self._track
+
+    @property
+    def rds_text(self) -> str | None:
+        return self._rds_text
+
+    @property
+    def is_source_busy(self) -> bool:
+        return self._is_source_busy
+
+    @property
+    def track_step_forward(self) -> int | None:
+        return self._track_step_forward
+
+    @property
+    def track_step_backward(self) -> int | None:
+        return self._track_step_backward
+
+    @property
+    def is_seek_up(self) -> bool:
+        return self._is_seek_up
+
+    @property
+    def is_seek_down(self) -> bool:
+        return self._is_seek_down
 
 
 
@@ -213,6 +302,103 @@ class OWNSoundCommand(OWNCommand):
         message._human_readable_log = (
             f"Setting audio zone {where} volume to {level}."
         )
+        return message
+
+    @classmethod
+    def next_track(cls, where: str | int, step: int = 1) -> OWNSoundCommand:
+        """Advance track or station forward (1..15 steps)."""
+        s = int(step)
+        if not 1 <= s <= 15:
+            raise ValueError(f"step must be between 1 and 15, got {step}")
+        what = 6000 + s
+        message = cls(f"*16*{what}*{where}##")
+        message._human_readable_log = (
+            f"Advancing track/station on {where} by {s} step(s)."
+        )
+        return message
+
+    @classmethod
+    def previous_track(cls, where: str | int, step: int = 1) -> OWNSoundCommand:
+        """Return track or station backward (1..15 steps)."""
+        s = int(step)
+        if not 1 <= s <= 15:
+            raise ValueError(f"step must be between 1 and 15, got {step}")
+        what = 6100 + s
+        message = cls(f"*16*{what}*{where}##")
+        message._human_readable_log = (
+            f"Returning track/station on {where} by {s} step(s)."
+        )
+        return message
+
+    @classmethod
+    def seek_up(cls, where: str | int) -> OWNSoundCommand:
+        """Seek forward to next receivable FM station."""
+        message = cls(f"*16*5000*{where}##")
+        message._human_readable_log = f"Seeking forward on {where}."
+        return message
+
+    @classmethod
+    def seek_down(cls, where: str | int) -> OWNSoundCommand:
+        """Seek backward to previous receivable FM station."""
+        message = cls(f"*16*5100*{where}##")
+        message._human_readable_log = f"Seeking backward on {where}."
+        return message
+
+    @classmethod
+    def select_track(cls, where: str | int, track: int) -> OWNSoundCommand:
+        """Select stored station or CD/track number."""
+        t = int(track)
+        message = cls(f"*#16*{where}*#7*{t}##")
+        message._human_readable_log = (
+            f"Selecting station/track {t} on {where}."
+        )
+        return message
+
+    @classmethod
+    def request_track(cls, where: str | int) -> OWNSoundCommand:
+        """Request currently playing station or track number."""
+        message = cls(f"*#16*{where}*7##")
+        message._human_readable_log = f"Requesting station/track of {where}."
+        return message
+
+    @classmethod
+    def set_frequency(
+        cls, where: str | int, kilohertz: int | float
+    ) -> OWNSoundCommand:
+        """Tune tuner source to frequency in kHz (leading 0 parameter)."""
+        khz = int(round(float(kilohertz)))
+        message = cls(f"*#16*{where}*#6*0*{khz:06d}##")
+        message._human_readable_log = (
+            f"Tuning {where} to {khz} kHz."
+        )
+        return message
+
+    @classmethod
+    def request_frequency(cls, where: str | int) -> OWNSoundCommand:
+        """Request tuned frequency."""
+        message = cls(f"*#16*{where}*6##")
+        message._human_readable_log = f"Requesting frequency of {where}."
+        return message
+
+    @classmethod
+    def start_rds(cls, where: str | int) -> OWNSoundCommand:
+        """Start autonomous RDS station name reporting."""
+        message = cls(f"*16*101*{where}##")
+        message._human_readable_log = f"Starting RDS reporting on {where}."
+        return message
+
+    @classmethod
+    def stop_rds(cls, where: str | int) -> OWNSoundCommand:
+        """Stop autonomous RDS station name reporting."""
+        message = cls(f"*16*102*{where}##")
+        message._human_readable_log = f"Stopping RDS reporting on {where}."
+        return message
+
+    @classmethod
+    def request_rds(cls, where: str | int) -> OWNSoundCommand:
+        """Request RDS station text."""
+        message = cls(f"*#16*{where}*8##")
+        message._human_readable_log = f"Requesting RDS text of {where}."
         return message
 
 
