@@ -168,6 +168,8 @@ def test_who16_sound_source_commands() -> None:
     assert str(OWNSoundCommand.select_track("101", 4)) == "*#16*101*#7*4##"
     assert str(OWNSoundCommand.request_track("101")) == "*#16*101*7##"
     assert str(OWNSoundCommand.set_frequency("101", 107000)) == "*#16*101*#6*0*107000##"
+    # Below 100 MHz the value is not zero-padded (F500N capture, MyHOME#427).
+    assert str(OWNSoundCommand.set_frequency("101", 96200)) == "*#16*101*#6*0*96200##"
     assert str(OWNSoundCommand.request_frequency("101")) == "*#16*101*6##"
     assert str(OWNSoundCommand.start_rds("101")) == "*16*101*101##"
     assert str(OWNSoundCommand.stop_rds("101")) == "*16*102*101##"

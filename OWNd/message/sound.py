@@ -387,13 +387,16 @@ class OWNSoundCommand(OWNCommand):
     ) -> OWNSoundCommand:
         """Tune tuner source to frequency in kHz (leading 0 parameter).
 
+        The value is sent without zero padding: an F500N on an MH200N
+        accepted `*#16*101*#6*0*96200##` (MyHOME#427).
+
         Examples:
-            `107000` tunes to 107.00 MHz FM.
+            `107000` tunes to 107.00 MHz FM, `96200` to 96.20 MHz.
         """
         khz = int(round(float(kilohertz)))
         if khz <= 0:
             raise ValueError(f"frequency in kHz must be positive, got {kilohertz}")
-        message = cls(f"*#16*{where}*#6*0*{khz:06d}##")
+        message = cls(f"*#16*{where}*#6*0*{khz}##")
         message._human_readable_log = (
             f"Tuning {where} to {khz} kHz."
         )
