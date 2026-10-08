@@ -85,6 +85,9 @@ class OWNSoundEvent(OWNEvent):
                 self._frequency_khz = int(self._dimension_value[-1])
             except ValueError:
                 return
+            if self._frequency_khz <= 0:
+                self._frequency_khz = None
+                return
             self._human_readable_log = (
                 f"{subject} frequency is {self._frequency_khz} kHz."
             )
@@ -93,10 +96,18 @@ class OWNSoundEvent(OWNEvent):
                 self._track = int(self._dimension_value[-1])
             except ValueError:
                 return
+            if self._track < 1:
+                self._track = None
+                return
             self._human_readable_log = (
                 f"{subject} station/track is {self._track}."
             )
-        elif self._dimension == 8 and self._dimension_value and len(self._dimension_value) == 8:
+        elif self._dimension == 8 and self._dimension_value:
+            # Dimension 8 carries the RDS PS (Program Service) name as exactly 8 decimal
+            # ASCII character codes per the WHO 16 specification. Frames with other
+            # lengths are ignored as malformed bus artifacts.
+            if len(self._dimension_value) != 8:
+                return
             chars = []
             for code in self._dimension_value:
                 try:
@@ -346,8 +357,17 @@ class OWNSoundCommand(OWNCommand):
 
     @classmethod
     def select_track(cls, where: str | int, track: int) -> OWNSoundCommand:
-        """Select stored station or CD/track number."""
+        """Select stored station or CD/track number.
+
+        Note:
+            For tuner sources (radio), the stored station preset range is 1–5
+            per the OpenWebNet specification (or up to 15 on extended tuners such
+            as F500N). For CD or external media sources, track numbers can be
+            greater (>= 1).
+        """
         t = int(track)
+        if t < 1:
+            raise ValueError(f"track must be greater than or equal to 1, got {track}")
         message = cls(f"*#16*{where}*#7*{t}##")
         message._human_readable_log = (
             f"Selecting station/track {t} on {where}."
@@ -365,8 +385,14 @@ class OWNSoundCommand(OWNCommand):
     def set_frequency(
         cls, where: str | int, kilohertz: int | float
     ) -> OWNSoundCommand:
-        """Tune tuner source to frequency in kHz (leading 0 parameter)."""
+        """Tune tuner source to frequency in kHz (leading 0 parameter).
+
+        Examples:
+            `107000` tunes to 107.00 MHz FM.
+        """
         khz = int(round(float(kilohertz)))
+        if khz <= 0:
+            raise ValueError(f"frequency in kHz must be positive, got {kilohertz}")
         message = cls(f"*#16*{where}*#6*0*{khz:06d}##")
         message._human_readable_log = (
             f"Tuning {where} to {khz} kHz."

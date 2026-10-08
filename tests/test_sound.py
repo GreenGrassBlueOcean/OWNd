@@ -181,6 +181,14 @@ def test_who16_sound_source_commands() -> None:
         OWNSoundCommand.previous_track("101", 0)
     with pytest.raises(ValueError, match="step must be between 1 and 15"):
         OWNSoundCommand.previous_track("101", 16)
+    with pytest.raises(ValueError, match="track must be greater than or equal to 1"):
+        OWNSoundCommand.select_track("101", 0)
+    with pytest.raises(ValueError, match="track must be greater than or equal to 1"):
+        OWNSoundCommand.select_track("101", -1)
+    with pytest.raises(ValueError, match="frequency in kHz must be positive"):
+        OWNSoundCommand.set_frequency("101", 0)
+    with pytest.raises(ValueError, match="frequency in kHz must be positive"):
+        OWNSoundCommand.set_frequency("101", -107000)
 
 
 def test_who16_sound_source_events() -> None:
@@ -239,11 +247,29 @@ def test_who16_sound_source_events() -> None:
     bad_freq = OWNSoundEvent("*#16*101*6*##")
     assert bad_freq.frequency_khz is None
 
+    bad_freq_neg = OWNSoundEvent("*#16*101*6*0*0##")
+    assert bad_freq_neg.frequency_khz is None
+
     bad_trk = OWNSoundEvent("*#16*101*7*##")
     assert bad_trk.track is None
+
+    bad_trk_zero = OWNSoundEvent("*#16*101*7*0*0##")
+    assert bad_trk_zero.track is None
 
     bad_rds = OWNSoundEvent("*#16*101*8*82*65*68*73*79*32*32*##")
     assert bad_rds.rds_text == "RADIO"
 
     zero_rds = OWNSoundEvent("*#16*101*8*82*65*68*73*79*32*32*0##")
     assert zero_rds.rds_text == "RADIO"
+
+    # Non-8-code RDS payloads are ignored as malformed frames
+    short_rds = OWNSoundEvent("*#16*101*8*82*65*68##")
+    assert short_rds.rds_text is None
+
+    long_rds = OWNSoundEvent("*#16*101*8*82*65*68*73*79*32*32*49*50##")
+    assert long_rds.rds_text is None
+
+    # Blank RDS payload
+    blank_rds = OWNSoundEvent("*#16*101*8*32*32*32*32*32*32*32*32##")
+    assert blank_rds.rds_text is None
+    assert "RDS text: ''" in blank_rds.human_readable_log
