@@ -323,16 +323,23 @@ class OWNHeatingEvent(OWNEvent):
                     self._scenario = self._mode % 100
 
             if (
-                self._mode in (115, 215, 315)
+                (
+                    self._mode in (115, 215, 315)
+                    or 13001 <= self._mode <= 13255
+                    or 23001 <= self._mode <= 23255
+                    or 33001 <= self._mode <= 33255
+                )
                 and self._what_param
                 and self._what_param[0]
             ):
-                # Holiday daily plan: the parameter is the weekly program the
-                # central unit resumes afterwards, 1101-1103 / 2101-2103
-                # (Legrand WHO 4 p. 56 and p. 64, "115#parameterH"); libqtdevices
-                # reads it as whatArgN(0) % 100 (thermal_device.cpp:241, 286).
-                # It is not a temperature. The grammar only admits digits in
-                # a WHAT parameter (base.py _STATUS), so int() cannot fail.
+                # Holiday daily plan (115#P) and holiday days (13DDD#P, 23DDD#P,
+                # 33DDD#P, as sent by set_central_holiday): the parameter is the
+                # weekly program the central unit resumes afterwards, 1101-1103 /
+                # 2101-2103 / 31PP (Legrand WHO 4 p. 56 and p. 64,
+                # "115#parameterH"); libqtdevices reads it as whatArgN(0) % 100
+                # (thermal_device.cpp:241, 286). It is not a temperature. The
+                # grammar only admits digits in a WHAT parameter (base.py
+                # _STATUS), so int() cannot fail.
                 self._program = int(self._what_param[0]) % 100
                 self._human_readable_log += f" (program {self._program})."
             elif (

@@ -9,9 +9,11 @@ no temperature field), see docs in the pull request.
 """
 
 from OWNd.message import (
+    CLIMATE_MODE_AUTO,
     CLIMATE_MODE_COOL,
     CLIMATE_MODE_HEAT,
     OWNEvent,
+    OWNHeatingCommand,
     OWNHeatingEvent,
 )
 
@@ -52,3 +54,48 @@ def test_manual_with_temperature_parameter_still_reads_the_temperature():
     msg = OWNEvent.parse("*4*312#0220#2*#0##")
     assert msg.set_temperature == 22.0
     assert msg.message_type == "hvac_mode_target"
+
+
+def test_holiday_days_parameter_is_a_program_not_a_temperature():
+    # 13DDD#P / 23DDD#P / 33DDD#P carry the program the plant resumes after the
+    # holiday, exactly like 115#P; 13005#1102 used to read as -10.2 degrees.
+    heat = OWNEvent.parse("*4*13005#1102*#0##")
+    assert heat.mode == CLIMATE_MODE_HEAT
+    assert heat.holiday_days == 5
+    assert heat.program == 2
+    assert heat.set_temperature is None
+    assert heat.message_type == "hvac_mode"
+
+    cool = OWNEvent.parse("*4*23005#2102*#0##")
+    assert cool.mode == CLIMATE_MODE_COOL
+    assert cool.holiday_days == 5
+    assert cool.program == 2
+    assert cool.set_temperature is None
+    assert cool.message_type == "hvac_mode"
+
+    auto = OWNEvent.parse("*4*33005#3102*#0##")
+    assert auto.mode == CLIMATE_MODE_AUTO
+    assert auto.holiday_days == 5
+    assert auto.program == 2
+    assert auto.set_temperature is None
+    assert auto.message_type == "hvac_mode"
+    assert "program 2" in auto.human_readable_log
+
+
+def test_set_central_holiday_round_trips_without_a_temperature():
+    command = OWNHeatingCommand.set_central_holiday(days=5, program=2)
+    assert str(command) == "*4*33005#3102*#0##"
+
+    event = OWNHeatingEvent(str(command))
+    assert event.mode == CLIMATE_MODE_AUTO
+    assert event.holiday_days == 5
+    assert event.program == 2
+    assert event.set_temperature is None
+    assert event.message_type == "hvac_mode"
+
+
+def test_holiday_days_without_a_parameter_keep_no_program():
+    msg = OWNEvent.parse("*4*13005*#0##")
+    assert msg.holiday_days == 5
+    assert msg.program is None
+    assert msg.set_temperature is None
