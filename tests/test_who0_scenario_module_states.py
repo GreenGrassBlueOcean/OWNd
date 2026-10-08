@@ -22,8 +22,8 @@ from OWNd.message import OWNEvent, OWNScenarioEvent
         ("*0*42#1*11##", "deleted", 1),
         ("*0*43*31##", "locked", None),
         ("*0*44*11##", "unlocked", None),
-        ("*0*45*99##", "status 45", None),
-        ("*0*46#9*99##", "status 46", 9),
+        ("*0*45*99##", "unavailable", None),
+        ("*0*46#9*99##", "memory full", 9),
     ],
 )
 def test_programming_and_lock_states(frame: str, event: str, target: int | None):
@@ -42,3 +42,13 @@ def test_plain_scenario_is_still_launched():
     assert msg.event == "launched"
     assert msg.programming_scenario is None
     assert msg.human_readable_log == "Scenario 3 from control panel 11 has been launched."
+
+
+@pytest.mark.parametrize("frame", ["*#0*11##", "*#0##"])
+def test_status_request_is_not_a_launch(frame: str):
+    msg = OWNEvent.parse(frame)
+    assert isinstance(msg, OWNScenarioEvent)
+    assert msg.scenario is None
+    assert msg.event is None
+    assert msg.programming_scenario is None
+    assert "launched" not in msg.human_readable_log

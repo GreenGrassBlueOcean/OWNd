@@ -24,10 +24,14 @@ class OWNScenarioEvent(OWNEvent):
             42: "deleted",
             43: "locked",
             44: "unlocked",
-            45: "status 45",
-            46: "status 46",
+            45: "unavailable",
+            46: "memory full",
         }
-        if self._what in _programming:
+        if self._what is None:
+            # Status request (*#0*W##, *#0##): no scenario and no event, as
+            # OWNAuxEvent does for a bare *#9##.
+            self._scenario = None
+        elif self._what in _programming:
             self._event = _programming[self._what]
             self._scenario = None
             # The grammar only admits digits in a WHAT parameter, so int()
@@ -55,7 +59,7 @@ class OWNScenarioEvent(OWNEvent):
 
     @property
     def event(self) -> str | None:
-        """'launched' for WHAT 1-31, else the programming/lock state (WHAT 40-46)."""
+        """'launched' for WHAT 1-31, the programming/lock state for WHAT 40-46, None for a status request."""
         return self._event
 
     @property
