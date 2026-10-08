@@ -13,7 +13,12 @@ name here would pin an implementation detail.
 from __future__ import annotations
 
 from OWNd.connection import OWNCommandSession, OWNGateway
-from OWNd.message import OWNCommand, OWNLightingCommand, OWNMessage
+from OWNd.message import (
+    OWNCommand,
+    OWNLightingCommand,
+    OWNMessage,
+    OWNSceneCommand,
+)
 
 
 async def send_raw_frame(session: OWNCommandSession) -> None:
@@ -25,6 +30,8 @@ async def send_built_command(session: OWNCommandSession) -> None:
     """A command from a builder - the common case in an integration."""
     await session.send(OWNLightingCommand.switch_on("11"))
     await session.send(OWNLightingCommand.status("11"), is_status_request=True)
+    await session.send(OWNSceneCommand.start("1"))
+    await session.send(OWNSceneCommand.status("1"), is_status_request=True)
 
 
 async def send_parsed_command(session: OWNCommandSession, frame: str) -> None:

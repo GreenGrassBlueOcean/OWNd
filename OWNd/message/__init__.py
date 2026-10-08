@@ -106,6 +106,7 @@ from .lighting import (
 from .scenario import (
     OWNAuxEvent,
     OWNScenarioEvent,
+    OWNSceneCommand,
     OWNSceneEvent,
 )
 from .sound import (
@@ -208,6 +209,7 @@ __all__ = [
     "OWNScenarioEvent",
     "OWNAuxEvent",
     "OWNSceneEvent",
+    "OWNSceneCommand",
 ]
 
 _ensure_all_subsystems_registered()
