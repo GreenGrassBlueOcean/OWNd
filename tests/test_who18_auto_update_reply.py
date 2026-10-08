@@ -6,7 +6,12 @@ Firmware replay on bt_supervisione (MyHomeServer1, F454, F459, F461):
 *#18*51*#1200#1*255## ACK bus D1 A1 02 32 00 02 1D FF, #1200#1*0 ... 1D 00,
 #1200#2*255 ... 82 FF; the bare *#18*51*1200## is NACK with no bus frame."""
 
-from OWNd.message import MESSAGE_TYPE_AUTO_UPDATE_INTERVAL, OWNEnergyEvent, OWNEvent
+from OWNd.message import (
+    MESSAGE_TYPE_AUTO_UPDATE_INTERVAL,
+    OWNEnergyCommand,
+    OWNEnergyEvent,
+    OWNEvent,
+)
 
 
 def test_auto_update_confirmation_is_parsed():
@@ -15,7 +20,7 @@ def test_auto_update_confirmation_is_parsed():
     assert msg.message_type == MESSAGE_TYPE_AUTO_UPDATE_INTERVAL
     assert msg.update_interval == 255
     assert msg.energy_type == 1
-    assert "255 s" in msg.human_readable_log
+    assert "255 minutes" in msg.human_readable_log
 
 
 def test_auto_update_stop_is_parsed():
@@ -29,3 +34,23 @@ def test_other_dimensions_are_untouched():
     assert msg.update_interval is None
     assert msg.energy_type is None
     assert msg.message_type != MESSAGE_TYPE_AUTO_UPDATE_INTERVAL
+
+
+def test_message_type_is_exported():
+    import OWNd.message as message
+
+    assert "MESSAGE_TYPE_AUTO_UPDATE_INTERVAL" in message.__all__
+
+
+def test_stop_builder_is_symmetrical_to_start():
+    start = OWNEnergyCommand.start_sending_instant_power(51, 255)
+    stop = OWNEnergyCommand.stop_sending_instant_power(51)
+    assert str(start) == "*#18*51*#1200#1*255##"
+    assert str(stop) == "*#18*51*#1200#1*0##"
+    assert "Stopping" in stop.human_readable_log
+
+
+def test_builders_take_the_energy_type_and_the_7xx_address():
+    assert str(OWNEnergyCommand.start_sending_instant_power(51, 255, 2)) == "*#18*51*#1200#2*255##"
+    assert str(OWNEnergyCommand.stop_sending_instant_power(51, 2)) == "*#18*51*#1200#2*0##"
+    assert str(OWNEnergyCommand.stop_sending_instant_power("71")) == "*#18*71#0*#1200#1*0##"

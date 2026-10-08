@@ -170,7 +170,7 @@ class OWNEnergyEvent(OWNEvent):
                 self._type = MESSAGE_TYPE_AUTO_UPDATE_INTERVAL
                 self._update_interval = _integer_value(self._dimension_value, 0)
                 self._energy_type = _integer_value(self._dimension_param, 0, 0) if self._dimension_param else None
-                self._human_readable_log = f"Sensor {self._sensor} automatic updates every {self._update_interval} s (0 = stopped)."  # pylint: disable=line-too-long
+                self._human_readable_log = f"Sensor {self._sensor} automatic updates every {self._update_interval} minutes (0 = stopped)."  # pylint: disable=line-too-long
             elif self._dimension == 53:
                 self._type = MESSAGE_TYPE_CURRENT_MONTH_CONSUMPTION
                 self._current_month_partial_consumption = _integer_value(
@@ -188,7 +188,7 @@ class OWNEnergyEvent(OWNEvent):
 
     @property
     def update_interval(self) -> int | None:
-        """Seconds between automatic power updates from a 1200 reply, 0 when stopped."""
+        """Time field of a 1200 reply (minutes per Legrand WHO 18), 0 when stopped."""
         return self._update_interval
 
     @property
@@ -233,12 +233,32 @@ class OWNEnergyEvent(OWNEvent):
 class OWNEnergyCommand(OWNCommand):
     @classmethod
     def start_sending_instant_power(
-        cls, where: str | int, duration: int = 65
+        cls, where: str | int, duration: int = 65, energy_type: int = 1
     ) -> OWNEnergyCommand:
+        """Start automatic updates: *#18*W*#1200#type*time##.
+
+        ``duration`` is the Time field (1..255, minutes per Legrand WHO 18;
+        the meter answers *#18*W*1200#type*time##). ``energy_type`` 1 is
+        electricity, 2 gas, 3 heat, 4 water (libqtdevices energy_device.cpp:50-56).
+        """
         where = f"{where}#0" if str(where).startswith("7") else str(where)
         duration = 255 if duration > 255 else duration
-        message = cls(f"*#18*{where}*#1200#1*{duration}##")
+        message = cls(f"*#18*{where}*#1200#{energy_type}*{duration}##")
         message._human_readable_log = f"Requesting instant power draw update from sensor {where} for {duration} minutes."  # pylint: disable=line-too-long
+        return message
+
+    @classmethod
+    def stop_sending_instant_power(
+        cls, where: str | int, energy_type: int = 1
+    ) -> OWNEnergyCommand:
+        """Stop automatic updates: *#18*W*#1200#type*0## (Time = 0).
+
+        Firmware replay on bt_supervisione: *#18*51*#1200#1*0## ACK, bus
+        D1 A1 02 32 00 02 1D 00; the meter then reports *#18*W*1200#type*0##.
+        """
+        where = f"{where}#0" if str(where).startswith("7") else str(where)
+        message = cls(f"*#18*{where}*#1200#{energy_type}*0##")
+        message._human_readable_log = f"Stopping instant power draw updates from sensor {where}."  # pylint: disable=line-too-long
         return message
 
     @classmethod
