@@ -208,43 +208,29 @@ class OWNSceneCommand(OWNCommand):
     @classmethod
     def start(cls, where: str | int) -> OWNSceneCommand:
         """Start/execute scene."""
-        message = cls(f"*17*1*{where}##")
-        message._human_readable_log = f"Starting scene {message._where}."
-        return message
+        return cls(f"*17*1*{where}##")
 
     @classmethod
     def stop(cls, where: str | int) -> OWNSceneCommand:
         """Stop/abort running scene."""
-        message = cls(f"*17*2*{where}##")
-        message._human_readable_log = f"Stopping scene {message._where}."
-        return message
+        return cls(f"*17*2*{where}##")
 
     @classmethod
     def enable(cls, where: str | int) -> OWNSceneCommand:
         """Enable scene for execution."""
-        message = cls(f"*17*3*{where}##")
-        message._human_readable_log = f"Enabling scene {message._where}."
-        return message
+        return cls(f"*17*3*{where}##")
 
     @classmethod
     def disable(cls, where: str | int) -> OWNSceneCommand:
         """Disable scene execution."""
-        message = cls(f"*17*4*{where}##")
-        message._human_readable_log = f"Disabling scene {message._where}."
-        return message
+        return cls(f"*17*4*{where}##")
 
     @classmethod
     def status(cls, where: str | int | None = "0") -> OWNSceneCommand:
         """Query scene status (default '0' for general status)."""
         if where is not None and str(where) != "":
-            message = cls(f"*#17*{where}##")
-            message._human_readable_log = (
-                f"Requesting status of scene {message._where}."
-            )
-        else:
-            message = cls("*#17##")
-            message._human_readable_log = "Requesting global scene status."
-        return message
+            return cls(f"*#17*{where}##")
+        return cls("*#17##")
 
 
 register_event_parser(0, OWNScenarioEvent)
