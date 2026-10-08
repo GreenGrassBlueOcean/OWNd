@@ -430,18 +430,24 @@ class OWNSignaling(OWNMessage):
         self._match: re.Match[str] | None = None
         self._type = "UNKNOWN"
         self._human_readable_log = data
+        self._who: int | None = None
+        self._where: str | None = None
+        self._is_valid_message = False
 
         if match := self._ACK.match(self._raw):
+            self._is_valid_message = True
             self._match = match
             self._family = "SIGNALING"
             self._type = "ACK"
             self._human_readable_log = "ACK."
         elif match := self._NACK.match(self._raw):
+            self._is_valid_message = True
             self._match = match
             self._family = "SIGNALING"
             self._type = "NACK"
             self._human_readable_log = "NACK."
         elif match := self._NONCE.match(self._raw):
+            self._is_valid_message = True
             self._match = match
             self._family = "SIGNALING"
             self._type = "NONCE"
@@ -449,16 +455,19 @@ class OWNSignaling(OWNMessage):
                 f"Nonce challenge received: {self._match.group(1)}."
             )
         elif match := self._SHA.match(self._raw):
+            self._is_valid_message = True
             self._match = match
             self._family = "SIGNALING"
             self._type = f"SHA{'-1' if self._match.group(1) == '1' else '-256'}"
             self._human_readable_log = f"SHA{'-1' if self._match.group(1) == '1' else '-256'} challenge received."  # pylint: disable=line-too-long
         elif match := self._COMMAND_SESSION.match(self._raw):
+            self._is_valid_message = True
             self._match = match
             self._family = "SIGNALING"
             self._type = "COMMAND_SESSION"
             self._human_readable_log = "Command session requested."
         elif match := self._EVENT_SESSION.match(self._raw):
+            self._is_valid_message = True
             self._match = match
             self._family = "SIGNALING"
             self._type = "EVENT_SESSION"
