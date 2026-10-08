@@ -1,10 +1,13 @@
-"""WHO 0, 9, 17: Scenario, Auxiliary, and MH200/MH202 Scene events."""
+"""WHO 0, 9, 17: Scenario, Auxiliary, and MH200/MH202 Scene events and commands."""
 
 from __future__ import annotations
 
-import re
-
-from .base import OWNEvent, register_event_parser
+from .base import (
+    OWNCommand,
+    OWNEvent,
+    register_command_parser,
+    register_event_parser,
+)
 
 
 class OWNScenarioEvent(OWNEvent):
@@ -105,21 +108,35 @@ class OWNSceneEvent(OWNEvent):
         self._scene = self._where
         self._state = self._what
 
-        if self._state == 1:
-            _status = "started"
+        if self._dimension == 40:
+            self._human_readable_log = (
+                f"Scene {self._scene} state report (dimension 40)."
+            )
+        elif self._dimension == 41:
+            self._human_readable_log = (
+                f"Scene {self._scene} error report (dimension 41)."
+            )
+        elif self._dimension is not None:
+            self._human_readable_log = (
+                f"Scene {self._scene} dimension {self._dimension} report."
+            )
+        elif self._state == 1:
+            self._human_readable_log = f"Scene {self._scene} is started."
         elif self._state == 2:
-            _status = "stopped"
+            self._human_readable_log = f"Scene {self._scene} is stopped."
         elif self._state == 3:
-            _status = "enabled"
+            self._human_readable_log = f"Scene {self._scene} is enabled."
         elif self._state == 4:
-            _status = "disabled"
-        else:
-            _status = f"unknown ({self._state})"
-
-        self._human_readable_log = f"Scene {self._scene} is {_status}."
+            self._human_readable_log = f"Scene {self._scene} is disabled."
+        elif self._state is not None:
+            self._human_readable_log = f"Scene {self._scene} is unknown ({self._state})."
 
     @property
     def scenario(self) -> str | None:
+        return self._scene
+
+    @property
+    def scene(self) -> str | None:
         return self._scene
 
     @property
@@ -143,6 +160,94 @@ class OWNSceneEvent(OWNEvent):
         return None
 
 
+class OWNSceneCommand(OWNCommand):
+    """WHO 17: MH200/MH200N/MH202 Scene Management commands.
+
+    Published functional model:
+    *17*1*WHERE## - Start scene
+    *17*2*WHERE## - Stop scene
+    *17*3*WHERE## - Enable scene
+    *17*4*WHERE## - Disable scene
+    *#17*WHERE##  - Query scene status
+    """
+
+    def __init__(self, data: str) -> None:
+        super().__init__(data)
+
+        self._scene = self._where
+        self._action = self._what
+
+        if self._action == 1:
+            self._human_readable_log = f"Starting scene {self._scene}."
+        elif self._action == 2:
+            self._human_readable_log = f"Stopping scene {self._scene}."
+        elif self._action == 3:
+            self._human_readable_log = f"Enabling scene {self._scene}."
+        elif self._action == 4:
+            self._human_readable_log = f"Disabling scene {self._scene}."
+        elif self._action is None and self._where:
+            self._human_readable_log = f"Requesting status of scene {self._scene}."
+        elif self._action is None and not self._where:
+            self._human_readable_log = "Requesting global scene status."
+
+    @property
+    def scenario(self) -> str | None:
+        """Scene identifier (WHERE)."""
+        return self._scene
+
+    @property
+    def scene(self) -> str | None:
+        """Scene identifier (alias for scenario)."""
+        return self._scene
+
+    @property
+    def action(self) -> int | None:
+        """Command action code (WHAT: 1=start, 2=stop, 3=enable, 4=disable)."""
+        return self._action
+
+    @classmethod
+    def start(cls, where: str | int) -> OWNSceneCommand:
+        """Start/execute scene."""
+        message = cls(f"*17*1*{where}##")
+        message._human_readable_log = f"Starting scene {message._where}."
+        return message
+
+    @classmethod
+    def stop(cls, where: str | int) -> OWNSceneCommand:
+        """Stop/abort running scene."""
+        message = cls(f"*17*2*{where}##")
+        message._human_readable_log = f"Stopping scene {message._where}."
+        return message
+
+    @classmethod
+    def enable(cls, where: str | int) -> OWNSceneCommand:
+        """Enable scene for execution."""
+        message = cls(f"*17*3*{where}##")
+        message._human_readable_log = f"Enabling scene {message._where}."
+        return message
+
+    @classmethod
+    def disable(cls, where: str | int) -> OWNSceneCommand:
+        """Disable scene execution."""
+        message = cls(f"*17*4*{where}##")
+        message._human_readable_log = f"Disabling scene {message._where}."
+        return message
+
+    @classmethod
+    def status(cls, where: str | int | None = "0") -> OWNSceneCommand:
+        """Query scene status (default '0' for general status)."""
+        if where is not None and str(where) != "":
+            message = cls(f"*#17*{where}##")
+            message._human_readable_log = (
+                f"Requesting status of scene {message._where}."
+            )
+        else:
+            message = cls("*#17##")
+            message._human_readable_log = "Requesting global scene status."
+        return message
+
+
 register_event_parser(0, OWNScenarioEvent)
 register_event_parser(9, OWNAuxEvent)
 register_event_parser(17, OWNSceneEvent)
+register_command_parser(17, OWNSceneCommand)

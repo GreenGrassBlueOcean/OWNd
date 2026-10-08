@@ -15,6 +15,7 @@ from OWNd.message import (
     OWNCENEvent,
     OWNCENPlusEvent,
     OWNScenarioEvent,
+    OWNSceneCommand,
     OWNSceneEvent,
     OWNEnergyEvent,
     OWNGatewayEvent,
@@ -549,7 +550,7 @@ class TestCENPlusEdgeCases:
         assert msg.is_quickly_turned_ccw is True
 
 
-# ── Scene Event Edge Cases ────────────────────────────────────────────────
+# ── Scene Event Edge Cases & Commands ─────────────────────────────────────
 
 class TestSceneEdgeCases:
     def test_unknown_state(self):
@@ -557,6 +558,157 @@ class TestSceneEdgeCases:
         assert isinstance(msg, OWNSceneEvent)
         assert msg.is_on is None
         assert msg.is_enabled is None
+        assert msg.human_readable_log == "Scene 1 is unknown (99)."
+
+    def test_scene_command_builders_and_properties(self):
+        # Start
+        cmd_start = OWNSceneCommand.start("1")
+        assert str(cmd_start) == "*17*1*1##"
+        assert cmd_start.action == 1
+        assert cmd_start.scenario == "1"
+        assert cmd_start.scene == "1"
+        assert cmd_start.human_readable_log == "Starting scene 1."
+
+        # Stop
+        cmd_stop = OWNSceneCommand.stop(2)
+        assert str(cmd_stop) == "*17*2*2##"
+        assert cmd_stop.action == 2
+        assert cmd_stop.scenario == "2"
+        assert cmd_stop.scene == "2"
+        assert cmd_stop.human_readable_log == "Stopping scene 2."
+
+        # Enable
+        cmd_en = OWNSceneCommand.enable("3")
+        assert str(cmd_en) == "*17*3*3##"
+        assert cmd_en.action == 3
+        assert cmd_en.scenario == "3"
+        assert cmd_en.scene == "3"
+        assert cmd_en.human_readable_log == "Enabling scene 3."
+
+        # Disable
+        cmd_dis = OWNSceneCommand.disable(4)
+        assert str(cmd_dis) == "*17*4*4##"
+        assert cmd_dis.action == 4
+        assert cmd_dis.scenario == "4"
+        assert cmd_dis.scene == "4"
+        assert cmd_dis.human_readable_log == "Disabling scene 4."
+
+        # Status specific
+        cmd_st = OWNSceneCommand.status("10")
+        assert str(cmd_st) == "*#17*10##"
+        assert cmd_st.action is None
+        assert cmd_st.scenario == "10"
+        assert cmd_st.scene == "10"
+        assert cmd_st.human_readable_log == "Requesting status of scene 10."
+
+        # Status 0 (general)
+        cmd_st0 = OWNSceneCommand.status(0)
+        assert str(cmd_st0) == "*#17*0##"
+        assert cmd_st0.human_readable_log == "Requesting status of scene 0."
+
+        # Status global (None or empty)
+        cmd_st_global = OWNSceneCommand.status(None)
+        assert str(cmd_st_global) == "*#17##"
+        assert cmd_st_global.scenario is None
+        assert cmd_st_global.human_readable_log == "Requesting global scene status."
+
+        cmd_st_empty = OWNSceneCommand.status("")
+        assert str(cmd_st_empty) == "*#17##"
+        assert cmd_st_empty.human_readable_log == "Requesting global scene status."
+
+    def test_scene_command_parse(self):
+        c1 = OWNCommand.parse("*17*1*10##")
+        assert isinstance(c1, OWNSceneCommand)
+        assert c1.action == 1
+        assert c1.scenario == "10"
+        assert c1.human_readable_log == "Starting scene 10."
+
+        c2 = OWNCommand.parse("*17*2*10##")
+        assert isinstance(c2, OWNSceneCommand)
+        assert c2.action == 2
+        assert c2.human_readable_log == "Stopping scene 10."
+
+        c3 = OWNCommand.parse("*17*3*10##")
+        assert isinstance(c3, OWNSceneCommand)
+        assert c3.action == 3
+        assert c3.human_readable_log == "Enabling scene 10."
+
+        c4 = OWNCommand.parse("*17*4*10##")
+        assert isinstance(c4, OWNSceneCommand)
+        assert c4.action == 4
+        assert c4.human_readable_log == "Disabling scene 10."
+
+        cs = OWNCommand.parse("*#17*10##")
+        assert isinstance(cs, OWNSceneCommand)
+        assert cs.action is None
+        assert cs.scenario == "10"
+        assert cs.human_readable_log == "Requesting status of scene 10."
+
+        cg = OWNCommand.parse("*#17##")
+        assert isinstance(cg, OWNSceneCommand)
+        assert cg.action is None
+        assert cg.scenario is None
+        assert cg.human_readable_log == "Requesting global scene status."
+
+        c_unknown = OWNSceneCommand("*17*99*10##")
+        assert c_unknown.action == 99
+        assert c_unknown.human_readable_log == "*17*99*10##"
+
+    def test_scene_roundtrip_and_events(self):
+        # Roundtrip start
+        cmd_start = OWNSceneCommand.start("1")
+        evt_start = OWNEvent.parse(str(cmd_start))
+        assert isinstance(evt_start, OWNSceneEvent)
+        assert evt_start.is_on is True
+        assert evt_start.scenario == "1"
+        assert evt_start.scene == "1"
+        assert evt_start.human_readable_log == "Scene 1 is started."
+
+        # Roundtrip stop
+        cmd_stop = OWNSceneCommand.stop("1")
+        evt_stop = OWNEvent.parse(str(cmd_stop))
+        assert isinstance(evt_stop, OWNSceneEvent)
+        assert evt_stop.is_on is False
+        assert evt_stop.human_readable_log == "Scene 1 is stopped."
+
+        # Roundtrip enable
+        cmd_en = OWNSceneCommand.enable("1")
+        evt_en = OWNEvent.parse(str(cmd_en))
+        assert isinstance(evt_en, OWNSceneEvent)
+        assert evt_en.is_enabled is True
+        assert evt_en.human_readable_log == "Scene 1 is enabled."
+
+        # Roundtrip disable
+        cmd_dis = OWNSceneCommand.disable("1")
+        evt_dis = OWNEvent.parse(str(cmd_dis))
+        assert isinstance(evt_dis, OWNSceneEvent)
+        assert evt_dis.is_enabled is False
+        assert evt_dis.human_readable_log == "Scene 1 is disabled."
+
+    def test_scene_dimension_events(self):
+        dim40 = OWNEvent.parse("*#17*1*40*1##")
+        assert isinstance(dim40, OWNSceneEvent)
+        assert dim40.dimension == 40
+        assert dim40.scenario == "1"
+        assert dim40.scene == "1"
+        assert dim40.is_on is None
+        assert dim40.is_enabled is None
+        assert dim40.human_readable_log == "Scene 1 state report (dimension 40)."
+
+        dim41 = OWNEvent.parse("*#17*1*41*0##")
+        assert isinstance(dim41, OWNSceneEvent)
+        assert dim41.dimension == 41
+        assert dim41.human_readable_log == "Scene 1 error report (dimension 41)."
+
+        dim99 = OWNEvent.parse("*#17*1*99*0##")
+        assert isinstance(dim99, OWNSceneEvent)
+        assert dim99.dimension == 99
+        assert dim99.human_readable_log == "Scene 1 dimension 99 report."
+
+        # Bare status request frame parsed as event preserves raw log
+        bare_status = OWNEvent.parse("*#17*1##")
+        assert isinstance(bare_status, OWNSceneEvent)
+        assert bare_status.human_readable_log == "*#17*1##"
 
 
 # ── Gateway Device Types ──────────────────────────────────────────────────
