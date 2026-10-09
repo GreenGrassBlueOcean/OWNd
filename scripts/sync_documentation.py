@@ -249,20 +249,59 @@ def build_who_catalog_table() -> str:
     return "\n".join(lines)
 
 
+def verify_who_catalog_coverage() -> list[str]:
+    """Verify that all WHO subsystems registered in _COMMAND_DISPATCH are accounted for."""
+    from OWNd.message.base import (
+        _COMMAND_DISPATCH,
+        _ensure_all_subsystems_registered,
+    )
+
+    _ensure_all_subsystems_registered()
+    covered_who: set[int] = set()
+    for defn in WHO_DEFINITIONS:
+        covered_who.update(defn.dispatch_who_keys)
+
+    # WHO 25 is handled with explicit classes because its dispatcher is a private helper function
+    missing_who = [
+        who for who in sorted(_COMMAND_DISPATCH.keys())
+        if who not in covered_who and who != 25
+    ]
+    if missing_who:
+        return [
+            f"WHO {who} registered in _COMMAND_DISPATCH but not mapped in WHO_DEFINITIONS."
+            for who in missing_who
+        ]
+    return []
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. Coverage Table Builder & SVG Generator
 # ─────────────────────────────────────────────────────────────────────────────
 
-def normalize_coverage_filename(fn: str, repo_root: Path = REPO_ROOT) -> str:
-    """Normalize filenames from coverage.xml to OWNd/... paths."""
-    fn = fn.replace("\\", "/")
+def _safe_float(val: Any, default: float = 0.0) -> float:
+    """Safely convert value to float, returning default on ValueError/TypeError."""
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+
+def normalize_coverage_filename(fn: str, repo_root: Path = REPO_ROOT) -> str | None:
+    """Normalize filenames from coverage.xml to OWNd/... paths, or None if outside OWNd."""
+    if not fn or not fn.strip():
+        return None
+    fn = fn.strip().replace("\\", "/")
     if os.path.isabs(fn):
         try:
             fn = str(Path(fn).relative_to(repo_root)).replace("\\", "/")
         except ValueError:
             pass
+    if fn.startswith(("tests/", "scripts/", "setup.py", ".venv/")):
+        return None
     if not fn.startswith("OWNd/"):
         fn = f"OWNd/{fn}"
+    if not fn.endswith(".py"):
+        return None
     return fn
 
 
@@ -271,7 +310,11 @@ def build_coverage_table(coverage_xml_path: Path, repo_root: Path = REPO_ROOT) -
     if not coverage_xml_path.is_file():
         raise FileNotFoundError(f"{coverage_xml_path} does not exist.")
 
-    tree = ET.parse(coverage_xml_path)
+    try:
+        tree = ET.parse(coverage_xml_path)
+    except ET.ParseError as exc:
+        raise ValueError(f"Failed to parse coverage XML from {coverage_xml_path}: {exc}") from exc
+
     root = tree.getroot()
 
     file_rates: dict[str, float] = {}
@@ -279,12 +322,12 @@ def build_coverage_table(coverage_xml_path: Path, repo_root: Path = REPO_ROOT) -
         for c in p.findall(".//class"):
             raw_fn = c.attrib.get("filename", "")
             fn = normalize_coverage_filename(raw_fn, repo_root)
-            if fn in ("OWNd/__main__.py",):
+            if fn is None or fn in ("OWNd/__main__.py",):
                 continue
-            cr = float(c.attrib.get("line-rate", 0)) * 100
+            cr = _safe_float(c.attrib.get("line-rate", 0)) * 100
             file_rates[fn] = cr
 
-    total_rate = float(root.attrib.get("line-rate", 0)) * 100
+    total_rate = _safe_float(root.attrib.get("line-rate", 0)) * 100
     rate_round = round(total_rate)
     color = "#4c1" if rate_round >= 80 else ("#dfb317" if rate_round >= 60 else "#e05d44")
 
@@ -356,7 +399,7 @@ def _replace_marker_block(
     if match.group(0) == replacement:
         return content, False
 
-    updated_content = pattern.sub(replacement, content)
+    updated_content = pattern.sub(replacement, content, count=1)
     return updated_content, True
 
 
@@ -374,7 +417,9 @@ def sync_documentation(
     if not readme_path.is_file():
         raise FileNotFoundError(f"{readme_path} not found.")
 
-    original_content = readme_path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    raw_bytes = readme_path.read_bytes()
+    has_crlf = b"\r" in raw_bytes
+    original_content = raw_bytes.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
     working_content = original_content
 
     # 1. Gateway Profiles Table
@@ -406,6 +451,7 @@ def sync_documentation(
         messages.append("WHO Subsystem Catalog table is in sync.")
 
     # 3. Coverage Table & SVG (when coverage.xml is present)
+    svg_drifted = False
     if coverage_xml_path and coverage_xml_path.is_file():
         cov_table, rate_round, color = build_coverage_table(
             coverage_xml_path, repo_root=readme_path.parent
@@ -422,20 +468,39 @@ def sync_documentation(
         else:
             messages.append(f"Coverage table is in sync ({rate_round}%).")
 
-        if not check_only and coverage_svg_path:
-            svg_content = generate_coverage_svg(rate_round, color)
-            coverage_svg_path.write_text(svg_content, encoding="utf-8", newline="\n")
-            messages.append(f"Updated {coverage_svg_path.name} to {rate_round}%.")
+        if coverage_svg_path:
+            expected_svg = generate_coverage_svg(rate_round, color)
+            if coverage_svg_path.is_file():
+                current_svg = coverage_svg_path.read_text(encoding="utf-8")
+                if current_svg.strip() != expected_svg.strip():
+                    svg_drifted = True
+            else:
+                svg_drifted = True
+
+            if svg_drifted:
+                messages.append(f"{coverage_svg_path.name} drifted from {coverage_xml_path.name} ({rate_round}%).")
+                if not check_only:
+                    coverage_svg_path.write_text(expected_svg, encoding="utf-8", newline="\n")
+                    messages.append(f"Updated {coverage_svg_path.name} to {rate_round}%.")
+            else:
+                messages.append(f"{coverage_svg_path.name} is in sync ({rate_round}%).")
     else:
         # Check marker presence without altering existing coverage block
         if COVERAGE_START_MARKER not in working_content or COVERAGE_END_MARKER not in working_content:
             raise ValueError(f"Coverage markers '{COVERAGE_START_MARKER}' not found in {readme_path.name}.")
         messages.append("Coverage table check skipped (coverage.xml not present).")
 
-    is_in_sync = working_content == original_content
+    if has_crlf:
+        if check_only:
+            messages.append(f"{readme_path.name} contains CRLF line endings (repository requires LF only).")
+        else:
+            messages.append(f"Normalized line endings to LF in {readme_path.name}.")
+
+    content_changed = working_content != original_content
+    is_in_sync = (not content_changed) and (not has_crlf) and (not svg_drifted)
 
     diff_str = ""
-    if not is_in_sync:
+    if content_changed:
         diff_lines = list(
             difflib.unified_diff(
                 original_content.splitlines(keepends=True),
@@ -446,7 +511,7 @@ def sync_documentation(
         )
         diff_str = "".join(diff_lines)
 
-    if not check_only and not is_in_sync:
+    if not check_only and (content_changed or has_crlf):
         readme_path.write_text(working_content, encoding="utf-8", newline="\n")
         messages.append(f"Updated {readme_path.name} in place.")
 
@@ -461,10 +526,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Unified sentinel & synchronizer for OWNd documentation."
     )
-    parser.add_argument(
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
         "--check",
         action="store_true",
         help="Check documentation synchronization without modifying files (exits 1 with diff on drift).",
+    )
+    mode_group.add_argument(
+        "--update",
+        action="store_true",
+        help="Synchronize documentation tables in place (default behavior when --check is omitted).",
     )
     parser.add_argument(
         "--readme",
@@ -487,10 +558,24 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
+    # Determine coverage_xml_path:
+    # If default COVERAGE_XML is used, skip gracefully when absent.
+    # If the user explicitly provided a path, it must exist.
+    coverage_xml_path: Path | None = None
+    if args.coverage_xml:
+        if args.coverage_xml == COVERAGE_XML:
+            if COVERAGE_XML.is_file():
+                coverage_xml_path = COVERAGE_XML
+        else:
+            if not args.coverage_xml.is_file():
+                print(f"Error: Coverage XML file not found: {args.coverage_xml}", file=sys.stderr)
+                return 1
+            coverage_xml_path = args.coverage_xml
+
     try:
         in_sync, diff, messages = sync_documentation(
             readme_path=args.readme,
-            coverage_xml_path=args.coverage_xml if args.coverage_xml.is_file() else None,
+            coverage_xml_path=coverage_xml_path,
             coverage_svg_path=args.coverage_svg,
             check_only=args.check,
         )
