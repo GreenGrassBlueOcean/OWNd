@@ -70,9 +70,6 @@ class OWNDoorEntryEvent(OWNEvent):
         self._is_camera_on = self._what == 0
         self._is_camera_off = self._what == 9
 
-        if self._is_camera_off:
-            self._where = ""
-
         if self._is_broadcast_call:
             self._human_readable_log = "Incoming door entry broadcast call."
         elif self._is_incoming_call:

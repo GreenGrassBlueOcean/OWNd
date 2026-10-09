@@ -68,10 +68,11 @@ class OWNMessage:
         r"^\*5\*(?P<what>\d+)(?P<what_param>(?:#\d+)*)\*##$"
     )  #  *5*WHAT*##
     # WHO 6: camera OFF published form has no WHERE field (*6*9##), but field
-    # units and gateways may also emit trailing star delimiters (*6*9**##, *6*9*##).
+    # units may also emit a single trailing star delimiter (*6*9*##).
+    # The double-star form (*6*9**##) has WHERE="*" and is matched by _STATUS.
     _DOOR_ENTRY_SHORT = re.compile(
-        r"^\*6\*(?P<what>\d+)(?:\*|\*\*)?##$"
-    )  # *6*WHAT##, *6*WHAT*##, *6*WHAT**##
+        r"^\*6\*(?P<what>\d+)\*?##$"
+    )  # *6*WHAT##, *6*WHAT*##
     _STATUS_REQUEST = re.compile(
         r"^\*#(?P<who>\d+)(?:\*(?P<where>#?\d+)(?P<where_param>(?:#\d+)*))?##$"
     )  #  *#WHO*WHERE## or *#WHO##
@@ -119,8 +120,6 @@ class OWNMessage:
             self._where = match.group("where")
             if self._who == 5 and self._where == "*":
                 self._where = "0"  # the documented star form is the system address
-            elif self._who == 6 and self._what == 9 and self._where == "*":
-                self._where = ""
             self._where_param = match.group("where_param").split("#")[1:]
 
         elif match := self._ALARM_EMPTY_WHERE.match(self._raw):
