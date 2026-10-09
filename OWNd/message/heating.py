@@ -209,39 +209,41 @@ class OWNHeatingEvent(OWNEvent):
 
         if self._what is not None:
             self._mode = int(self._what)
-            # Season of every mode WHAT (Legrand WHO 4 v2.0.0 p. 5: 1xx / 11xx /
-            # 12xx / 13xxx heating, 2xx / 21xx / 22xx / 23xxx conditioning,
-            # 3xx / 31xx / 32xx / 33xxx generic): the thousands or hundreds
-            # digit names the season, independently of the operating mode.
-            _season_digit = str(self._mode)[0] if self._mode >= 100 else None
-            if self._mode == 1 or _season_digit == "1":
-                self._season = SEASON_HEATING
-            elif self._mode == 0 or _season_digit == "2":
-                self._season = SEASON_CONDITIONING
 
-            if self._mode in (0, 1) and not self._what_param:
-                # Zone operation mode frame: the zone (or the central unit)
-                # is operating in the heating (1) or conditioning (0) season.
-                # It is not an operating mode change: Legrand WHO 4 p. 13, 16,
-                # 19 and 63 list it next to the setpoint frames as "zone
-                # operation mode acquire frame"; the MyHomeServer1 translator
-                # emits it with the dimension 12 setpoint report; BTicino's
-                # client keeps a zone in automatic on it (libqtdevices
-                # TS10_1_0_23 probe_device.cpp:240-253). Manual / automatic /
-                # off arrive as 110 / 111 / 103 etc.
-                self._type = MESSAGE_TYPE_SEASON
-                self._mode_name = None
-                self._human_readable_log = (
-                    f"Zone {self._zone}'s season is {self._season}."
-                )
+            if self._mode in (0, 1):
+                if not self._what_param:
+                    # Zone operation mode frame: the zone (or the central unit)
+                    # is operating in the heating (1) or conditioning (0) season.
+                    # It is not an operating mode change: Legrand WHO 4 p. 13, 16,
+                    # 19 and 63 list it next to the setpoint frames as "zone
+                    # operation mode acquire frame"; the MyHomeServer1 translator
+                    # emits it with the dimension 12 setpoint report; BTicino's
+                    # client keeps a zone in automatic on it (libqtdevices
+                    # TS10_1_0_23 probe_device.cpp:240-253). Manual / automatic /
+                    # off arrive as 110 / 111 / 103 etc.
+                    self._type = MESSAGE_TYPE_SEASON
+                    self._mode_name = None
+                    self._season = (
+                        SEASON_HEATING if self._mode == 1 else SEASON_CONDITIONING
+                    )
+                    self._human_readable_log = (
+                        f"Zone {self._zone}'s season is {self._season}."
+                    )
+                else:
+                    self._mode_name = None
+                    self._human_readable_log = f"Zone {self._zone}'s mode is unknown"
             elif self._mode in [103, 203, 303, 102, 202, 302]:
                 self._type = MESSAGE_TYPE_MODE
                 self._mode_name = CLIMATE_MODE_OFF
+                if self._mode in (102, 103):
+                    self._season = SEASON_HEATING
+                elif self._mode in (202, 203):
+                    self._season = SEASON_CONDITIONING
                 self._human_readable_log = (
                     f"Zone {self._zone}'s mode is set to '{self._mode_name}'"
                 )
             elif (
-                self._mode in [0, 210, 211, 212, 215]
+                self._mode in [210, 211, 212, 215]
                 or (self._mode >= 2101 and self._mode <= 2103)
                 or (self._mode >= 2201 and self._mode <= 2216)
                 or (self._mode >= 23001 and self._mode <= 23255)
@@ -250,13 +252,14 @@ class OWNHeatingEvent(OWNEvent):
                 # p. 5 / p. 64; libqtdevices thermal_device.cpp:58, 258-262).
                 self._type = MESSAGE_TYPE_MODE
                 self._mode_name = CLIMATE_MODE_COOL
+                self._season = SEASON_CONDITIONING
                 if self._mode >= 23001:
                     self._holiday_days = self._mode % 1000
                 self._human_readable_log = (
                     f"Zone {self._zone}'s mode is set to '{self._mode_name}'"
                 )
             elif (
-                self._mode in [1, 110, 111, 112, 115]
+                self._mode in [110, 111, 112, 115]
                 or (self._mode >= 1101 and self._mode <= 1103)
                 or (self._mode >= 1201 and self._mode <= 1216)
                 or (self._mode >= 13001 and self._mode <= 13255)
@@ -265,6 +268,7 @@ class OWNHeatingEvent(OWNEvent):
                 # p. 64; libqtdevices thermal_device.cpp:68, 303-307).
                 self._type = MESSAGE_TYPE_MODE
                 self._mode_name = CLIMATE_MODE_HEAT
+                self._season = SEASON_HEATING
                 if self._mode >= 13001:
                     self._holiday_days = self._mode % 1000
                 self._human_readable_log = (
@@ -296,12 +300,12 @@ class OWNHeatingEvent(OWNEvent):
             elif self._mode in (22, 23, 24, 30, 31):
                 # Central unit system status (Legrand WHO 4 p. 5, p. 64):
                 # 22 at least one probe OFF, 23 at least one probe in
-                # protection, 24 at least one probe in manual, 30 failure
+                # antifreeze, 24 at least one probe in manual, 30 failure
                 # discovered, 31 central unit battery KO.
                 self._mode_name = None
                 _status_text = {
                     22: "at least one probe is OFF",
-                    23: "at least one probe is in protection",
+                    23: "at least one probe is in antifreeze",
                     24: "at least one probe is in manual mode",
                     30: "a failure was discovered",
                     31: "the central unit battery is KO",
@@ -317,9 +321,17 @@ class OWNHeatingEvent(OWNEvent):
             # p. 5 and p. 64; libqtdevices thermal_device.cpp:209-211, 246-256,
             # 291-301): 11xx/21xx/31xx program, 12xx/22xx/32xx scenario.
             if self._type == MESSAGE_TYPE_MODE:
-                if 1101 <= self._mode <= 1199 or 2101 <= self._mode <= 2199 or 3101 <= self._mode <= 3199:
+                if (
+                    1101 <= self._mode <= 1103
+                    or 2101 <= self._mode <= 2103
+                    or 3101 <= self._mode <= 3116
+                ):
                     self._program = self._mode % 100
-                elif 1201 <= self._mode <= 1299 or 2201 <= self._mode <= 2299 or 3201 <= self._mode <= 3299:
+                elif (
+                    1201 <= self._mode <= 1216
+                    or 2201 <= self._mode <= 2216
+                    or 3201 <= self._mode <= 3216
+                ):
                     self._scenario = self._mode % 100
 
             if (
@@ -760,7 +772,7 @@ class OWNHeatingEvent(OWNEvent):
 
     @property
     def program(self) -> int | None:
-        """Weekly program number (1..16) named by the WHAT, else None."""
+        """Weekly program number (1..3 for seasonal, 1..16 for generic) named by the WHAT, else None."""
         return self._program
 
     @property

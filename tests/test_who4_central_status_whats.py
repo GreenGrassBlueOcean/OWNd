@@ -11,7 +11,7 @@ from OWNd.message import OWNEvent, OWNHeatingEvent
     ("what", "text"),
     [
         (22, "at least one probe is OFF"),
-        (23, "at least one probe is in protection"),
+        (23, "at least one probe is in antifreeze"),
         (24, "at least one probe is in manual mode"),
         (30, "a failure was discovered"),
         (31, "the central unit battery is KO"),

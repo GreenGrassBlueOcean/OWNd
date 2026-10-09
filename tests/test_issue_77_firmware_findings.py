@@ -29,6 +29,7 @@ from OWNd.message import (
     CLIMATE_MODE_COOL,
     CLIMATE_MODE_HEAT,
     CLIMATE_MODE_OFF,
+    MESSAGE_TYPE_SEASON,
     OWNCenPlusCommand,
     OWNCENPlusEvent,
     OWNCommand,
@@ -40,8 +41,9 @@ from OWNd.message import (
     OWNHeatingEvent,
     OWNLightingCommand,
     OWNMessage,
+    SEASON_CONDITIONING,
+    SEASON_HEATING,
 )
-from OWNd.message import MESSAGE_TYPE_SEASON, SEASON_CONDITIONING, SEASON_HEATING  # OWNd#94
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
