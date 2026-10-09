@@ -122,7 +122,12 @@ class OWNDoorEntryEvent(OWNEvent):
 
     @property
     def is_chime(self) -> bool:
-        """True if a chime event (*6*20*WHERE##) was received."""
+        """True if a chime event (*6*20*WHERE##) was received.
+
+        WHAT 20 is not in the published WHO 6 table (WHAT 0, 6, 9, 10, 11, 12,
+        18, 22) and no capture of it exists in this repository, so treat it as
+        unverified.
+        """
         return self._is_chime
 
     @property
@@ -203,7 +208,7 @@ class OWNDoorEntryCommand(OWNCommand):
         return message
 
 
-class OWNLockEvent(OWNEvent):
+class OWNIntercomEvent(OWNEvent):
     """Event reported by a WHO 8 video door entry / lock actuator or intercom device."""
 
     def __init__(self, data: str) -> None:
@@ -224,8 +229,11 @@ class OWNLockEvent(OWNEvent):
         self._is_light_on: bool | None = (
             True if what == 21 else (False if what == 22 else None)
         )
+        # WHAT 1 is any call session; the kind (first WHAT parameter) tells a
+        # door-panel ring (1..4) from an internal handset call (6) or a pager (14).
         self._is_call: bool = what == 1
-        self._is_incoming_call: bool = what == 1
+        self._is_incoming_call: bool = False
+        self._is_internal_call: bool = False
         self._is_muted: bool | None = (
             True if what == 63 else (False if what == 64 else None)
         )
@@ -297,6 +305,15 @@ class OWNLockEvent(OWNEvent):
             self._callee = self._where
             self._is_pager = (
                 self._call_kind == KIND_PAGER or self._callee == BROADCAST_WHERE
+            )
+            self._is_incoming_call = self._call_kind in (
+                KIND_PE1,
+                KIND_PE2,
+                KIND_PE3,
+                KIND_PE4,
+            )
+            self._is_internal_call = (
+                self._call_kind == KIND_INTERNAL_INTERCOM and not self._is_pager
             )
             desc = "Pager broadcast" if self._is_pager else "Intercom call"
             if self._caller:
@@ -388,13 +405,25 @@ class OWNLockEvent(OWNEvent):
 
     @property
     def is_call(self) -> bool:
-        """True if the event represents an intercom call initiation (*8*1#...)."""
+        """True for any call session start (*8*1#...), doorbell or not.
+
+        Use ``is_incoming_call`` to react to an entrance panel ringing.
+        """
         return self._is_call
 
     @property
     def is_incoming_call(self) -> bool:
-        """True if an intercom call frame (*8*1#...) was received."""
+        """True if an entrance panel (PE1..PE4, call kind 1..4) is calling.
+
+        Internal handset calls (kind 6) and pager broadcasts (kind 14) are not
+        doorbell rings; see ``is_internal_call`` and ``is_pager``.
+        """
         return self._is_incoming_call
+
+    @property
+    def is_internal_call(self) -> bool:
+        """True if the call is between two handsets (call kind 6)."""
+        return self._is_internal_call
 
     @property
     def is_staircase_on(self) -> bool:
@@ -477,7 +506,7 @@ class OWNLockEvent(OWNEvent):
         return self._vct_mode
 
 
-class OWNLockCommand(OWNCommand):
+class OWNIntercomCommand(OWNCommand):
     """WHO 8 commands for video door entry, intercoms, and lock actuators."""
 
     def __init__(self, data: str) -> None:
@@ -486,13 +515,9 @@ class OWNLockCommand(OWNCommand):
             self._human_readable_log = (
                 f"Requesting intercom status for {self._where}."
             )
-        elif self._message_type == "DIMENSION_REQUEST" and self._dimension == 19:
-            self._human_readable_log = (
-                f"Requesting door lock status for {self._where}."
-            )
 
     @classmethod
-    def unlock(cls, where: str | int) -> OWNLockCommand:
+    def unlock(cls, where: str | int) -> OWNIntercomCommand:
         """Activate / unlock door lock actuator at address WHERE."""
         target = str(where).strip()
         message = cls(f"*8*19*{target}##")
@@ -502,7 +527,7 @@ class OWNLockCommand(OWNCommand):
         return message
 
     @classmethod
-    def lock(cls, where: str | int) -> OWNLockCommand:
+    def lock(cls, where: str | int) -> OWNIntercomCommand:
         """Release / lock door lock actuator at address WHERE."""
         target = str(where).strip()
         message = cls(f"*8*20*{target}##")
@@ -512,17 +537,17 @@ class OWNLockCommand(OWNCommand):
         return message
 
     @classmethod
-    def open_door_lock(cls, where: str | int) -> OWNLockCommand:
+    def open_door_lock(cls, where: str | int) -> OWNIntercomCommand:
         """Activate/open door lock actuator."""
         return cls.unlock(where)
 
     @classmethod
-    def release_door_lock(cls, where: str | int) -> OWNLockCommand:
+    def release_door_lock(cls, where: str | int) -> OWNIntercomCommand:
         """Release/close door lock actuator."""
         return cls.lock(where)
 
     @classmethod
-    def staircase_light_on(cls, where: str | int) -> OWNLockCommand:
+    def staircase_light_on(cls, where: str | int) -> OWNIntercomCommand:
         """Turn ON staircase light actuator."""
         target = str(where).strip()
         message = cls(f"*8*21*{target}##")
@@ -530,7 +555,7 @@ class OWNLockCommand(OWNCommand):
         return message
 
     @classmethod
-    def staircase_light_off(cls, where: str | int) -> OWNLockCommand:
+    def staircase_light_off(cls, where: str | int) -> OWNIntercomCommand:
         """Turn OFF staircase light actuator."""
         target = str(where).strip()
         message = cls(f"*8*22*{target}##")
@@ -538,15 +563,15 @@ class OWNLockCommand(OWNCommand):
         return message
 
     @classmethod
-    def turn_on_staircase_light(cls, where: str | int) -> OWNLockCommand:
+    def turn_on_staircase_light(cls, where: str | int) -> OWNIntercomCommand:
         return cls.staircase_light_on(where)
 
     @classmethod
-    def turn_off_staircase_light(cls, where: str | int) -> OWNLockCommand:
+    def turn_off_staircase_light(cls, where: str | int) -> OWNIntercomCommand:
         return cls.staircase_light_off(where)
 
     @classmethod
-    def switch_camera(cls, caller: str | int, camera: str | int) -> OWNLockCommand:
+    def switch_camera(cls, caller: str | int, camera: str | int) -> OWNIntercomCommand:
         """Auto-switch / turn on a camera from a caller console."""
         caller_str = str(caller).strip()
         cam_str = str(camera).strip()
@@ -559,7 +584,7 @@ class OWNLockCommand(OWNCommand):
     @classmethod
     def cycle_camera(
         cls, caller: str | int, master_caller: str | int
-    ) -> OWNLockCommand:
+    ) -> OWNIntercomCommand:
         """Cycle to the next external unit / camera."""
         caller_str = str(caller).strip()
         master_str = str(master_caller).strip()
@@ -572,7 +597,7 @@ class OWNLockCommand(OWNCommand):
     @classmethod
     def ptz_move(
         cls, camera: str | int, direction: str, action: str = "press"
-    ) -> OWNLockCommand:
+    ) -> OWNIntercomCommand:
         """Send PTZ movement press or release to a camera."""
         direction_lower = direction.strip().lower()
         if direction_lower not in _PTZ_DIRECTIONS:
@@ -596,7 +621,7 @@ class OWNLockCommand(OWNCommand):
     @classmethod
     def call_internal(
         cls, caller: str | int, callee: str | int, video: bool = False
-    ) -> OWNLockCommand:
+    ) -> OWNIntercomCommand:
         """Initiate internal intercom call."""
         mm = MMTYPE_AUDIO_VIDEO if video else MMTYPE_AUDIO
         caller_str = str(caller).strip()
@@ -613,7 +638,7 @@ class OWNLockCommand(OWNCommand):
     @classmethod
     def call_external(
         cls, caller: str | int, callee: str | int, video: bool = False
-    ) -> OWNLockCommand:
+    ) -> OWNIntercomCommand:
         """Initiate external intercom call."""
         mm = MMTYPE_AUDIO_VIDEO if video else MMTYPE_AUDIO
         caller_str = str(caller).strip()
@@ -630,7 +655,7 @@ class OWNLockCommand(OWNCommand):
     @classmethod
     def call_pager(
         cls, caller: str | int, broadcast_where: str | int = BROADCAST_WHERE
-    ) -> OWNLockCommand:
+    ) -> OWNIntercomCommand:
         """Initiate pager broadcast call."""
         caller_str = str(caller).strip()
         bc_str = str(broadcast_where).strip()
@@ -646,7 +671,7 @@ class OWNLockCommand(OWNCommand):
         where: str | int,
         kind: int = KIND_INTERNAL_INTERCOM,
         mm_type: int = MMTYPE_AUDIO,
-    ) -> OWNLockCommand:
+    ) -> OWNIntercomCommand:
         """Answer an incoming call."""
         target = str(where).strip()
         message = cls(f"*8*2#{kind}#{mm_type}*{target}##")
@@ -659,7 +684,7 @@ class OWNLockCommand(OWNCommand):
         where: str | int = END_ALL_CALLS,
         kind: int = KIND_INTERNAL_INTERCOM,
         mm_type: int = MMTYPE_AUDIO,
-    ) -> OWNLockCommand:
+    ) -> OWNIntercomCommand:
         """Terminate call session."""
         target = str(where).strip()
         message = cls(f"*8*3#{kind}#{mm_type}*{target}##")
@@ -669,7 +694,7 @@ class OWNLockCommand(OWNCommand):
     @classmethod
     def stop_video(
         cls, where: str | int, kind: int = KIND_INTERNAL_INTERCOM
-    ) -> OWNLockCommand:
+    ) -> OWNIntercomCommand:
         """Stop video stream for active call."""
         target = str(where).strip()
         message = cls(f"*8*3#{kind}#3*{target}##")
@@ -677,7 +702,7 @@ class OWNLockCommand(OWNCommand):
         return message
 
     @classmethod
-    def mute_amplifier(cls, where: str | int) -> OWNLockCommand:
+    def mute_amplifier(cls, where: str | int) -> OWNIntercomCommand:
         """Silence multimedia amplifier."""
         target = str(where).strip()
         message = cls(f"*8*63*{target}##")
@@ -687,7 +712,7 @@ class OWNLockCommand(OWNCommand):
         return message
 
     @classmethod
-    def unmute_amplifier(cls, where: str | int) -> OWNLockCommand:
+    def unmute_amplifier(cls, where: str | int) -> OWNIntercomCommand:
         """Restore multimedia amplifier audio."""
         target = str(where).strip()
         message = cls(f"*8*64*{target}##")
@@ -697,26 +722,19 @@ class OWNLockCommand(OWNCommand):
         return message
 
     @classmethod
-    def status(cls, where: str | int) -> OWNLockCommand:
+    def status(cls, where: str | int) -> OWNIntercomCommand:
         """Request device/intercom status."""
         target = str(where).strip()
         message = cls(f"*#8*{target}##")
         message._human_readable_log = f"Requesting intercom status for {target}."
         return message
 
-    @classmethod
-    def lock_status(cls, where: str | int) -> OWNLockCommand:
-        """Request door lock status."""
-        target = str(where).strip()
-        message = cls(f"*#8*{target}*19##")
-        message._human_readable_log = f"Requesting door lock status for {target}."
-        return message
 
-
-OWNIntercomEvent = OWNLockEvent
-OWNIntercomCommand = OWNLockCommand
+# Backwards-compatible names: WHO 8 is mostly call routing, locks are one part.
+OWNLockEvent = OWNIntercomEvent
+OWNLockCommand = OWNIntercomCommand
 
 register_event_parser(6, OWNDoorEntryEvent)
 register_command_parser(6, OWNDoorEntryCommand)
-register_event_parser(8, OWNLockEvent)
-register_command_parser(8, OWNLockCommand)
+register_event_parser(8, OWNIntercomEvent)
+register_command_parser(8, OWNIntercomCommand)

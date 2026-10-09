@@ -73,6 +73,16 @@ def test_mh200_keeps_the_mh200n_pacing() -> None:
     assert mh200n.supports_who(WHO_LOCK) is True
 
 
+def test_door_entry_not_advertised_by_default() -> None:
+    """Only the MH200 has a door-entry capture; other profiles must not claim it."""
+    assert WHO_DOOR_ENTRY not in DEFAULT_SUPPORTED_WHO
+    assert WHO_LOCK not in DEFAULT_SUPPORTED_WHO
+    for model in ("MH201", "F452", "F454", "MyHomeServer1"):
+        profile = get_gateway_profile(model)
+        assert not profile.supports_who(WHO_DOOR_ENTRY), model
+        assert not profile.supports_who(WHO_LOCK), model
+
+
 def test_mh200n_audio_enabled_and_verified() -> None:
     """MH200N verified answering *#16*0*5## without NACK (MyHOME#427 comment 5848181845)."""
     profile = get_gateway_profile("MH200N")

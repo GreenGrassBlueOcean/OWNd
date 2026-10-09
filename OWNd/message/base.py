@@ -70,9 +70,10 @@ class OWNMessage:
     # WHO 6: camera OFF published form has no WHERE field (*6*9##), but field
     # units may also emit a single trailing star delimiter (*6*9*##).
     # The double-star form (*6*9**##) has WHERE="*" and is matched by _STATUS.
+    # Only WHAT 9 may omit WHERE; any other short WHO 6 frame is not valid.
     _DOOR_ENTRY_SHORT = re.compile(
-        r"^\*6\*(?P<what>\d+)\*?##$"
-    )  # *6*WHAT##, *6*WHAT*##
+        r"^\*6\*(?P<what>9)\*?##$"
+    )  # *6*9##, *6*9*##
     _STATUS_REQUEST = re.compile(
         r"^\*#(?P<who>\d+)(?:\*(?P<where>#?\d+)(?P<where_param>(?:#\d+)*))?##$"
     )  #  *#WHO*WHERE## or *#WHO##

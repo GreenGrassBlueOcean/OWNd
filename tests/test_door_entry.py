@@ -274,13 +274,16 @@ def test_who8_intercom_calling_and_session() -> None:
     assert ev_bare_call.message_type == MESSAGE_TYPE_CALL
     assert ev_bare_call.is_call is True
     assert ev_bare_call.call_kind is None
+    assert ev_bare_call.is_incoming_call is False
     assert ev_bare_call.callee == "74"
 
     # Internal audio call: *8*1#6#2#11*16## (caller 11, callee 16, kind 6, mm 2)
     ev_call = OWNLockEvent("*8*1#6#2#11*16##")
     assert ev_call.message_type == MESSAGE_TYPE_CALL
     assert ev_call.is_call is True
-    assert ev_call.is_incoming_call is True
+    # An internal handset call is not a doorbell ring.
+    assert ev_call.is_incoming_call is False
+    assert ev_call.is_internal_call is True
     assert ev_call.call_kind == KIND_INTERNAL_INTERCOM
     assert ev_call.multimedia_type == MMTYPE_AUDIO
     assert ev_call.caller == "11"
@@ -291,6 +294,9 @@ def test_who8_intercom_calling_and_session() -> None:
     # Pager call: *8*1#14#2#11*4##
     ev_pager = OWNLockEvent("*8*1#14#2#11*4##")
     assert ev_pager.is_pager is True
+    assert ev_pager.is_call is True
+    assert ev_pager.is_incoming_call is False
+    assert ev_pager.is_internal_call is False
     assert "Pager broadcast from 11 to 4" in ev_pager.human_readable_log
 
     # Answer call: *8*2#6#2*11##
@@ -426,9 +432,20 @@ def test_who8_amplifier_mute_teleloop_and_vct() -> None:
     assert str(cmd_status) == "*#8*11##"
     assert cmd_status.human_readable_log == "Requesting intercom status for 11."
 
-    cmd_lock_status = OWNLockCommand.lock_status("11")
-    assert str(cmd_lock_status) == "*#8*11*19##"
-    assert cmd_lock_status.human_readable_log == "Requesting door lock status for 11."
+    # *#8*WHERE*19## has no documented meaning; no builder is offered for it.
+    assert not hasattr(OWNIntercomCommand, "lock_status")
+
+
+def test_who8_primary_classes_and_lock_aliases() -> None:
+    assert OWNLockEvent is OWNIntercomEvent
+    assert OWNLockCommand is OWNIntercomCommand
+    assert OWNIntercomEvent.__name__ == "OWNIntercomEvent"
+
+
+@pytest.mark.parametrize("raw", ["*6*3##", "*6*42##", "*6*6##", "*6*10##", "*6*0*##"])
+def test_who6_short_form_only_accepts_camera_off(raw: str) -> None:
+    """Only WHAT 9 may omit WHERE; other short WHO 6 frames are not valid."""
+    assert not isinstance(OWNMessage.parse(raw), OWNDoorEntryEvent)
 
 
 def test_message_registry_parsing() -> None:
