@@ -77,6 +77,7 @@ from .energy import (
     MESSAGE_TYPE_ACTIVE_POWER,
     MESSAGE_TYPE_CURRENT_DAY_CONSUMPTION,
     MESSAGE_TYPE_CURRENT_MONTH_CONSUMPTION,
+    MESSAGE_TYPE_AUTO_UPDATE_INTERVAL,
     MESSAGE_TYPE_DAILY_CONSUMPTION,
     MESSAGE_TYPE_ENERGY_TOTALIZER,
     MESSAGE_TYPE_HOURLY_CONSUMPTION,
@@ -143,6 +144,7 @@ from .lighting import (
 from .scenario import (
     OWNAuxEvent,
     OWNScenarioEvent,
+    OWNSceneCommand,
     OWNSceneEvent,
 )
 from .sound import (
@@ -274,6 +276,7 @@ __all__ = [
     "MESSAGE_TYPE_MONTHLY_CONSUMPTION",
     "MESSAGE_TYPE_CURRENT_DAY_CONSUMPTION",
     "MESSAGE_TYPE_CURRENT_MONTH_CONSUMPTION",
+    "MESSAGE_TYPE_AUTO_UPDATE_INTERVAL",
     "_integer_value",
     "OWNEnergyEvent",
     "OWNEnergyCommand",
@@ -281,6 +284,7 @@ __all__ = [
     "OWNScenarioEvent",
     "OWNAuxEvent",
     "OWNSceneEvent",
+    "OWNSceneCommand",
 ]
 
 _ensure_all_subsystems_registered()
