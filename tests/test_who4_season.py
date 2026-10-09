@@ -52,8 +52,6 @@ def test_bare_what_0_and_1_are_season_frames(frame: str, season: str, zone: int)
         ("*4*111*#1##", CLIMATE_MODE_HEAT, SEASON_HEATING, MESSAGE_TYPE_MODE),
         ("*4*210*#1##", CLIMATE_MODE_COOL, SEASON_CONDITIONING, MESSAGE_TYPE_MODE),
         ("*4*110#0215*#0##", CLIMATE_MODE_HEAT, SEASON_HEATING, MESSAGE_TYPE_MODE_TARGET),
-        ("*4*1#0215*1##", CLIMATE_MODE_HEAT, SEASON_HEATING, MESSAGE_TYPE_MODE_TARGET),
-        ("*4*0#0215*1##", CLIMATE_MODE_COOL, SEASON_CONDITIONING, MESSAGE_TYPE_MODE_TARGET),
         ("*4*102*1##", CLIMATE_MODE_OFF, SEASON_HEATING, MESSAGE_TYPE_MODE),
         ("*4*202*1##", CLIMATE_MODE_OFF, SEASON_CONDITIONING, MESSAGE_TYPE_MODE),
         ("*4*103*1##", CLIMATE_MODE_OFF, SEASON_HEATING, MESSAGE_TYPE_MODE),
@@ -83,7 +81,12 @@ def test_unrecognised_whats_have_no_season() -> None:
         "*4*1199*#0##",
         "*4*13000*1##",
         "*4*13256*1##",
+        # 0#T / 1#T: no specification form and no capture.
+        "*4*1#0215*1##",
+        "*4*0#0215*1##",
     ):
         event = OWNHeatingEvent(frame)
         assert event.season is None
         assert event.message_type is None
+        assert event.mode is None
+        assert event.set_temperature is None
