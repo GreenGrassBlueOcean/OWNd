@@ -170,7 +170,10 @@ class OWNEnergyEvent(OWNEvent):
                 self._type = MESSAGE_TYPE_AUTO_UPDATE_INTERVAL
                 self._update_interval = _integer_value(self._dimension_value, 0)
                 self._energy_type = _integer_value(self._dimension_param, 0, 0) if self._dimension_param else None
-                self._human_readable_log = f"Sensor {self._sensor} automatic updates every {self._update_interval} minutes (0 = stopped)."  # pylint: disable=line-too-long
+                if self._update_interval == 0:
+                    self._human_readable_log = f"Sensor {self._sensor} automatic updates stopped."
+                else:
+                    self._human_readable_log = f"Sensor {self._sensor} automatic updates for {self._update_interval} minutes."
             elif self._dimension == 53:
                 self._type = MESSAGE_TYPE_CURRENT_MONTH_CONSUMPTION
                 self._current_month_partial_consumption = _integer_value(
@@ -188,12 +191,24 @@ class OWNEnergyEvent(OWNEvent):
 
     @property
     def update_interval(self) -> int | None:
-        """Time field of a 1200 reply (minutes per Legrand WHO 18), 0 when stopped."""
+        """Time field of a 1200 reply (stream duration in minutes per Legrand WHO 18), 0 when stopped."""
         return self._update_interval
 
     @property
+    def stream_duration(self) -> int | None:
+        """Time field of a 1200 reply (stream duration in minutes per Legrand WHO 18), 0 when stopped. Alias for update_interval."""
+        return self._update_interval
+
+    @property
+    def is_streaming_active(self) -> bool | None:
+        """True if automatic updates are streaming (> 0 minutes), False if stopped (0 minutes), None if not a 1200 event."""
+        if self._update_interval is None:
+            return None
+        return self._update_interval > 0
+
+    @property
     def energy_type(self) -> int | None:
-        """Energy type of a 1200 reply (1 electricity, 2 gas, 3 heat, 4 water)."""
+        """Energy type of a 1200 reply (1 electricity per Legrand WHO 18; 2 gas, 3 heat, 4 water per libqtdevices)."""
         return self._energy_type
 
     @property

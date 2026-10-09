@@ -18,20 +18,29 @@ def test_auto_update_confirmation_is_parsed():
     msg = OWNEvent.parse("*#18*51*1200#1*255##")
     assert isinstance(msg, OWNEnergyEvent)
     assert msg.message_type == MESSAGE_TYPE_AUTO_UPDATE_INTERVAL
+    assert msg.sensor == "1"
     assert msg.update_interval == 255
+    assert msg.stream_duration == 255
+    assert msg.is_streaming_active is True
     assert msg.energy_type == 1
-    assert "255 minutes" in msg.human_readable_log
+    assert msg.human_readable_log == "Sensor 1 automatic updates for 255 minutes."
 
 
 def test_auto_update_stop_is_parsed():
     msg = OWNEvent.parse("*#18*51*1200#1*0##")
     assert msg.message_type == MESSAGE_TYPE_AUTO_UPDATE_INTERVAL
+    assert msg.sensor == "1"
     assert msg.update_interval == 0
+    assert msg.stream_duration == 0
+    assert msg.is_streaming_active is False
+    assert msg.human_readable_log == "Sensor 1 automatic updates stopped."
 
 
 def test_other_dimensions_are_untouched():
     msg = OWNEvent.parse("*#18*51*113*1234##")
     assert msg.update_interval is None
+    assert msg.stream_duration is None
+    assert msg.is_streaming_active is None
     assert msg.energy_type is None
     assert msg.message_type != MESSAGE_TYPE_AUTO_UPDATE_INTERVAL
 
