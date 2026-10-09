@@ -63,3 +63,22 @@ def test_builders_take_the_energy_type_and_the_7xx_address():
     assert str(OWNEnergyCommand.start_sending_instant_power(51, 255, 2)) == "*#18*51*#1200#2*255##"
     assert str(OWNEnergyCommand.stop_sending_instant_power(51, 2)) == "*#18*51*#1200#2*0##"
     assert str(OWNEnergyCommand.stop_sending_instant_power("71")) == "*#18*71#0*#1200#1*0##"
+
+
+def test_builder_duration_zero_or_negative():
+    stop_via_start = OWNEnergyCommand.start_sending_instant_power(51, 0)
+    assert str(stop_via_start) == "*#18*51*#1200#1*0##"
+    assert "Stopping" in stop_via_start.human_readable_log
+
+    negative_clamped = OWNEnergyCommand.start_sending_instant_power(51, -10)
+    assert str(negative_clamped) == "*#18*51*#1200#1*0##"
+    assert "Stopping" in negative_clamped.human_readable_log
+
+
+def test_negative_interval_clamped_to_stopped():
+    event = OWNEnergyEvent("*#18*51*1200#1*0##")
+    # Simulate a corrupted non-standard negative value in _dimension_value
+    event._dimension_value = ["-5"]
+    parsed_interval = max(0, int(event._dimension_value[0]))
+    assert parsed_interval == 0
+

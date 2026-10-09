@@ -168,8 +168,13 @@ class OWNEnergyEvent(OWNEvent):
                 # 719-726). type: 1 electricity, 2 gas, 3 heat, 4 water
                 # (energy_device.cpp:50-56).
                 self._type = MESSAGE_TYPE_AUTO_UPDATE_INTERVAL
-                self._update_interval = _integer_value(self._dimension_value, 0)
-                self._energy_type = _integer_value(self._dimension_param, 0, 0) if self._dimension_param else None
+                parsed_interval = _integer_value(self._dimension_value, 0)
+                self._update_interval = max(0, parsed_interval)
+                self._energy_type = (
+                    max(0, _integer_value(self._dimension_param, 0, 0))
+                    if self._dimension_param
+                    else None
+                )
                 if self._update_interval == 0:
                     self._human_readable_log = f"Sensor {self._sensor} automatic updates stopped."
                 else:
@@ -191,12 +196,15 @@ class OWNEnergyEvent(OWNEvent):
 
     @property
     def update_interval(self) -> int | None:
-        """Time field of a 1200 reply (stream duration in minutes per Legrand WHO 18), 0 when stopped."""
+        """Time field of a 1200 reply (stream duration in minutes per Legrand WHO 18), 0 when stopped.
+
+        Retained for backward compatibility; prefer :attr:`stream_duration`.
+        """
         return self._update_interval
 
     @property
     def stream_duration(self) -> int | None:
-        """Time field of a 1200 reply (stream duration in minutes per Legrand WHO 18), 0 when stopped. Alias for update_interval."""
+        """Time field of a 1200 reply (stream duration in minutes, 0..255 per Legrand WHO 18), 0 when stopped."""
         return self._update_interval
 
     @property
@@ -257,9 +265,12 @@ class OWNEnergyCommand(OWNCommand):
         electricity, 2 gas, 3 heat, 4 water (libqtdevices energy_device.cpp:50-56).
         """
         where = f"{where}#0" if str(where).startswith("7") else str(where)
-        duration = 255 if duration > 255 else duration
+        duration = 255 if duration > 255 else max(0, int(duration))
         message = cls(f"*#18*{where}*#1200#{energy_type}*{duration}##")
-        message._human_readable_log = f"Requesting instant power draw update from sensor {where} for {duration} minutes."  # pylint: disable=line-too-long
+        if duration == 0:
+            message._human_readable_log = f"Stopping instant power draw updates from sensor {where}."  # pylint: disable=line-too-long
+        else:
+            message._human_readable_log = f"Requesting instant power draw update from sensor {where} for {duration} minutes."  # pylint: disable=line-too-long
         return message
 
     @classmethod
