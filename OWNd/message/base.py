@@ -15,6 +15,7 @@ _WHO_SUBMODULES: tuple[str, ...] = (
     "alarm",
     "automation",
     "cen",
+    "door_entry",
     "energy",
     "gateway",
     "heating",
@@ -199,6 +200,7 @@ class OWNMessage:
         if (
             cls._STATUS.match(data)
             or cls._ALARM_EMPTY_WHERE.match(data)
+            or cls._DOOR_ENTRY_SHORT.match(data)
             or cls._DIMENSION_REQUEST_REPLY.match(data)
         ):
             return OWNEvent.parse(data)

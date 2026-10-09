@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from OWNd.message import (
+    OWNCommand,
     OWNDoorEntryCommand,
     OWNDoorEntryEvent,
     OWNLockCommand,
@@ -101,6 +102,14 @@ def test_door_entry_commands() -> None:
     assert str(cmd_cam_off) == "*6*9##"
 
 
+def test_door_entry_event_fallback() -> None:
+    event = OWNDoorEntryEvent("*6*99*1##")
+    assert event.human_readable_log == "Door entry device 1 received event: 99."
+
+    event_none = OWNDoorEntryEvent("*#6*1##")
+    assert event_none.human_readable_log == "*#6*1##"
+
+
 def test_lock_actuator_event_and_command() -> None:
     evt_unlock = OWNLockEvent("*8*19*20##")
     assert evt_unlock.is_unlocked is True
@@ -111,6 +120,12 @@ def test_lock_actuator_event_and_command() -> None:
     assert evt_lock.is_locked is True
     assert evt_lock.is_unlocked is False
     assert evt_lock.human_readable_log == "Lock actuator 20 locked / released."
+
+    evt_fallback = OWNLockEvent("*8*99*20##")
+    assert evt_fallback.human_readable_log == "Lock actuator 20 received event: 99."
+
+    evt_none = OWNLockEvent("*#8*20##")
+    assert evt_none.human_readable_log == "*#8*20##"
 
     cmd_unlock = OWNLockCommand.unlock(20)
     assert str(cmd_unlock) == "*8*19*20##"
@@ -125,3 +140,9 @@ def test_message_registry_parsing() -> None:
 
     msg6_call = OWNMessage.parse("*6*6*1##")
     assert isinstance(msg6_call, OWNDoorEntryEvent)
+
+    msg6_cam_off = OWNMessage.parse("*6*9##")
+    assert isinstance(msg6_cam_off, OWNDoorEntryEvent)
+
+    cmd6 = OWNCommand.parse("*6*10*4001##")
+    assert isinstance(cmd6, OWNDoorEntryCommand)
