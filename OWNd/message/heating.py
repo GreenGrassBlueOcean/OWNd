@@ -210,28 +210,24 @@ class OWNHeatingEvent(OWNEvent):
         if self._what is not None:
             self._mode = int(self._what)
 
-            if self._mode in (0, 1):
-                if not self._what_param:
-                    # Zone operation mode frame: the zone (or the central unit)
-                    # is operating in the heating (1) or conditioning (0) season.
-                    # It is not an operating mode change: Legrand WHO 4 p. 13, 16,
-                    # 19 and 63 list it next to the setpoint frames as "zone
-                    # operation mode acquire frame"; the MyHomeServer1 translator
-                    # emits it with the dimension 12 setpoint report; BTicino's
-                    # client keeps a zone in automatic on it (libqtdevices
-                    # TS10_1_0_23 probe_device.cpp:240-253). Manual / automatic /
-                    # off arrive as 110 / 111 / 103 etc.
-                    self._type = MESSAGE_TYPE_SEASON
-                    self._mode_name = None
-                    self._season = (
-                        SEASON_HEATING if self._mode == 1 else SEASON_CONDITIONING
-                    )
-                    self._human_readable_log = (
-                        f"Zone {self._zone}'s season is {self._season}."
-                    )
-                else:
-                    self._mode_name = None
-                    self._human_readable_log = f"Zone {self._zone}'s mode is unknown"
+            if self._mode in (0, 1) and not self._what_param:
+                # Zone operation mode frame: the zone (or the central unit)
+                # is operating in the heating (1) or conditioning (0) season.
+                # It is not an operating mode change: Legrand WHO 4 p. 13, 16,
+                # 19 and 63 list it next to the setpoint frames as "zone
+                # operation mode acquire frame"; the MyHomeServer1 translator
+                # emits it with the dimension 12 setpoint report; BTicino's
+                # client keeps a zone in automatic on it (libqtdevices
+                # TS10_1_0_23 probe_device.cpp:240-253). Manual / automatic /
+                # off arrive as 110 / 111 / 103 etc.
+                self._type = MESSAGE_TYPE_SEASON
+                self._mode_name = None
+                self._season = (
+                    SEASON_HEATING if self._mode == 1 else SEASON_CONDITIONING
+                )
+                self._human_readable_log = (
+                    f"Zone {self._zone}'s season is {self._season}."
+                )
             elif self._mode in [103, 203, 303, 102, 202, 302]:
                 self._type = MESSAGE_TYPE_MODE
                 self._mode_name = CLIMATE_MODE_OFF
@@ -243,11 +239,12 @@ class OWNHeatingEvent(OWNEvent):
                     f"Zone {self._zone}'s mode is set to '{self._mode_name}'"
                 )
             elif (
-                self._mode in [210, 211, 212, 215]
+                self._mode in [0, 210, 211, 212, 215]
                 or (self._mode >= 2101 and self._mode <= 2103)
                 or (self._mode >= 2201 and self._mode <= 2216)
                 or (self._mode >= 23001 and self._mode <= 23255)
             ):
+                # 0 with parameters (0#T): conditioning mode with target temperature.
                 # 23xxx: holiday days in conditioning mode (Legrand WHO 4
                 # p. 5 / p. 64; libqtdevices thermal_device.cpp:58, 258-262).
                 self._type = MESSAGE_TYPE_MODE
@@ -259,11 +256,12 @@ class OWNHeatingEvent(OWNEvent):
                     f"Zone {self._zone}'s mode is set to '{self._mode_name}'"
                 )
             elif (
-                self._mode in [110, 111, 112, 115]
+                self._mode in [1, 110, 111, 112, 115]
                 or (self._mode >= 1101 and self._mode <= 1103)
                 or (self._mode >= 1201 and self._mode <= 1216)
                 or (self._mode >= 13001 and self._mode <= 13255)
             ):
+                # 1 with parameters (1#T): heating mode with target temperature.
                 # 13xxx: holiday days in heating mode (Legrand WHO 4 p. 5 /
                 # p. 64; libqtdevices thermal_device.cpp:68, 303-307).
                 self._type = MESSAGE_TYPE_MODE
