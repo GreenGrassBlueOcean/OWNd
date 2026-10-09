@@ -405,7 +405,7 @@ class OWNCommand(OWNMessage):
                 return parser(data)
             if _who in (0, 3, 14, 17, 22, 24) or _who > 1000:
                 return cls(data)
-            if _who in (6, 7, 9):
+            if _who in (7, 9):
                 return (
                     OWNStatusRequest(data)
                     if cls._STATUS_REQUEST.match(data)

@@ -12,6 +12,7 @@ WHO_HEATING = 4
 WHO_ALARM = 5
 WHO_DOOR_ENTRY = 6
 WHO_LOCK = 8
+WHO_INTERCOM = 8
 WHO_CEN = 15
 WHO_SOUND = 16
 WHO_SCENARIO = 17
@@ -410,6 +411,8 @@ class MH200Profile(GatewayProfile):
                 WHO_LIGHTING,
                 WHO_AUTOMATION,
                 WHO_HEATING,
+                WHO_DOOR_ENTRY,
+                WHO_LOCK,
                 WHO_CEN,
                 WHO_SOUND,
                 WHO_SCENARIO,
@@ -437,6 +440,8 @@ class MH200NProfile(GatewayProfile):
                 WHO_LIGHTING,
                 WHO_AUTOMATION,
                 WHO_HEATING,
+                WHO_DOOR_ENTRY,
+                WHO_LOCK,
                 WHO_CEN,
                 WHO_SCENARIO,
                 WHO_CEN_PLUS,
