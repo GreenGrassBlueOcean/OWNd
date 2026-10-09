@@ -82,3 +82,37 @@ def test_negative_interval_clamped_to_stopped():
     parsed_interval = max(0, int(event._dimension_value[0]))
     assert parsed_interval == 0
 
+
+def test_actuator_address_preserves_hash_zero():
+    # Authentic actuator frames from issue #669 trace (*#18*76#0*113*0##, *#18*77#0*113*161##)
+    actuator_evt = OWNEnergyEvent("*#18*76#0*113*0##")
+    assert actuator_evt.where == "76#0"
+    assert actuator_evt.sensor == "6#0"
+    assert actuator_evt.is_actuator is True
+    assert actuator_evt.active_power == 0
+    assert actuator_evt.human_readable_log == "Sensor 6#0 is reporting an active power draw of 0 W."
+
+    actuator_evt2 = OWNEnergyEvent("*#18*77#0*113*161##")
+    assert actuator_evt2.where == "77#0"
+    assert actuator_evt2.sensor == "7#0"
+    assert actuator_evt2.is_actuator is True
+    assert actuator_evt2.active_power == 161
+
+    # Meter frame does not collide with actuator
+    meter_evt = OWNEnergyEvent("*#18*56*113*0##")
+    assert meter_evt.where == "56"
+    assert meter_evt.sensor == "6"
+    assert meter_evt.is_actuator is False
+    assert meter_evt.active_power == 0
+    assert meter_evt.human_readable_log == "Sensor 6 is reporting an active power draw of 0 W."
+
+    # Command builder preserves address whether #0 was already provided or inferred
+    cmd1 = OWNEnergyCommand.stop_sending_instant_power("76")
+    assert str(cmd1) == "*#18*76#0*#1200#1*0##"
+    cmd2 = OWNEnergyCommand.stop_sending_instant_power("76#0")
+    assert str(cmd2) == "*#18*76#0*#1200#1*0##"
+    cmd3 = OWNEnergyCommand.start_sending_instant_power("76#0", 60)
+    assert str(cmd3) == "*#18*76#0*#1200#1*60##"
+    cmd4 = OWNEnergyCommand.get_total_consumption("76#0")
+    assert str(cmd4) == "*#18*76#0*51##"
+
