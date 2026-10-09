@@ -98,10 +98,18 @@ def test_door_entry_event_camera() -> None:
     assert cam_on.is_camera_off is False
     assert cam_on.human_readable_log == "Door entry camera switched ON at 4001."
 
-    cam_off = OWNDoorEntryEvent("*6*9##")
-    assert cam_off.is_camera_off is True
-    assert cam_off.is_camera_on is False
-    assert cam_off.human_readable_log == "Door entry camera switched OFF."
+    # All three camera OFF frame forms (standard, double-star, and single-star trailing delimiters)
+    for raw in ("*6*9##", "*6*9**##", "*6*9*##"):
+        cam_off = OWNDoorEntryEvent(raw)
+        assert cam_off.is_camera_off is True
+        assert cam_off.is_camera_on is False
+        assert cam_off.where == ""
+        assert cam_off.human_readable_log == "Door entry camera switched OFF."
+
+        parsed = OWNMessage.parse(raw)
+        assert isinstance(parsed, OWNDoorEntryEvent)
+        assert parsed.is_camera_off is True
+        assert parsed.where == ""
 
 
 def test_door_entry_commands() -> None:
@@ -125,6 +133,9 @@ def test_door_entry_commands() -> None:
 
     cmd_cam_off = OWNDoorEntryCommand.camera_off()
     assert str(cmd_cam_off) == "*6*9##"
+
+    cmd_cam_off_star = OWNDoorEntryCommand.camera_off("*")
+    assert str(cmd_cam_off_star) == "*6*9##"
 
 
 def test_door_entry_event_fallback() -> None:

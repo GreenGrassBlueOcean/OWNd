@@ -70,6 +70,9 @@ class OWNDoorEntryEvent(OWNEvent):
         self._is_camera_on = self._what == 0
         self._is_camera_off = self._what == 9
 
+        if self._is_camera_off:
+            self._where = ""
+
         if self._is_broadcast_call:
             self._human_readable_log = "Incoming door entry broadcast call."
         elif self._is_incoming_call:
@@ -195,8 +198,9 @@ class OWNDoorEntryCommand(OWNCommand):
         return message
 
     @classmethod
-    def camera_off(cls) -> OWNDoorEntryCommand:
+    def camera_off(cls, where: str | int | None = None) -> OWNDoorEntryCommand:
         """Switch OFF video door entry camera."""
+        del where
         message = cls("*6*9##")
         message._human_readable_log = "Switching OFF video door entry camera."
         return message
