@@ -163,7 +163,7 @@ WHO_DEFINITIONS: tuple[WhoCatalogDefinition, ...] = (
         who="**25**",
         name="CEN+ & Dry Contacts",
         description="32-button keypads, rotary knob encoders (CW/CCW), dry contacts, PIR sensors, strongly typed command builders",
-        dispatch_who_keys=(),
+        dispatch_who_keys=(25,),
         explicit_classes=(
             "OWNCenPlusCommand",
             "OWNCENPlusEvent",
@@ -273,11 +273,10 @@ def verify_who_catalog_coverage() -> list[str]:
     for defn in WHO_DEFINITIONS:
         covered_who.update(defn.dispatch_who_keys)
 
-    # WHO 25 is handled with explicit classes because its dispatcher is a private helper function
     all_registered = set(_COMMAND_DISPATCH.keys()) | set(_EVENT_DISPATCH.keys())
     missing_who = [
         who for who in sorted(all_registered)
-        if who not in covered_who and who != 25
+        if who not in covered_who
     ]
     violations: list[str] = []
     for who in missing_who:
@@ -508,8 +507,13 @@ def sync_documentation(
             if svg_drifted:
                 messages.append(f"{coverage_svg_path.name} drifted from {coverage_xml_path.name} ({rate_round}%).")
                 if not check_only:
-                    coverage_svg_path.write_text(expected_svg, encoding="utf-8", newline="\n")
-                    messages.append(f"Updated {coverage_svg_path.name} to {rate_round}%.")
+                    if coverage_violations:
+                        messages.append(
+                            f"Refused to update {coverage_svg_path.name} while WHO catalog coverage gaps exist."
+                        )
+                    else:
+                        coverage_svg_path.write_text(expected_svg, encoding="utf-8", newline="\n")
+                        messages.append(f"Updated {coverage_svg_path.name} to {rate_round}%.")
             else:
                 messages.append(f"{coverage_svg_path.name} is in sync ({rate_round}%).")
     else:
@@ -545,8 +549,13 @@ def sync_documentation(
         diff_str = "".join(diff_lines)
 
     if not check_only and (content_changed or has_crlf):
-        readme_path.write_text(working_content, encoding="utf-8", newline="\n")
-        messages.append(f"Updated {readme_path.name} in place.")
+        if coverage_violations:
+            messages.append(
+                f"Refused to update {readme_path.name} while WHO catalog coverage gaps exist."
+            )
+        else:
+            readme_path.write_text(working_content, encoding="utf-8", newline="\n")
+            messages.append(f"Updated {readme_path.name} in place.")
 
     return is_in_sync, diff_str, messages
 
