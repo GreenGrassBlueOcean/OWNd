@@ -75,12 +75,29 @@ def test_builder_duration_zero_or_negative():
     assert "Stopping" in negative_clamped.human_readable_log
 
 
-def test_negative_interval_clamped_to_stopped():
+def test_negative_interval_clamped_to_stopped(monkeypatch):
+    orig_init = OWNEvent.__init__
+
+    def fake_init(self, data):
+        orig_init(self, data)
+        self._dimension_value = ["-5"]
+
+    monkeypatch.setattr(OWNEvent, "__init__", fake_init)
     event = OWNEnergyEvent("*#18*51*1200#1*0##")
-    # Simulate a corrupted non-standard negative value in _dimension_value
-    event._dimension_value = ["-5"]
-    parsed_interval = max(0, int(event._dimension_value[0]))
-    assert parsed_interval == 0
+
+    assert event.update_interval == 0
+    assert event.stream_duration == 0
+    assert event.is_streaming_active is False
+    assert event.human_readable_log == "Sensor 1 automatic updates stopped."
+
+
+def test_empty_interval_clamped_to_stopped():
+    event = OWNEvent.parse("*#18*51*1200#1*##")
+    assert isinstance(event, OWNEnergyEvent)
+    assert event.update_interval == 0
+    assert event.stream_duration == 0
+    assert event.is_streaming_active is False
+    assert event.human_readable_log == "Sensor 1 automatic updates stopped."
 
 
 def test_actuator_address_preserves_hash_zero():
