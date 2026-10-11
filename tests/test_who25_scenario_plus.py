@@ -7,11 +7,17 @@ from OWNd.message import OWNCommand, OWNEvent, OWNScenarioPlusCommand, OWNScenar
 
 
 def test_builders_send_the_ts10_frames():
-    assert str(OWNScenarioPlusCommand.turn_on(11)) == "*25*11#0*11##"
-    assert str(OWNScenarioPlusCommand.turn_off(11)) == "*25*12*11##"
-    assert str(OWNScenarioPlusCommand.increase(11)) == "*25*13#0#5*11##"
-    assert str(OWNScenarioPlusCommand.decrease(11)) == "*25*14#0#5*11##"
-    assert str(OWNScenarioPlusCommand.stop(11)) == "*25*15*11##"
+    for cmd, action, expected_frame in [
+        (OWNScenarioPlusCommand.turn_on(11), "on", "*25*11#0*11##"),
+        (OWNScenarioPlusCommand.turn_off(11), "off", "*25*12*11##"),
+        (OWNScenarioPlusCommand.increase(11), "increase", "*25*13#0#5*11##"),
+        (OWNScenarioPlusCommand.decrease(11), "decrease", "*25*14#0#5*11##"),
+        (OWNScenarioPlusCommand.stop(11), "stop", "*25*15*11##"),
+    ]:
+        assert str(cmd) == expected_frame
+        assert cmd.action == action
+        assert cmd.object == "11"
+        assert cmd.human_readable_log == f"Scenario plus 11: {action}."
 
 
 def test_commands_and_events_are_routed():

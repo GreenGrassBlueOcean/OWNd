@@ -198,33 +198,23 @@ class OWNScenarioPlusCommand(OWNCommand):
 
     @classmethod
     def turn_on(cls, where: str | int) -> OWNScenarioPlusCommand:
-        message = cls(f"*25*11#0*{where}##")
-        message._human_readable_log = f"Scenario plus {where}: on."
-        return message
+        return cls(f"*25*11#0*{where}##")
 
     @classmethod
     def turn_off(cls, where: str | int) -> OWNScenarioPlusCommand:
-        message = cls(f"*25*12*{where}##")
-        message._human_readable_log = f"Scenario plus {where}: off."
-        return message
+        return cls(f"*25*12*{where}##")
 
     @classmethod
     def increase(cls, where: str | int) -> OWNScenarioPlusCommand:
-        message = cls(f"*25*13#0#5*{where}##")
-        message._human_readable_log = f"Scenario plus {where}: increase."
-        return message
+        return cls(f"*25*13#0#5*{where}##")
 
     @classmethod
     def decrease(cls, where: str | int) -> OWNScenarioPlusCommand:
-        message = cls(f"*25*14#0#5*{where}##")
-        message._human_readable_log = f"Scenario plus {where}: decrease."
-        return message
+        return cls(f"*25*14#0#5*{where}##")
 
     @classmethod
     def stop(cls, where: str | int) -> OWNScenarioPlusCommand:
-        message = cls(f"*25*15*{where}##")
-        message._human_readable_log = f"Scenario plus {where}: stop."
-        return message
+        return cls(f"*25*15*{where}##")
 
 
 class OWNDryContactCommand(OWNCommand):
