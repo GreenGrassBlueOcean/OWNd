@@ -123,6 +123,18 @@ WHO_DEFINITIONS: tuple[WhoCatalogDefinition, ...] = (
         dispatch_who_keys=(5,),
     ),
     WhoCatalogDefinition(
+        who="**6**",
+        name="Door Entry & Lock",
+        description="Door entry unit and electric lock status, door open/close events, lock release commands",
+        dispatch_who_keys=(6,),
+    ),
+    WhoCatalogDefinition(
+        who="**8**",
+        name="Intercom / Video Door Entry",
+        description="Video door entry and intercom call signaling, answering, camera and audio control",
+        dispatch_who_keys=(8,),
+    ),
+    WhoCatalogDefinition(
         who="**9**",
         name="Auxiliary",
         description="Auxiliary channel status (aux 1–9) for remote relays and inter-system signaling",
