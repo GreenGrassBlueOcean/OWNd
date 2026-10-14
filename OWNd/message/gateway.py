@@ -180,6 +180,16 @@ class OWNGatewayEvent(OWNEvent):
         """Return the decoded gateway device type string."""
         return self._device_type
 
+    @property
+    def kernel_version(self) -> str | None:
+        """Return the decoded gateway kernel version string."""
+        return self._kernel_version
+
+    @property
+    def distribution_version(self) -> str | None:
+        """Return the decoded gateway distribution version string."""
+        return self._distribution_version
+
 
 class OWNGatewayCommand(OWNCommand):
     def __init__(self, data: str) -> None:
@@ -276,6 +286,16 @@ class OWNGatewayCommand(OWNCommand):
         message = cls(f"*#13**#0*{now.strftime('%H*%M*%S')}*{timezone_offset}##")
         message._human_readable_log = f"Setting gateway time to: {message._time}."
         return message
+
+    @classmethod
+    def request_kernel_version(cls) -> OWNGatewayCommand:
+        """Request the gateway kernel version (Dimension 23)."""
+        return cls("*#13**23##")
+
+    @classmethod
+    def request_distribution_version(cls) -> OWNGatewayCommand:
+        """Request the gateway distribution version (Dimension 24)."""
+        return cls("*#13**24##")
 
 
 register_event_parser(13, OWNGatewayEvent)

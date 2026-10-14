@@ -283,15 +283,19 @@ class TestMessageExhaustiveCoverage:
 
         # Dimension 23: Kernel version
         gw_kern = OWNGatewayEvent("*#13**23*3*10*0##")
+        assert gw_kern.kernel_version == "3.10.0"
         assert gw_kern._kernel_version == "3.10.0"
 
         # Dimension 24: Distribution version
         gw_dist = OWNGatewayEvent("*#13**24*1*2*3##")
+        assert gw_dist.distribution_version == "1.2.3"
         assert gw_dist._distribution_version == "1.2.3"
 
         # Gateway request dimension check
         gw_req = OWNGatewayCommand("*#13**0##")
         assert gw_req.is_request is True
+        assert str(OWNGatewayCommand.request_kernel_version()) == "*#13**23##"
+        assert str(OWNGatewayCommand.request_distribution_version()) == "*#13**24##"
 
         # Gateway set_datetime, set_date, set_time with timezone
         gw_set_time = OWNGatewayCommand.set_datetime_to_now("UTC")
