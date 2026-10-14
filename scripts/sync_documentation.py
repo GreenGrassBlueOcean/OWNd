@@ -171,6 +171,12 @@ WHO_DEFINITIONS: tuple[WhoCatalogDefinition, ...] = (
         name="Energy Management",
         description="Active power (W), hourly/daily/monthly consumption (kWh), Stop & Go breaker diagnostics",
         dispatch_who_keys=(18,),
+        explicit_classes=(
+            "OWNEnergyCommand",
+            "OWNStopAndGoCommand",
+            "OWNEnergyEvent",
+            "OWNStopAndGoEvent",
+        ),
     ),
     WhoCatalogDefinition(
         who="**25**",
