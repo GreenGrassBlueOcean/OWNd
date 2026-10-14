@@ -64,6 +64,7 @@ COMPONENT_NOTES: dict[str, str] = {
     "OWNd/message/gateway.py": "WHO 13: Gateway management, clock/date configuration, and model telemetry",
     "OWNd/message/heating.py": "WHO 4: Thermoregulation, heating/cooling zone control, and temperature decoders",
     "OWNd/message/lighting.py": "WHO 1: Lighting controls, dimming, RGB/HSV color, and motion/PIR sensors",
+    "OWNd/message/load.py": "WHO 3: Load control, priority forcing, and central-unit measurement events/commands",
     "OWNd/message/scenario.py": "WHO 0, WHO 9, WHO 17: Scenario activation, auxiliary commands, and MH200/MH202 scenes",
     "OWNd/message/sound.py": "WHO 16: Sound system and audio/video matrix routing (WHO 22 is not implemented)",
     "OWNd/profiles.py": "Declarative hardware gateway models across 14 canonical hardware profiles",
@@ -106,9 +107,8 @@ WHO_DEFINITIONS: tuple[WhoCatalogDefinition, ...] = (
     WhoCatalogDefinition(
         who="**3**",
         name="Load Control",
-        description="Load shedding status, circuit priority management",
-        dispatch_who_keys=(),
-        explicit_classes=("OWNCommand", "OWNEvent"),
+        description="Priority forcing (`*3*2*#N##`, firmware-verified), priority states 0–3, priority status and central-unit measurement requests; measurement replies kept raw until a plant capture confirms their meaning",
+        dispatch_who_keys=(3,),
     ),
     WhoCatalogDefinition(
         who="**4**",
