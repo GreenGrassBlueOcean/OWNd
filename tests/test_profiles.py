@@ -97,6 +97,16 @@ def test_profile_lookup_accepts_common_name_variants() -> None:
     assert profile.model_name == "MyHomeServer1"
     assert profile.supports_session_count(4)
     assert profile.supports_who(WHO_SOUND)
+    # Firmware oracle proves MyHomeServer1 omits bt_energia and rejects WHO 3
+    assert not profile.supports_who(WHO_LOAD_CONTROL)
+
+
+def test_myhomeserver1_lacks_who3_load_control() -> None:
+    """MyHomeServer1 firmware does not package bt_energia and rejects WHO 3."""
+    profile = get_gateway_profile("MyHomeServer1")
+    assert WHO_LOAD_CONTROL not in profile.supported_who
+    assert not profile.supports_who(WHO_LOAD_CONTROL)
+
 
 
 def test_f461_profile_lookup() -> None:

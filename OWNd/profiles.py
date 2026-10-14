@@ -519,6 +519,16 @@ class H4890Profile(GatewayProfile):
 
 
 class MyHomeServer1Profile(GatewayProfile):
+    """The MyHomeServer1 (Eliot / Legrand Living Now gateway).
+
+    Subsystems:
+    - WHO 3 (Load Control): MyHomeServer1 firmware does not package the
+      ``bt_energia`` translator (unlike MH202, F454, and F459), so it strictly
+      NACKs all WHO 3 requests without bus activity (see own-firmware-oracle
+      findings/MyHomeServer1/energy-ts10.md). WHO 3 is therefore excluded from
+      ``supported_who``.
+    """
+
     def __init__(self) -> None:
         super().__init__(
             model_name="MyHomeServer1",
@@ -530,6 +540,9 @@ class MyHomeServer1Profile(GatewayProfile):
             supports_hmac=True,
             supports_native_transitions=True,
             supports_extended_frames=True,
+            supported_who=tuple(
+                w for w in DEFAULT_SUPPORTED_WHO if w != WHO_LOAD_CONTROL
+            ),
         )
 
 
