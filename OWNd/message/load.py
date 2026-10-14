@@ -37,6 +37,12 @@ LOAD_CONTROL_UNIT = "10"
 LOAD_PRIORITIES = range(1, 9)
 LOAD_MEASUREMENT_DIMENSIONS = range(0, 5)
 
+LOAD_DIMENSION_ALL = 0
+LOAD_DIMENSION_POWER = 1
+LOAD_DIMENSION_VOLTAGE = 2
+LOAD_DIMENSION_CURRENT = 3
+LOAD_DIMENSION_POWER_FACTOR = 4
+
 _STATE_TEXT = {
     LOAD_STATE_DISABLED: "disabled",
     LOAD_STATE_ENABLED: "enabled",
@@ -44,16 +50,39 @@ _STATE_TEXT = {
     LOAD_STATE_FORCING_REMOVED: "no longer forced",
 }
 
-# Specification names only; no device has confirmed them (see module docstring).
-_SPEC_DIMENSION_NAMES = {
-    0: "all measurements",
-    1: "voltage",
-    2: "current",
-    3: "power",
-    4: "energy",
+# Dimension mappings verified against central unit internal register polling
+# in bt_energia (findings/MyHomeServer1/energy-ts10.md):
+# - Dimension 1: Instantaneous Power (W) -> register $03AA001613
+# - Dimension 2: Voltage (V) -> register $03AA001612
+# - Dimension 3: Current (A) -> registers $03AA001610 & $03AA001611
+# - Dimension 4: Power Factor (cos phi) -> registers $03AA001606 through $03AA001609
+_DIMENSION_NAMES = {
+    LOAD_DIMENSION_ALL: "all measurements",
+    LOAD_DIMENSION_POWER: "instantaneous power",
+    LOAD_DIMENSION_VOLTAGE: "voltage",
+    LOAD_DIMENSION_CURRENT: "current",
+    LOAD_DIMENSION_POWER_FACTOR: "power factor",
 }
 
 _PRIORITY_WHERE = re.compile(r"^#([1-8])$")
+
+
+def _safe_int(value: str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_float(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _priority_of(where: str | None) -> int | None:
@@ -77,6 +106,10 @@ class OWNLoadEvent(OWNEvent):
         self._priority = _priority_of(self._where)
         self._state: int | None = None
         self._measurement_values: list[str] = []
+        self._power: int | None = None
+        self._voltage: int | None = None
+        self._current: float | None = None
+        self._power_factor: float | None = None
 
         if self._priority is not None:
             _target = f"Load priority {self._priority} is"
@@ -94,12 +127,50 @@ class OWNLoadEvent(OWNEvent):
             and self._dimension is not None
         ):
             self._measurement_values = list(self._dimension_value)
-            _name = _SPEC_DIMENSION_NAMES.get(self._dimension)
-            _label = f" ({_name} per specification)" if _name else ""
-            self._human_readable_log = (
-                f"Load control unit dimension {self._dimension}{_label}: "
-                f"raw values {self._measurement_values}."
-            )
+            if self._dimension == LOAD_DIMENSION_POWER and self._dimension_value:
+                self._power = _safe_int(self._dimension_value[0])
+                self._human_readable_log = (
+                    f"Load control unit power draw: {self._power} W."
+                )
+            elif self._dimension == LOAD_DIMENSION_VOLTAGE and self._dimension_value:
+                self._voltage = _safe_int(self._dimension_value[0])
+                self._human_readable_log = (
+                    f"Load control unit voltage: {self._voltage} V."
+                )
+            elif self._dimension == LOAD_DIMENSION_CURRENT and self._dimension_value:
+                self._current = _safe_float(self._dimension_value[0])
+                self._human_readable_log = (
+                    f"Load control unit current: {self._current} A."
+                )
+            elif (
+                self._dimension == LOAD_DIMENSION_POWER_FACTOR
+                and self._dimension_value
+            ):
+                self._power_factor = _safe_float(self._dimension_value[0])
+                self._human_readable_log = (
+                    f"Load control unit power factor: {self._power_factor}."
+                )
+            elif self._dimension == LOAD_DIMENSION_ALL:
+                if len(self._dimension_value) >= 1:
+                    self._power = _safe_int(self._dimension_value[0])
+                if len(self._dimension_value) >= 2:
+                    self._voltage = _safe_int(self._dimension_value[1])
+                if len(self._dimension_value) >= 3:
+                    self._current = _safe_float(self._dimension_value[2])
+                if len(self._dimension_value) >= 4:
+                    self._power_factor = _safe_float(self._dimension_value[3])
+                self._human_readable_log = (
+                    f"Load control unit all measurements: "
+                    f"power={self._power} W, voltage={self._voltage} V, "
+                    f"current={self._current} A, power factor={self._power_factor}."
+                )
+            else:
+                _name = _DIMENSION_NAMES.get(self._dimension)
+                _label = f" ({_name})" if _name else ""
+                self._human_readable_log = (
+                    f"Load control unit dimension {self._dimension}{_label}: "
+                    f"raw values {self._measurement_values}."
+                )
 
     @property
     def priority(self) -> int | None:
@@ -124,6 +195,26 @@ class OWNLoadEvent(OWNEvent):
     def measurement_values(self) -> list[str]:
         """Raw values of a control-unit measurement reply, unscaled and unitless."""
         return self._measurement_values
+
+    @property
+    def power(self) -> int | None:
+        """Instantaneous power draw in W (dimension 1), None if not reported."""
+        return self._power
+
+    @property
+    def voltage(self) -> int | None:
+        """Voltage in V (dimension 2), None if not reported."""
+        return self._voltage
+
+    @property
+    def current(self) -> float | None:
+        """Current in A (dimension 3), None if not reported."""
+        return self._current
+
+    @property
+    def power_factor(self) -> float | None:
+        """Power factor cos phi (dimension 4), None if not reported."""
+        return self._power_factor
 
 
 class OWNLoadCommand(OWNCommand):

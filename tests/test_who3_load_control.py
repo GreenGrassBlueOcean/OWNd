@@ -28,6 +28,7 @@ from OWNd.message import (
     OWNLoadEvent,
     OWNMessage,
 )
+from OWNd.message.load import _safe_float, _safe_int
 
 ORACLE = json.loads(
     (Path(__file__).parent / "golden" / "firmware_oracle.json").read_text(encoding="utf-8")
@@ -180,17 +181,67 @@ def test_unknown_what_keeps_the_raw_frame():
     assert event.human_readable_log == "*3*7*#1##"
 
 
-def test_measurement_reply_stays_raw():
+def test_measurement_reply_all_measurements():
     event = OWNEvent.parse("*#3*10*0*230*12*2760*1520##")
     assert isinstance(event, OWNLoadEvent)
     assert event.is_control_unit
     assert event.dimension == 0
     assert event.measurement_values == ["230", "12", "2760", "1520"]
+    assert event.power == 230
+    assert event.voltage == 12
+    assert event.current == 2760.0
+    assert event.power_factor == 1520.0
     assert event.state is None
     assert event.human_readable_log == (
-        "Load control unit dimension 0 (all measurements per specification): "
-        "raw values ['230', '12', '2760', '1520']."
+        "Load control unit all measurements: power=230 W, voltage=12 V, "
+        "current=2760.0 A, power factor=1520.0."
     )
+
+
+@pytest.mark.parametrize(
+    ("frame", "dim", "attr", "expected_value", "log_phrase"),
+    [
+        ("*#3*10*1*2500##", 1, "power", 2500, "power draw: 2500 W"),
+        ("*#3*10*2*230##", 2, "voltage", 230, "voltage: 230 V"),
+        ("*#3*10*3*16##", 3, "current", 16.0, "current: 16.0 A"),
+        ("*#3*10*4*95##", 4, "power_factor", 95.0, "power factor: 95.0"),
+    ],
+)
+def test_measurement_reply_individual_dimensions(
+    frame: str, dim: int, attr: str, expected_value: int | float, log_phrase: str
+):
+    event = OWNEvent.parse(frame)
+    assert isinstance(event, OWNLoadEvent)
+    assert event.is_control_unit
+    assert event.dimension == dim
+    assert getattr(event, attr) == expected_value
+    assert log_phrase in event.human_readable_log
+
+
+def test_safe_helpers():
+    assert _safe_int(None) is None
+    assert _safe_int("not_a_number") is None
+    assert _safe_int("100") == 100
+    assert _safe_float(None) is None
+    assert _safe_float("not_a_float") is None
+    assert _safe_float("12.5") == 12.5
+
+
+def test_measurement_reply_empty_or_partial():
+    empty_power = OWNEvent.parse("*#3*10*1*##")
+    assert isinstance(empty_power, OWNLoadEvent)
+    assert empty_power.power is None
+
+    empty_float = OWNEvent.parse("*#3*10*3*##")
+    assert isinstance(empty_float, OWNLoadEvent)
+    assert empty_float.current is None
+
+    partial = OWNEvent.parse("*#3*10*0*230##")
+    assert isinstance(partial, OWNLoadEvent)
+    assert partial.power == 230
+    assert partial.voltage is None
+    assert partial.current is None
+    assert partial.power_factor is None
 
 
 def test_unnamed_dimension_and_other_where_are_not_measurements():
