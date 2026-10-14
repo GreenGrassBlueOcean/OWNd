@@ -245,63 +245,146 @@ class TestMessageExhaustiveCoverage:
         assert dc_ev.where == "1"
 
     def test_gateway_diagnostics_dimensions(self) -> None:
+        # Dimension 0: Time (*#13**0*hour*min*sec*tz##)
+        gw_time_0 = OWNGatewayEvent("*#13**0*14*30*45*002##")
+        assert gw_time_0.time == datetime.time.fromisoformat("14:30:45+02:00")
+        assert gw_time_0.timezone == "+02:00"
+        assert gw_time_0.raw_timezone == "002"
+        assert gw_time_0.is_timezone_unconfigured is False
+        assert gw_time_0.date is None
+        assert gw_time_0.datetime is None
+
+        gw_time_999 = OWNGatewayEvent("*#13**0*14*30*45*999##")
+        assert gw_time_999.time == datetime.time(14, 30, 45)
+        assert gw_time_999.timezone == ""
+        assert gw_time_999.raw_timezone == "999"
+        assert gw_time_999.is_timezone_unconfigured is True
+
+        gw_time_notz = OWNGatewayEvent("*#13**0*14*30*45##")
+        assert gw_time_notz.time == datetime.time(14, 30, 45)
+        assert gw_time_notz.timezone == ""
+        assert gw_time_notz.raw_timezone is None
+        assert gw_time_notz.is_timezone_unconfigured is False
+
         # Dimension 1: Date (*#13**1*day_of_week*day*month*year##)
         gw_date = OWNGatewayEvent("*#13**1*4*10*09*2026##")
+        assert gw_date.date == datetime.date(2026, 9, 10)
         assert gw_date._date.year == 2026
         assert gw_date._date.month == 9
         assert gw_date._date.day == 10
+        assert gw_date.time is None
+        assert gw_date.datetime is None
 
         # Dimension 10: IP Address
         gw_ip = OWNGatewayEvent("*#13**10*192*168*1*50##")
+        assert gw_ip.ip_address == "192.168.1.50"
         assert gw_ip._ip_address == "192.168.1.50"
 
         # Dimension 11: Netmask
         gw_mask = OWNGatewayEvent("*#13**11*255*255*255*0##")
+        assert gw_mask.netmask == "255.255.255.0"
         assert gw_mask._netmask == "255.255.255.0"
 
         # Dimension 12: MAC Address
         gw_mac = OWNGatewayEvent("*#13**12*0*3*80*0*18*52##")
+        assert gw_mac.mac_address == "00:03:50:00:12:34"
         assert "00:03:50:00:12:34" in str(gw_mac._mac_address)
 
         # Dimension 15: Model Name
         gw_model = OWNGatewayEvent("*#13**15*4##")
+        assert gw_model.device_type == "MH200"
         assert gw_model._device_type == "MH200"
 
         # Dimension 16: Firmware version
         gw_fw = OWNGatewayEvent("*#13**16*2*0*1##")
+        assert gw_fw.firmware_version == "2.0.1"
         assert gw_fw._firmware_version == "2.0.1"
 
         # Dimension 19: Uptime (days*hours*minutes*seconds)
         gw_uptime = OWNGatewayEvent("*#13**19*1*2*30*45##")
+        assert gw_uptime.uptime == datetime.timedelta(days=1, hours=2, minutes=30, seconds=45)
         assert gw_uptime._uptime is not None
         assert gw_uptime._uptime.days == 1
 
         # Malformed / incomplete uptime triggers (IndexError, TypeError, ValueError)
         with patch("OWNd.message.datetime.timedelta", side_effect=ValueError("bad timedelta")):
             gw_bad_uptime = OWNGatewayEvent("*#13**19*1*2*3*4##")
+            assert gw_bad_uptime.uptime is None
             assert gw_bad_uptime._uptime is None
+
+        # Dimension 22: Datetime
+        gw_dt_0 = OWNGatewayEvent("*#13**22*14*30*45*002*4*10*09*2026##")
+        assert gw_dt_0.datetime == datetime.datetime.fromisoformat("2026-09-10T14:30:45+02:00")
+        assert gw_dt_0.date == datetime.date(2026, 9, 10)
+        assert gw_dt_0.time == datetime.time.fromisoformat("14:30:45+02:00")
+        assert gw_dt_0.timezone == "+02:00"
+        assert gw_dt_0.raw_timezone == "002"
+        assert gw_dt_0.is_timezone_unconfigured is False
+
+        gw_dt_999 = OWNGatewayEvent("*#13**22*14*30*45*999*4*10*09*2026##")
+        assert gw_dt_999.datetime == datetime.datetime(2026, 9, 10, 14, 30, 45)
+        assert gw_dt_999.date == datetime.date(2026, 9, 10)
+        assert gw_dt_999.time == datetime.time(14, 30, 45)
+        assert gw_dt_999.timezone == ""
+        assert gw_dt_999.raw_timezone == "999"
+        assert gw_dt_999.is_timezone_unconfigured is True
 
         # Dimension 23: Kernel version
         gw_kern = OWNGatewayEvent("*#13**23*3*10*0##")
-        assert gw_kern._kernel_version == "3.10.0"
+        assert gw_kern.kernel_version == "3.10.0"
+        assert gw_kern.distribution_version is None
 
         # Dimension 24: Distribution version
         gw_dist = OWNGatewayEvent("*#13**24*1*2*3##")
-        assert gw_dist._distribution_version == "1.2.3"
+        assert gw_dist.distribution_version == "1.2.3"
+        assert gw_dist.kernel_version is None
 
-        # Gateway request dimension check
+        # Gateway command properties
+        cmd_time_999 = OWNGatewayCommand("*#13**0*21*06*40*999##")
+        assert cmd_time_999.time == datetime.time(21, 6, 40)
+        assert cmd_time_999.timezone == ""
+        assert cmd_time_999.raw_timezone == "999"
+        assert cmd_time_999.is_timezone_unconfigured is True
+        assert cmd_time_999.date is None
+        assert cmd_time_999.datetime is None
+
+        cmd_dt_0 = OWNGatewayCommand("*#13**22*14*30*45*002*4*10*09*2026##")
+        assert cmd_dt_0.datetime == datetime.datetime.fromisoformat("2026-09-10T14:30:45+02:00")
+        assert cmd_dt_0.date == datetime.date(2026, 9, 10)
+        assert cmd_dt_0.time == datetime.time.fromisoformat("14:30:45+02:00")
+        assert cmd_dt_0.timezone == "+02:00"
+        assert cmd_dt_0.raw_timezone == "002"
+        assert cmd_dt_0.is_timezone_unconfigured is False
+
+        # Gateway request builders
         gw_req = OWNGatewayCommand("*#13**0##")
         assert gw_req.is_request is True
+        assert str(OWNGatewayCommand.request_time()) == "*#13**0##"
+        assert str(OWNGatewayCommand.request_date()) == "*#13**1##"
+        assert str(OWNGatewayCommand.request_ip_address()) == "*#13**10##"
+        assert str(OWNGatewayCommand.request_netmask()) == "*#13**11##"
+        assert str(OWNGatewayCommand.request_mac_address()) == "*#13**12##"
+        assert str(OWNGatewayCommand.request_device_type()) == "*#13**15##"
+        assert str(OWNGatewayCommand.request_firmware_version()) == "*#13**16##"
+        assert str(OWNGatewayCommand.request_uptime()) == "*#13**19##"
+        assert str(OWNGatewayCommand.request_datetime()) == "*#13**22##"
+        assert str(OWNGatewayCommand.request_kernel_version()) == "*#13**23##"
+        assert str(OWNGatewayCommand.request_distribution_version()) == "*#13**24##"
 
         # Gateway set_datetime, set_date, set_time with timezone
         gw_set_time = OWNGatewayCommand.set_datetime_to_now("UTC")
         assert "*#13**#22*" in str(gw_set_time)
+        assert gw_set_time.datetime is not None
+        assert gw_set_time.date is not None
+        assert gw_set_time.time is not None
 
         gw_set_date = OWNGatewayCommand.set_date_to_today("UTC")
         assert "*#13**#1*" in str(gw_set_date)
+        assert gw_set_date.date is not None
 
         gw_set_t = OWNGatewayCommand.set_time_to_now("UTC")
         assert "*#13**#0*" in str(gw_set_t)
+        assert gw_set_t.time is not None
 
     def test_cen_and_scene_events(self) -> None:
         # CEN Event: states None (press), 1 (short release), 2 (long release), 3 (held)

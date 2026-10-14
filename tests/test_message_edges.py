@@ -1325,6 +1325,10 @@ class TestProtocolFixesAudit:
         assert evt_time_no_tz._hour == "14"
         assert evt_time_no_tz._minute == "30"
         assert evt_time_no_tz._second == "45"
+        assert evt_time_no_tz.time == datetime.time(14, 30, 45)
+        assert evt_time_no_tz.timezone == ""
+        assert evt_time_no_tz.raw_timezone is None
+        assert evt_time_no_tz.is_timezone_unconfigured is False
 
         # F454 broadcast with unset timezone 999 sentinel
         evt_f454_999 = OWNGatewayEvent("*#13**0*21*06*40*999##")
@@ -1333,11 +1337,19 @@ class TestProtocolFixesAudit:
         assert evt_f454_999._second == "40"
         assert evt_f454_999._timezone == ""
         assert evt_f454_999._time == datetime.time(21, 6, 40)
+        assert evt_f454_999.time == datetime.time(21, 6, 40)
+        assert evt_f454_999.timezone == ""
+        assert evt_f454_999.raw_timezone == "999"
+        assert evt_f454_999.is_timezone_unconfigured is True
 
         cmd_f454_999 = OWNGatewayCommand("*#13**0*21*06*40*999##")
         assert cmd_f454_999._hour == "21"
         assert cmd_f454_999._timezone == ""
         assert cmd_f454_999._time == datetime.time(21, 6, 40)
+        assert cmd_f454_999.time == datetime.time(21, 6, 40)
+        assert cmd_f454_999.timezone == ""
+        assert cmd_f454_999.raw_timezone == "999"
+        assert cmd_f454_999.is_timezone_unconfigured is True
 
         # OWNGatewayCommand dimension 0, 1, 22 bounds safety
         cmd_dim0 = OWNGatewayCommand("*#13**#0*12*00*00##")
