@@ -12,6 +12,8 @@ from OWNd.message import (
     CLIMATE_MODE_AUTO,
     CLIMATE_MODE_COOL,
     CLIMATE_MODE_HEAT,
+    SEASON_CONDITIONING,
+    SEASON_HEATING,
     OWNEvent,
     OWNHeatingCommand,
     OWNHeatingEvent,
@@ -115,3 +117,77 @@ def test_multi_day_vacation_uses_the_generic_return_program_in_every_season():
     assert (cool.mode, cool.holiday_days, cool.program) == (CLIMATE_MODE_COOL, 5, 2)
     assert cool.set_temperature is None
     assert cool.message_type == "hvac_mode"
+
+
+def test_multi_day_vacation_countdown_and_expiry_cycle():
+    """Verify complete multi-day vacation cycle grounded in firmware contracts.
+
+    Grounded in:
+    1. Gateway bt_termo scs2open (0x0000EC74 / 0x0000ECF8): broadcasts bare *4*%d*%s##
+       without #P parameter (13DDD / 23DDD / 33DDD).
+    2. 3550 Central Unit firmware (3550_030020.mot 0x0EF881): decrements active vacation
+       day counter via SUB.B #1, 0x2414 every midnight tick.
+    3. Expiration handler (bt_termo 0x0000D2A8): logs '<ter> Invio frame di fine ferie'
+       and broadcasts *4*%d*#0## restoring the return program.
+    """
+    # 1. Client initiates 5-day vacation command with return program 2
+    cmd = OWNEvent.parse("*4*13005#3102*#0##")
+    assert cmd.mode == CLIMATE_MODE_HEAT
+    assert cmd.season == SEASON_HEATING
+    assert cmd.holiday_days == 5
+    assert cmd.program == 2
+    assert cmd.set_temperature is None
+
+    # 2. Central unit / gateway broadcasts active vacation telemetry without #P
+    active = OWNEvent.parse("*4*13005*#0##")
+    assert active.mode == CLIMATE_MODE_HEAT
+    assert active.season == SEASON_HEATING
+    assert active.holiday_days == 5
+    assert active.program is None
+    assert active.set_temperature is None
+
+    # 3. Midnight countdown decrements across remaining days (SUB.B #1 in 3550 CU)
+    for day in (4, 3, 2, 1):
+        tick = OWNEvent.parse(f"*4*13{day:03d}*#0##")
+        assert tick.mode == CLIMATE_MODE_HEAT
+        assert tick.season == SEASON_HEATING
+        assert tick.holiday_days == day
+        assert tick.program is None
+
+    # 4. Vacation expires: central unit restores weekly program 2 via *4*1102*#0##
+    expiry = OWNEvent.parse("*4*1102*#0##")
+    assert expiry.mode == CLIMATE_MODE_HEAT
+    assert expiry.season == SEASON_HEATING
+    assert expiry.program == 2
+    assert expiry.holiday_days is None
+    assert expiry.set_temperature is None
+
+    # 5. Cooling season equivalent cycle (23DDD)
+    cool_cmd = OWNEvent.parse("*4*23005#3102*#0##")
+    assert (cool_cmd.mode, cool_cmd.season, cool_cmd.holiday_days, cool_cmd.program) == (
+        CLIMATE_MODE_COOL,
+        SEASON_CONDITIONING,
+        5,
+        2,
+    )
+    cool_active = OWNEvent.parse("*4*23005*#0##")
+    assert (cool_active.mode, cool_active.season, cool_active.holiday_days, cool_active.program) == (
+        CLIMATE_MODE_COOL,
+        SEASON_CONDITIONING,
+        5,
+        None,
+    )
+    cool_tick = OWNEvent.parse("*4*23001*#0##")
+    assert (cool_tick.mode, cool_tick.season, cool_tick.holiday_days) == (
+        CLIMATE_MODE_COOL,
+        SEASON_CONDITIONING,
+        1,
+    )
+    cool_expiry = OWNEvent.parse("*4*2102*#0##")
+    assert (cool_expiry.mode, cool_expiry.season, cool_expiry.program, cool_expiry.holiday_days) == (
+        CLIMATE_MODE_COOL,
+        SEASON_CONDITIONING,
+        2,
+        None,
+    )
+
