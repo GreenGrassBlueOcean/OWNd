@@ -550,7 +550,8 @@ def test_owngateway_event_properties() -> None:
     assert evt_fw.device_type is None
 
     evt_dev = OWNGatewayEvent("*#13**15*200##")
-    assert evt_dev.device_type == "F454"
+    assert evt_dev.device_type == "F454 / MyHomeServer1 / MH202 / F461 / H4890"
+    assert evt_dev.device_type_code == "200"
     assert evt_dev.firmware_version is None
 
 

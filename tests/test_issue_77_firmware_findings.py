@@ -533,12 +533,12 @@ def test_libqtdevices_probe_device_commands() -> None:
         OWNHeatingCommand.get_fan_speed(100)
 
     # ControlledProbeDevice::setProtection / setOff / setAutomatic
-    assert str(OWNHeatingCommand.set_mode("1", "protection", standalone=True)) == "*4*302*#1##"
+    assert str(OWNHeatingCommand.set_mode("1", "protection", standalone=True)) == "*4*302*1##"
     assert str(OWNHeatingCommand.set_mode("#1", "protection")) == "*4*302*#1##"
     assert str(OWNHeatingCommand.set_mode("#23#1", "protection")) == "*4*302*#23#1##"
     assert str(OWNHeatingCommand.set_protection("1", "protection")) == "*4*302*#1##"
-    assert str(OWNHeatingCommand.set_mode("1", "antifreeze", standalone=True)) == "*4*102*#1##"
-    assert str(OWNHeatingCommand.set_mode("1", "thermal_protection", standalone=True)) == "*4*202*#1##"
+    assert str(OWNHeatingCommand.set_mode("1", "antifreeze", standalone=True)) == "*4*102*1##"
+    assert str(OWNHeatingCommand.set_mode("1", "thermal_protection", standalone=True)) == "*4*202*1##"
     assert OWNHeatingCommand.set_mode("1", "unknown_mode") is None
 
 
