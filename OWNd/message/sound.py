@@ -454,6 +454,12 @@ class OWNSoundDiffusionEvent(OWNEvent):
         self._rds_text: str | None = None
         self._is_rds_blank: bool = False
         self._source_request: int | None = None
+        self._matrix_area: int | None = None
+        self._frequency_khz: int | None = None
+        self._frequency_mhz: float | None = None
+        self._frequency_band: int | None = None
+        self._preset: int | None = None
+        self._rds_text: str | None = None
 
         target = (
             f"{self._where}#{'#'.join(self._where_param)}"
@@ -501,11 +507,18 @@ class OWNSoundDiffusionEvent(OWNEvent):
             else:
                 self._volume_step = 1
 
-        # Source named by a power-on (1#TYPE#SOURCE) or a matrix route (35#TYPE#?#SOURCE)
+        # Source named by a power-on (1#TYPE#SOURCE) or a matrix route (35#TYPE#AREA#SOURCE)
         if self._what == 1 and len(self._what_param) >= 2 and self._what_param[1].isdigit():
             self._source_request = int(self._what_param[1])
-        elif self._what == 35 and len(self._what_param) >= 3 and self._what_param[-1].isdigit():
-            self._source_request = int(self._what_param[-1])
+        elif self._what == 35 and len(self._what_param) >= 3:
+            if self._what_param[0].isdigit():
+                self._multimedia_type = int(self._what_param[0])
+            if self._what_param[1].isdigit():
+                self._matrix_area = int(self._what_param[1])
+            if self._what_param[2].isdigit():
+                self._source_request = int(self._what_param[2])
+        elif self._what == 33 and self._what_param and self._what_param[0].isdigit():
+            self._preset = int(self._what_param[0])
 
         # Dimensions
         if self._dimension == 1 and self._dimension_value:
@@ -517,24 +530,27 @@ class OWNSoundDiffusionEvent(OWNEvent):
             if len(self._dimension_value) > 1 and self._dimension_value[1].isdigit():
                 self._multimedia_type = int(self._dimension_value[1])
         elif self._dimension in (5, 11) and self._dimension_value:
-            # Tuner frequency after one leading value (always
-            # `1` in traces, meaning unknown); dimension 11 adds the station.
-            # The unit is 10 kHz on an MH200N and 100 kHz on a MyHomeServer1;
+            # Tuner frequency after one leading value (band ID: 1 = FM, 2 = AM-LW, 3 = AM-MW, 4 = AM-SW);
+            # dimension 11 adds the station preset.
+            # The unit is 10 kHz on an MH200N / F454 and 100 kHz on MyHomeServer1;
             # the FM ranges (8750..10800, 875..1080) do not overlap.
             expected = 2 if self._dimension == 5 else 3
             values = self._dimension_value
             if len(values) == expected and values[1].isdigit():
+                if values[0].isdigit():
+                    self._frequency_band = int(values[0])
                 khz = next((v for v in (int(values[1]) * 10, int(values[1]) * 100) if 87500 <= v <= 108000), 0)
                 if khz:
                     self._frequency_khz = khz
+                    self._frequency_mhz = round(khz / 1000.0, 2)
                     if self._dimension == 11 and values[2].isdigit() and int(values[2]) > 0:
                         self._preset = int(values[2])
         elif self._dimension == 6 and len(self._dimension_value) == 1:
             if self._dimension_value[0].isdigit() and int(self._dimension_value[0]) >= 1:
                 self._preset = int(self._dimension_value[0])
         elif self._dimension == 10 and 0 < len(self._dimension_value) <= 8:
-            # RDS programme service: 1 to 8 decimal ASCII codes (a MyHomeServer1 sends 5). Other
-            # lengths are bus glitches and are ignored.
+            # RDS programme service: 1 to 8 decimal ASCII codes (F500 tuner continuous flux sends
+            # 8 codes via 1+4+3 telegrams). Lengths outside 1..8 are bus glitches and are ignored.
             chars = [
                 chr(int(code))
                 for code in self._dimension_value
@@ -584,7 +600,16 @@ class OWNSoundDiffusionEvent(OWNEvent):
         elif self._what == 0:
             self._human_readable_log = f"{subject} is switched OFF."
         elif self._what == 35 and self._source_request is not None:
-            self._human_readable_log = f"{subject} is routed to source {self._source_request}."
+            area_str = f" on matrix area {self._matrix_area}" if self._matrix_area is not None and self._matrix_area != 1 else ""
+            self._human_readable_log = f"{subject} is routed to source {self._source_request}{area_str}."
+        elif self._what == 31:
+            self._human_readable_log = f"{subject} started RDS reporting."
+        elif self._what == 32:
+            self._human_readable_log = f"{subject} stopped RDS reporting."
+        elif self._what == 33 and self._preset is not None:
+            self._human_readable_log = f"{subject} stored frequency to preset {self._preset}."
+        elif self._what == 34:
+            self._human_readable_log = f"{subject} follow-me."
         elif self._what == 19:
             self._human_readable_log = f"{subject} opens paging channel {self.paging_channel}."
         elif self._what == 20:
@@ -685,8 +710,53 @@ class OWNSoundDiffusionEvent(OWNEvent):
         return self._dimension == 12 and self._device_state == 0 and self._multimedia_type == 10
 
     @property
+    def matrix_area(self) -> int | None:
+        """Matrix audio distribution channel / area (e.g. 1 in 35#4#1#2)."""
+        return self._matrix_area
+
+    @property
+    def frequency_khz(self) -> int | None:
+        """Tuned frequency in kHz."""
+        return self._frequency_khz
+
+    @property
+    def frequency_mhz(self) -> float | None:
+        """Tuned frequency in MHz."""
+        return self._frequency_mhz
+
+    @property
+    def frequency_band(self) -> int | None:
+        """Frequency band: 1 = FM, 2 = AM-LW, 3 = AM-MW, 4 = AM-SW."""
+        return self._frequency_band
+
+    @property
+    def preset(self) -> int | None:
+        """Tuner preset / station memory slot (1..N)."""
+        return self._preset
+
+    @property
+    def rds_text(self) -> str | None:
+        """Decoded 8-character RDS Program Service (PS) name."""
+        return self._rds_text
+
+    @property
+    def is_rds_start(self) -> bool:
+        """True for WHAT 31 (Start RDS Open)."""
+        return self._what == 31
+
+    @property
+    def is_rds_stop(self) -> bool:
+        """True for WHAT 32 (Stop RDS Open)."""
+        return self._what == 32
+
+    @property
+    def is_follow_me(self) -> bool:
+        """True for WHAT 34 (ON_FOLLOW_ME)."""
+        return self._what == 34
+
+    @property
     def requested_source(self) -> int | None:
-        """Source named by a command: ``1#TYPE#S`` (power on with source) or ``35#TYPE#?#S`` (route)."""
+        """Source named by a command: ``1#TYPE#S`` (power on with source) or ``35#TYPE#AREA#S`` (route)."""
         return self._source_request
 
     @property
@@ -841,18 +911,132 @@ class OWNSoundDiffusionCommand(OWNCommand):
 
     @classmethod
     def route_source(
-        cls, where: str | int, source_id: int | str, multimedia_type: int | str = 4
+        cls,
+        where: str | int,
+        source_id: int | str,
+        matrix_area: int | str = 1,
+        multimedia_type: int | str = 4,
     ) -> OWNSoundDiffusionCommand:
-        """Route a zone to a source on the matrix: ``*22*35#TYPE#1#SOURCE*WHERE##``.
+        """Route a zone to a source on the matrix: ``*22*35#TYPE#AREA#SOURCE*WHERE##``.
 
-        The ``1`` before the source is constant in every trace; its meaning is not known.
+        Parameters:
+            where: Target zone address (e.g. 3#1#1).
+            source_id: Source ID (e.g. 1, 2, 7 for FM Tuner).
+            matrix_area: Matrix distribution channel/area (default 1; area 0 on plant broadcast).
+            multimedia_type: Audio routing mode (default 4 = Stereo).
         """
         target = str(where).strip()
         source = int(source_id)
         if source < 1:
             raise ValueError("source must be positive")
-        message = cls(f"*22*35#{int(multimedia_type)}#1#{source}*{target}##")
-        message._human_readable_log = f"Routing sound diffusion device {target} to source {source}."
+        area = int(matrix_area)
+        mm_type = int(multimedia_type)
+        message = cls(f"*22*35#{mm_type}#{area}#{source}*{target}##")
+        area_str = f" on matrix area {area}" if area != 1 else ""
+        message._human_readable_log = f"Routing sound diffusion device {target} to source {source}{area_str}."
+        return message
+
+    @classmethod
+    def set_frequency(
+        cls,
+        where: str | int,
+        frequency_khz: int | float,
+        band: int = 1,
+    ) -> OWNSoundDiffusionCommand:
+        """Tune tuner source to frequency: ``*#22*WHERE*#5*BAND*FREQ_10KHZ##``.
+
+        Frequency is transmitted in 10 kHz units per gateway firmware specification
+        (e.g., 101.50 MHz = 101500 kHz -> 10150).
+        """
+        target = str(where).strip()
+        khz = int(round(float(frequency_khz)))
+        if khz <= 0:
+            raise ValueError("frequency must be positive")
+        freq_10k = khz // 10
+        message = cls(f"*#22*{target}*#5*{int(band)}*{freq_10k}##")
+        message._human_readable_log = f"Tuning sound diffusion device {target} to {khz} kHz ({khz/1000.0:.2f} MHz)."
+        return message
+
+    @classmethod
+    def request_frequency(cls, where: str | int) -> OWNSoundDiffusionCommand:
+        """Request tuned frequency: ``*#22*WHERE*5##``."""
+        target = str(where).strip()
+        message = cls(f"*#22*{target}*5##")
+        message._human_readable_log = f"Requesting frequency for sound diffusion device {target}."
+        return message
+
+    @classmethod
+    def set_preset(
+        cls,
+        where: str | int,
+        preset: int | str,
+        frequency_khz: int | float | None = None,
+        band: int = 1,
+    ) -> OWNSoundDiffusionCommand:
+        """Select or store a preset station: ``*#22*WHERE*#6*PRESET##`` or ``*#22*WHERE*#11*BAND*FREQ*PRESET##``."""
+        target = str(where).strip()
+        p = int(preset)
+        if p < 1:
+            raise ValueError("preset must be positive")
+        if frequency_khz is not None:
+            khz = int(round(float(frequency_khz)))
+            freq_10k = khz // 10
+            message = cls(f"*#22*{target}*#11*{int(band)}*{freq_10k}*{p}##")
+            message._human_readable_log = f"Programming preset {p} on {target} to {khz} kHz."
+        else:
+            message = cls(f"*#22*{target}*#6*{p}##")
+            message._human_readable_log = f"Selecting preset {p} on sound diffusion device {target}."
+        return message
+
+    @classmethod
+    def request_preset(cls, where: str | int) -> OWNSoundDiffusionCommand:
+        """Request active preset: ``*#22*WHERE*6##``."""
+        target = str(where).strip()
+        message = cls(f"*#22*{target}*6##")
+        message._human_readable_log = f"Requesting preset for sound diffusion device {target}."
+        return message
+
+    @classmethod
+    def start_rds(cls, where: str | int) -> OWNSoundDiffusionCommand:
+        """Start RDS reporting: ``*22*31*WHERE##``."""
+        target = str(where).strip()
+        message = cls(f"*22*31*{target}##")
+        message._human_readable_log = f"Starting RDS reporting on sound diffusion device {target}."
+        return message
+
+    @classmethod
+    def stop_rds(cls, where: str | int) -> OWNSoundDiffusionCommand:
+        """Stop RDS reporting: ``*22*32*WHERE##``."""
+        target = str(where).strip()
+        message = cls(f"*22*32*{target}##")
+        message._human_readable_log = f"Stopping RDS reporting on sound diffusion device {target}."
+        return message
+
+    @classmethod
+    def store_preset(cls, where: str | int, preset: int | str) -> OWNSoundDiffusionCommand:
+        """Store current tuned frequency into preset: ``*22*33#PRESET*WHERE##``."""
+        target = str(where).strip()
+        p = int(preset)
+        message = cls(f"*22*33#{p}*{target}##")
+        message._human_readable_log = f"Storing current frequency into preset {p} on {target}."
+        return message
+
+    @classmethod
+    def send_rds_text(cls, where: str | int, text: str) -> OWNSoundDiffusionCommand:
+        """Send an 8-character RDS Program Service name: ``*#22*WHERE*#10*c0*...*c7##``."""
+        target = str(where).strip()
+        formatted = text[:8].ljust(8)
+        codes = [str(ord(c)) for c in formatted]
+        message = cls(f"*#22*{target}*#10*{'*'.join(codes)}##")
+        message._human_readable_log = f"Broadcasting RDS text '{formatted.strip()}' to sound diffusion device {target}."
+        return message
+
+    @classmethod
+    def request_rds(cls, where: str | int) -> OWNSoundDiffusionCommand:
+        """Request RDS station text: ``*#22*WHERE*10##``."""
+        target = str(where).strip()
+        message = cls(f"*#22*{target}*10##")
+        message._human_readable_log = f"Requesting RDS text for sound diffusion device {target}."
         return message
 
     @classmethod

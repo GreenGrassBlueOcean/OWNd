@@ -495,3 +495,92 @@ def test_who22_rds_chunks_of_five_codes_are_text() -> None:
     assert isinstance(event, OWNSoundDiffusionEvent)
     assert event.rds_text == "RADIO"
     assert OWNMessage.parse("*#22*5#2#1*10*68*69*69*74*65##").rds_text == "DEEJA"
+
+
+def test_who22_frequency_and_presets() -> None:
+    """Verify decoding of dimension 5, 6, and 11 frequency and preset frames."""
+    # Dimension 5: Tuner frequency report from bus (10 kHz resolution: 10150 -> 101.50 MHz)
+    freq_event = OWNMessage.parse("*#22*5#2#1*5*1*10150##")
+    assert isinstance(freq_event, OWNSoundDiffusionEvent)
+    assert freq_event.target_type == "source"
+    assert freq_event.source_id == 1
+    assert freq_event.frequency_band == 1
+    assert freq_event.frequency_khz == 101500
+    assert freq_event.frequency_mhz == 101.5
+    assert "101.50 MHz" in freq_event.human_readable_log
+
+    # Dimension 5 fallback: 100 kHz units (1015 -> 101.50 MHz)
+    freq_fallback = OWNMessage.parse("*#22*2#1*5*1*1015##")
+    assert isinstance(freq_fallback, OWNSoundDiffusionEvent)
+    assert freq_fallback.frequency_khz == 101500
+    assert freq_fallback.frequency_mhz == 101.5
+
+    # Dimension 6: Active preset slot
+    preset_event = OWNMessage.parse("*#22*2#1*6*3##")
+    assert isinstance(preset_event, OWNSoundDiffusionEvent)
+    assert preset_event.preset == 3
+    assert "station is 3" in preset_event.human_readable_log
+
+    # Dimension 11: Preset station memory frequency (P5 on 101.50 MHz)
+    mem_event = OWNMessage.parse("*#22*5#2#1*11*1*10150*5##")
+    assert isinstance(mem_event, OWNSoundDiffusionEvent)
+    assert mem_event.preset == 5
+    assert mem_event.frequency_mhz == 101.5
+    assert mem_event.frequency_khz == 101500
+    assert "101.50 MHz (station 5)" in mem_event.human_readable_log
+
+
+def test_who22_rds_reporting() -> None:
+    """Verify decoding of dimension 10 RDS frames and WHAT 31/32 control."""
+    # 8-character Program Service name (RADIO   )
+    rds_event = OWNMessage.parse("*#22*5#2#1*10*82*65*68*73*79*32*32*32##")
+    assert isinstance(rds_event, OWNSoundDiffusionEvent)
+    assert rds_event.rds_text == "RADIO"
+    assert "RDS text: 'RADIO'" in rds_event.human_readable_log
+
+    # RDS DEEJAY
+    deejay = OWNMessage.parse("*#22*2#1*10*68*69*69*74*65*89*32*32##")
+    assert isinstance(deejay, OWNSoundDiffusionEvent)
+    assert deejay.rds_text == "DEEJAY"
+
+    # Start RDS (WHAT 31) & Stop RDS (WHAT 32)
+    start_rds = OWNMessage.parse("*22*31*2#1##")
+    assert isinstance(start_rds, OWNSoundDiffusionEvent)
+    assert start_rds.is_rds_start is True
+    assert "started RDS reporting" in start_rds.human_readable_log
+
+    stop_rds = OWNMessage.parse("*22*32*2#1##")
+    assert isinstance(stop_rds, OWNSoundDiffusionEvent)
+    assert stop_rds.is_rds_stop is True
+    assert "stopped RDS reporting" in stop_rds.human_readable_log
+
+    # Store preset (WHAT 33)
+    store = OWNMessage.parse("*22*33#4*2#1##")
+    assert isinstance(store, OWNSoundDiffusionEvent)
+    assert store.preset == 4
+    assert "stored frequency to preset 4" in store.human_readable_log
+
+
+def test_who22_matrix_route_parameters() -> None:
+    """Verify full matrix area and source parameter extraction in WHAT 35."""
+    route_area2 = OWNMessage.parse("*22*35#4#2#7*3#2#0##")
+    assert isinstance(route_area2, OWNSoundDiffusionEvent)
+    assert route_area2.multimedia_type == 4
+    assert route_area2.matrix_area == 2
+    assert route_area2.requested_source == 7
+    assert "routed to source 7 on matrix area 2" in route_area2.human_readable_log
+
+
+def test_who22_tuner_command_builders() -> None:
+    """Verify new WHO 22 tuner and RDS command builders."""
+    assert str(OWNSoundDiffusionCommand.set_frequency("2#1", 101500)) == "*#22*2#1*#5*1*10150##"
+    assert str(OWNSoundDiffusionCommand.request_frequency("2#1")) == "*#22*2#1*5##"
+    assert str(OWNSoundDiffusionCommand.set_preset("2#1", 3)) == "*#22*2#1*#6*3##"
+    assert str(OWNSoundDiffusionCommand.set_preset("2#1", 5, frequency_khz=101500)) == "*#22*2#1*#11*1*10150*5##"
+    assert str(OWNSoundDiffusionCommand.request_preset("2#1")) == "*#22*2#1*6##"
+    assert str(OWNSoundDiffusionCommand.start_rds("2#1")) == "*22*31*2#1##"
+    assert str(OWNSoundDiffusionCommand.stop_rds("2#1")) == "*22*32*2#1##"
+    assert str(OWNSoundDiffusionCommand.store_preset("2#1", 4)) == "*22*33#4*2#1##"
+    assert str(OWNSoundDiffusionCommand.send_rds_text("2#1", "RADIO")) == "*#22*2#1*#10*82*65*68*73*79*32*32*32##"
+    assert str(OWNSoundDiffusionCommand.request_rds("2#1")) == "*#22*2#1*10##"
+    assert str(OWNSoundDiffusionCommand.route_source("3#1#1", 7, matrix_area=2)) == "*22*35#4#2#7*3#1#1##"
