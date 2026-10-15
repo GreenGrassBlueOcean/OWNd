@@ -123,7 +123,10 @@ class OWNGatewayEvent(OWNEvent):
             elif self._dimension_value[0] == "13":
                 self._device_type = "H4684"
             elif self._dimension_value[0] == "200":
-                self._device_type = "F454"
+                # Code 200 is shared by every Linux-based gateway generation seen so
+                # far (F454, MyHomeServer1, MH202, F461, H4890; MyHOME #370, #466 and
+                # the F461 plant capture). WHO 1013 dimension 1 tells them apart.
+                self._device_type = "F454 / MyHomeServer1 / MH202 / F461 / H4890"
             else:
                 self._device_type = f"Unknown ({self._dimension_value[0]})"
             self._human_readable_log = f"Gateway device type is: {self._device_type}."
@@ -246,6 +249,13 @@ class OWNGatewayEvent(OWNEvent):
     def device_type(self) -> str | None:
         """Return the decoded gateway device type string."""
         return self._device_type
+
+    @property
+    def device_type_code(self) -> str | None:
+        """Return the raw WHO 13 dimension 15 code (``"200"`` on an F454, F461, ...)."""
+        if self._dimension == 15 and self._dimension_value:
+            return str(self._dimension_value[0])
+        return None
 
     @property
     def kernel_version(self) -> str | None:

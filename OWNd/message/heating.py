@@ -433,7 +433,6 @@ class OWNHeatingEvent(OWNEvent):
                     self._human_readable_log = f"Zone {self._zone}'s cooling fan is on at speed {self._cooling_fan_speed}"  # pylint: disable=line-too-long
                 else:
                     self._cooling_fan_on = False
-                    self._is_active = False
                     self._human_readable_log = f"Zone {self._zone}'s cooling fan is off"
             # Handle heating valve status relative to fan speed/status
             _heating_value = int(self._dimension_value[1])
@@ -458,8 +457,16 @@ class OWNHeatingEvent(OWNEvent):
                     )
                 else:
                     self._fan_on = False
-                    self._is_active = False
                     self._human_readable_log += "; heating fan is off."
+            # A fan-coil value on one side must not hide an open valve or a running fan
+            # on the other side: *#4*2*19*5*1## (cooling fan off, heating valve on) is an
+            # active zone (F461 plant capture, tests/fixtures/f461_live_2026-10-15/).
+            self._is_active = bool(
+                self._is_cooling
+                or self._is_heating
+                or self._cooling_fan_on
+                or self._fan_on
+            )
 
         elif (
             self._dimension == 20
@@ -788,9 +795,15 @@ class OWNHeatingCommand(OWNCommand):
         zone, zone_name = _zone_address_and_name(where, standalone=standalone)
 
         mode_name = mode
-        if mode in (CLIMATE_MODE_AUTO, "protection", "antifreeze", "thermal_protection"):
-            # The firmware and central unit forward these only as *4*WHAT*#Z##
-            # (libqtdevices ControlledProbeDevice and OWNd#77 A3), so standalone does not apply.
+        if mode == CLIMATE_MODE_AUTO:
+            # Automatic is the central unit's program: the firmware refuses *4*311*Z##
+            # (NACK, no bus frame; OWNd#77 A3, oracle3/out/termo_f461.tsv) and only
+            # forwards *4*311*#Z##, a frame addressed to the central unit, so
+            # standalone does not apply. Protection (302 / 102 / 202) is different:
+            # the plain zone form is forwarded as a direct zone command (bus
+            # 93 ZZ 30 04) and is the only form a standalone thermostat acts on;
+            # the #Z form goes to a central unit and is ignored when there is none
+            # (F461 plant capture, tests/fixtures/f461_live_2026-10-15/).
             if not zone.startswith("#"):
                 zone = f"#{zone}"
 
