@@ -15,9 +15,8 @@ MESSAGE_TYPE_PIR_SENSITIVITY = "pir_sensitivity"
 MESSAGE_TYPE_ILLUMINANCE = "illuminance_value"
 MESSAGE_TYPE_MOTION_TIMEOUT = "motion_timeout"
 
-# WHAT 19 anomaly / no-load status per MH200N bt_luci binary disassembly (findings/MH200N/what19.md)
+# WHAT 19 anomaly status per MH200N bt_luci binary disassembly (findings/MH200N/what19.md)
 LIGHTING_STATE_ANOMALY = 19
-LIGHTING_STATE_NO_LOAD = 19
 
 PIR_SENSITIVITY_MAPPING = ["low", "medium", "high", "very high"]
 
@@ -96,7 +95,7 @@ class OWNLightingEvent(OWNEvent):
                 self._is_anomaly = True
                 self._unknown_state = self._state
                 self._state = None
-                self._human_readable_log = f"Light {self._where}{self._interface_log_text} reports anomaly / no load (WHAT 19)."
+                self._human_readable_log = f"Light {self._where}{self._interface_log_text} reports anomaly (WHAT 19)."
             elif self._state >= 20 and self._state <= 29:  # Light blinking
                 self._blinker = 0.5 * (self._state - 19)
                 self._human_readable_log = f"Light {self._where}{self._interface_log_text} is blinking every {self._blinker}s."
@@ -218,12 +217,7 @@ class OWNLightingEvent(OWNEvent):
 
     @property
     def is_anomaly(self) -> bool:
-        """True if the light actuator reports an anomaly / load fault (WHAT 19)."""
-        return self._is_anomaly
-
-    @property
-    def is_no_load(self) -> bool:
-        """Alias for is_anomaly: True if the actuator reports no load / open circuit (WHAT 19)."""
+        """True if the light actuator reports an anomaly / fault state (WHAT 19)."""
         return self._is_anomaly
 
     @property

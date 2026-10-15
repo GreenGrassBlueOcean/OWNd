@@ -338,9 +338,8 @@ def test_lighting_what_19_is_an_anomaly_state() -> None:
     assert isinstance(msg, OWNLightingEvent)
     assert msg.is_on is None
     assert msg.is_anomaly is True
-    assert msg.is_no_load is True
     assert msg.unknown_state == 19
-    assert msg.human_readable_log == "Light 74 reports anomaly / no load (WHAT 19)."
+    assert msg.human_readable_log == "Light 74 reports anomaly (WHAT 19)."
 
 
 @pytest.mark.parametrize("what", [32, 33, 35, 39, 99])
@@ -349,7 +348,6 @@ def test_lighting_what_outside_the_table_is_an_unknown_state(what: int) -> None:
 
     assert msg.is_on is None
     assert msg.is_anomaly is False
-    assert msg.is_no_load is False
     assert msg.unknown_state == what
     assert msg.is_sensor is False
     assert f"unknown lighting WHAT {what}" in msg.human_readable_log
