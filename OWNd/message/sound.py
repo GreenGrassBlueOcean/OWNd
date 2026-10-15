@@ -450,16 +450,13 @@ class OWNSoundDiffusionEvent(OWNEvent):
         self._device_state: int | None = None
         self._multimedia_type: int | None = None
         self._frequency_khz: int | None = None
+        self._frequency_mhz: float | None = None
+        self._frequency_band: int | None = None
         self._preset: int | None = None
         self._rds_text: str | None = None
         self._is_rds_blank: bool = False
         self._source_request: int | None = None
         self._matrix_area: int | None = None
-        self._frequency_khz: int | None = None
-        self._frequency_mhz: float | None = None
-        self._frequency_band: int | None = None
-        self._preset: int | None = None
-        self._rds_text: str | None = None
 
         target = (
             f"{self._where}#{'#'.join(self._where_param)}"
@@ -715,11 +712,6 @@ class OWNSoundDiffusionEvent(OWNEvent):
         return self._matrix_area
 
     @property
-    def frequency_khz(self) -> int | None:
-        """Tuned frequency in kHz."""
-        return self._frequency_khz
-
-    @property
     def frequency_mhz(self) -> float | None:
         """Tuned frequency in MHz."""
         return self._frequency_mhz
@@ -728,16 +720,6 @@ class OWNSoundDiffusionEvent(OWNEvent):
     def frequency_band(self) -> int | None:
         """Frequency band: 1 = FM, 2 = AM-LW, 3 = AM-MW, 4 = AM-SW."""
         return self._frequency_band
-
-    @property
-    def preset(self) -> int | None:
-        """Tuner preset / station memory slot (1..N)."""
-        return self._preset
-
-    @property
-    def rds_text(self) -> str | None:
-        """Decoded 8-character RDS Program Service (PS) name."""
-        return self._rds_text
 
     @property
     def is_rds_start(self) -> bool:

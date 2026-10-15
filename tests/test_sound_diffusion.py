@@ -560,6 +560,12 @@ def test_who22_rds_reporting() -> None:
     assert store.preset == 4
     assert "stored frequency to preset 4" in store.human_readable_log
 
+    # Follow-me (WHAT 34)
+    follow_me = OWNMessage.parse("*22*34*3#1#1##")
+    assert isinstance(follow_me, OWNSoundDiffusionEvent)
+    assert follow_me.is_follow_me is True
+    assert "follow-me" in follow_me.human_readable_log
+
 
 def test_who22_matrix_route_parameters() -> None:
     """Verify full matrix area and source parameter extraction in WHAT 35."""
@@ -584,3 +590,12 @@ def test_who22_tuner_command_builders() -> None:
     assert str(OWNSoundDiffusionCommand.send_rds_text("2#1", "RADIO")) == "*#22*2#1*#10*82*65*68*73*79*32*32*32##"
     assert str(OWNSoundDiffusionCommand.request_rds("2#1")) == "*#22*2#1*10##"
     assert str(OWNSoundDiffusionCommand.route_source("3#1#1", 7, matrix_area=2)) == "*22*35#4#2#7*3#1#1##"
+
+    with pytest.raises(ValueError, match="frequency must be positive"):
+        OWNSoundDiffusionCommand.set_frequency("2#1", 0)
+    with pytest.raises(ValueError, match="frequency must be positive"):
+        OWNSoundDiffusionCommand.set_frequency("2#1", -10)
+    with pytest.raises(ValueError, match="preset must be positive"):
+        OWNSoundDiffusionCommand.set_preset("2#1", 0)
+    with pytest.raises(ValueError, match="preset must be positive"):
+        OWNSoundDiffusionCommand.set_preset("2#1", -5)
