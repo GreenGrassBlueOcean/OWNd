@@ -123,10 +123,13 @@ class OWNGatewayEvent(OWNEvent):
             elif self._dimension_value[0] == "13":
                 self._device_type = "H4684"
             elif self._dimension_value[0] == "200":
-                # Code 200 is shared by every Linux-based gateway generation seen so
-                # far (F454, MyHomeServer1, MH202, F461, H4890; MyHOME #370, #466 and
-                # the F461 plant capture). WHO 1013 dimension 1 tells them apart.
-                self._device_type = "F454 / MyHomeServer1 / MH202 / F461 / H4890"
+                # Code 200 is shared across modern gateways (F454, MyHomeServer1,
+                # MH202, F461, H4890) and MH201 (fw 3.3.6, 3.6.27; MyHOME #370, #466
+                # and plant fixtures). WHO 1013 dimension 1 (*#1013**1##) tells them
+                # apart (model 10 on MH201).
+                self._device_type = (
+                    "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201"
+                )
             else:
                 self._device_type = f"Unknown ({self._dimension_value[0]})"
             self._human_readable_log = f"Gateway device type is: {self._device_type}."

@@ -178,7 +178,7 @@ def test_capture_shows_only_the_plain_protection_form_acts() -> None:
 def test_device_type_200_is_not_a_single_model() -> None:
     msg = OWNEvent.parse("*#13**15*200##")
     assert msg.device_type_code == "200"
-    assert "F454" in msg.device_type and "F461" in msg.device_type
+    assert "F454" in msg.device_type and "F461" in msg.device_type and "MH201" in msg.device_type
     assert msg.human_readable_log == f"Gateway device type is: {msg.device_type}."
     assert OWNEvent.parse("*#13**15*2##").device_type == "MHServer"
     assert OWNEvent.parse("*#13**16*2*0*11##").device_type_code is None
