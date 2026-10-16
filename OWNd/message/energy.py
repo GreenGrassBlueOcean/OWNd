@@ -32,6 +32,23 @@ STOP_AND_GO_TRACKING_DISABLE = 29
 
 STOP_AND_GO_DIM_TEST_FREQUENCY = 212
 STOP_AND_GO_DIM_STATUS_MASK = 250
+STOP_AND_GO_DIM_OPEN = 251
+STOP_AND_GO_DIM_FAILURE = 252
+STOP_AND_GO_DIM_BLOCKED = 253
+STOP_AND_GO_DIM_NEUTRAL_SHORT_CIRCUIT = 254
+STOP_AND_GO_DIM_GROUND_FAULT = 255
+STOP_AND_GO_DIM_MAX_VOLTAGE = 256
+STOP_AND_GO_DIM_SELF_TEST_DISABLED = 257
+STOP_AND_GO_DIM_AUTORESET_OFF = 258
+STOP_AND_GO_DIM_CHECK_OFF = 259
+STOP_AND_GO_DIM_WAITING_CLOSING = 260
+STOP_AND_GO_DIM_FIRST_24H_OPENING = 261
+STOP_AND_GO_DIM_DOWNSTREAM_POWER_FAILURE = 262
+STOP_AND_GO_DIM_UPSTREAM_POWER_FAILURE = 263
+
+STOP_AND_GO_FLAG_DIMENSIONS = frozenset(
+    range(STOP_AND_GO_DIM_OPEN, STOP_AND_GO_DIM_UPSTREAM_POWER_FAILURE + 1)
+)
 
 STOP_AND_GO_WHATS = {
     STOP_AND_GO_OPEN,
@@ -46,6 +63,7 @@ STOP_AND_GO_WHATS = {
 STOP_AND_GO_DIMENSIONS = {
     STOP_AND_GO_DIM_TEST_FREQUENCY,
     STOP_AND_GO_DIM_STATUS_MASK,
+    *STOP_AND_GO_FLAG_DIMENSIONS,
 }
 
 
@@ -451,8 +469,9 @@ class OWNStopAndGoEvent(OWNEvent):
     - Differential self-test: *18*23*1N## (positive) / *18*24*1N## (negative)
     - Auto-reset activation/deactivation: *18*26*1N## / *18*27*1N##
     - Earth leakage tracking: *18*28*1N## / *18*29*1N##
-    - Self-test frequency: *#18*1N*212*DAYS## (read response)
-    - Status mask: *#18*1N*250*MASK##
+        - Self-test frequency: *#18*1N*212*DAYS## (read response)
+        - Status mask: *#18*1N*250*MASK##
+        - Individual status flags: *#18*1N*251..263*BIT##
     Addresses are formatted as 1N (11..19, where line is 1..9).
     """
 
@@ -469,6 +488,8 @@ class OWNStopAndGoEvent(OWNEvent):
         self._differential_test_result: str | None = None
         self._test_frequency_days: int | None = None
         self._status_mask: str | None = None
+        self._flag_dimension: int | None = None
+        self._flag_active: bool | None = None
 
         line_num: int | None = None
         if (
@@ -541,6 +562,24 @@ class OWNStopAndGoEvent(OWNEvent):
                 self._human_readable_log = (
                     f"Stop&Go breaker {self._where} status mask is {self._status_mask}."
                 )
+            elif (
+                self._dimension in STOP_AND_GO_FLAG_DIMENSIONS
+                and self._dimension_value
+            ):
+                bit = _integer_value(self._dimension_value, 0)
+                active = bit == 1
+                self._flag_dimension = self._dimension
+                self._flag_active = active
+                if self._dimension == STOP_AND_GO_DIM_OPEN:
+                    self._is_open = active
+                    self._is_closed = not active
+                elif self._dimension == STOP_AND_GO_DIM_AUTORESET_OFF:
+                    self._is_auto_reset_active = not active
+                elif self._dimension == STOP_AND_GO_DIM_CHECK_OFF:
+                    self._is_tracking_active = not active
+                self._human_readable_log = (
+                    f"Stop&Go breaker {self._where} status flag {self._dimension} is {bit}."
+                )
 
     @property
     def message_type(self) -> str | None:
@@ -586,6 +625,16 @@ class OWNStopAndGoEvent(OWNEvent):
     @property
     def status_mask(self) -> str | None:
         return self._status_mask
+
+    @property
+    def flag_dimension(self) -> int | None:
+        """Individual Stop&Go status flag dimension (251..263), if applicable."""
+        return self._flag_dimension
+
+    @property
+    def flag_active(self) -> bool | None:
+        """Whether the reported single-bit Stop&Go status flag (251..263) is set (`1`)."""
+        return self._flag_active
 
 
 class OWNStopAndGoCommand(OWNCommand):
@@ -635,6 +684,10 @@ class OWNStopAndGoCommand(OWNCommand):
             elif self._dimension == STOP_AND_GO_DIM_STATUS_MASK:
                 self._human_readable_log = (
                     f"Requesting Stop&Go breaker {self._where} status mask."
+                )
+            elif self._dimension in STOP_AND_GO_FLAG_DIMENSIONS:
+                self._human_readable_log = (
+                    f"Requesting Stop&Go breaker {self._where} status flag {self._dimension}."
                 )
 
     @classmethod
@@ -705,6 +758,17 @@ class OWNStopAndGoCommand(OWNCommand):
     def request_status_mask(cls, where: str | int) -> OWNStopAndGoCommand:
         target = _normalize_stop_and_go_where(where)
         return cls(f"*#18*{target}*{STOP_AND_GO_DIM_STATUS_MASK}##")
+
+    @classmethod
+    def request_status_flag(
+        cls, where: str | int, dimension: int
+    ) -> OWNStopAndGoCommand:
+        target = _normalize_stop_and_go_where(where)
+        if dimension not in STOP_AND_GO_FLAG_DIMENSIONS:
+            raise ValueError(
+                f"Stop&Go status flag dimension must be between {STOP_AND_GO_DIM_OPEN} and {STOP_AND_GO_DIM_UPSTREAM_POWER_FAILURE}, got {dimension}"
+            )
+        return cls(f"*#18*{target}*{dimension}##")
 
 
 def _parse_who18_event(data: str) -> OWNEvent:
