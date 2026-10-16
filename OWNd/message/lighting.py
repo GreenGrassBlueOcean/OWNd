@@ -430,7 +430,7 @@ class OWNLightingCommand(OWNCommand):
                 v = int(self._dimension_value[2])
             except (TypeError, ValueError):
                 return None
-            if h <= 360 and (h, s, v) != (511, 127, 255):
+            if 0 <= h <= 360 and 0 <= s <= 100 and (h, s, v) != (511, 127, 255):
                 return (h, s)
         return None
 
