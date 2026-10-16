@@ -29,6 +29,7 @@ class OWNSoundEvent(OWNEvent):
         self._environment = self._zone[1] if self._is_routing_event else None
         self._routed_source = self._zone[2] if self._is_routing_event else None
         self._volume: int | None = None
+        self._volume_step_delta: int | None = None
         self._frequency_khz: int | None = None
         self._track: int | None = None
         self._rds_text: str | None = None
@@ -54,6 +55,16 @@ class OWNSoundEvent(OWNEvent):
         elif self._state == 100:
             self._is_source_busy = True
             self._human_readable_log = f"{subject} is BUSY."
+        elif self._state is not None and 1001 <= self._state <= 1015:
+            self._volume_step_delta = self._state - 1000
+            self._human_readable_log = (
+                f"{subject} increase volume by {self._volume_step_delta} step(s)."
+            )
+        elif self._state is not None and 1101 <= self._state <= 1115:
+            self._volume_step_delta = -(self._state - 1100)
+            self._human_readable_log = (
+                f"{subject} decrease volume by {abs(self._volume_step_delta)} step(s)."
+            )
         elif self._state == 5000:
             self._is_seek_up = True
             self._human_readable_log = f"{subject} seek forward."
@@ -161,6 +172,11 @@ class OWNSoundEvent(OWNEvent):
     @property
     def volume(self) -> int | None:
         return self._volume
+
+    @property
+    def volume_step_delta(self) -> int | None:
+        """Signed volume step delta (+1..+15 for WHAT 1001..1015, -1..-15 for WHAT 1101..1115)."""
+        return self._volume_step_delta
 
     @property
     def frequency_khz(self) -> int | None:

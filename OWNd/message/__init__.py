@@ -171,6 +171,9 @@ from .lighting import (
     MESSAGE_TYPE_MOTION_TIMEOUT,
     MESSAGE_TYPE_PIR_SENSITIVITY,
     PIR_SENSITIVITY_MAPPING,
+    area_of_where,
+    is_apl_address,
+    normalize_where,
     OWNLightingCommand,
     OWNLightingEvent,
 )
@@ -220,6 +223,9 @@ __all__ = [
     "MESSAGE_TYPE_ILLUMINANCE",
     "MESSAGE_TYPE_MOTION_TIMEOUT",
     "PIR_SENSITIVITY_MAPPING",
+    "is_apl_address",
+    "area_of_where",
+    "normalize_where",
     "OWNLightingEvent",
     "OWNLightingCommand",
     # Automation (WHO 2)
