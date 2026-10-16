@@ -21,6 +21,74 @@ LIGHTING_STATE_ANOMALY = 19
 PIR_SENSITIVITY_MAPPING = ["low", "medium", "high", "very high"]
 
 
+def is_apl_address(base: str) -> bool:
+    """Check if base address is a valid OpenWebNet Point-to-Point (APL) address.
+
+    Point-to-point addressing combinations:
+      - A = 0; PL [1-9]        -> 2 digits (e.g. 02 = Area 0, PL 2; accepted by BTicino firmware)
+      - A = 00; PL [01-15]     -> 4 digits (e.g. 0015 = Area 00, PL 15)
+      - A [1-9]; PL [1-9]      -> 2 digits (e.g. 15 = Area 1, PL 5)
+      - A = 10; PL [01-15]     -> 4 digits (e.g. 1015 = Area 10, PL 15)
+      - A [01-09]; PL [10-15]  -> 4 digits (e.g. 0115 = Area 1, PL 15)
+    """
+    if not base.isdigit():
+        return False
+    if len(base) == 2:
+        a = int(base[0])
+        pl = int(base[1])
+        if a == 0:
+            return 1 <= pl <= 9
+        return 1 <= a <= 9 and 1 <= pl <= 9
+    if len(base) == 4:
+        a = int(base[:2])
+        pl = int(base[2:])
+        if a == 0:
+            return 1 <= pl <= 15
+        if 1 <= a <= 9:
+            return 10 <= pl <= 15
+        if a == 10:
+            return 1 <= pl <= 15
+    return False
+
+
+def area_of_where(where: str | int | None) -> str | None:
+    """Return the area status WHERE for a given Point-to-Point (APL) WHERE."""
+    if where is None:
+        return None
+    where_str = str(where).strip()
+    parts = where_str.split("#", 1)
+    base = parts[0]
+    if not is_apl_address(base):
+        return None
+    if len(base) == 2:
+        if base[0] == "0":
+            return "00"
+        return base[0]
+    a = base[:2]
+    if a == "00":
+        return "00"
+    if a == "10":
+        return "100"
+    return str(int(a))
+
+
+def normalize_where(where: str | int | None) -> str:
+    """Normalize OpenWebNet address while preserving Point-to-Point (APL) addressing."""
+    if where is None:
+        return ""
+    where_str = str(where).strip()
+    if not where_str:
+        return ""
+    parts = where_str.split("#", 1)
+    base = parts[0]
+    if is_apl_address(base) or base in ("00", "100", "0"):
+        norm_base = base
+    elif base.isdigit() and base.startswith("00") and int(base) > 15:
+        norm_base = str(int(base))
+    else:
+        norm_base = base
+    return f"{norm_base}#{parts[1]}" if len(parts) > 1 else norm_base
+
 
 class OWNLightingEvent(OWNEvent):
     def __init__(self, data: str) -> None:
@@ -273,6 +341,13 @@ class OWNLightingEvent(OWNEvent):
         return self._color_temp
 
     @property
+    def color_temp_kelvin(self) -> int | None:
+        """Color temperature in Kelvin when a valid mired reading (> 1) is present."""
+        if self._color_temp is not None and self._color_temp > 1:
+            return int(1000000 / self._color_temp)
+        return None
+
+    @property
     def supports_color_temp(self) -> bool | None:
         return self._supports_color_temp
 
@@ -290,6 +365,10 @@ class OWNLightingEvent(OWNEvent):
 
     @property
     def hs(self) -> tuple[int, int] | None:
+        return self._hs
+
+    @property
+    def hs_color(self) -> tuple[int, int] | None:
         return self._hs
 
     @property
@@ -311,6 +390,55 @@ class OWNLightingEvent(OWNEvent):
 
 
 class OWNLightingCommand(OWNCommand):
+    @property
+    def brightness(self) -> int | None:
+        """Decoded brightness percentage (0..100) for Dimension 1/4 write commands."""
+        if self._dimension in (1, 4) and self._dimension_value:
+            try:
+                raw = int(self._dimension_value[0])
+            except (TypeError, ValueError):
+                return None
+            if 100 <= raw <= 200:
+                return raw - 100
+        return None
+
+    @property
+    def color_temp(self) -> int | None:
+        """Decoded color temperature in mireds for Dimension 14 write commands."""
+        if self._dimension == 14 and self._dimension_value:
+            try:
+                val = int(self._dimension_value[0])
+            except (TypeError, ValueError):
+                return None
+            if val > 1:
+                return val
+        return None
+
+    @property
+    def color_temp_kelvin(self) -> int | None:
+        """Decoded color temperature in Kelvin for Dimension 14 write commands."""
+        ct = self.color_temp
+        return int(1000000 / ct) if ct is not None and ct > 1 else None
+
+    @property
+    def hs(self) -> tuple[int, int] | None:
+        """Decoded (hue, saturation) tuple for Dimension 12 write commands."""
+        if self._dimension == 12 and len(self._dimension_value) >= 3:
+            try:
+                h = int(self._dimension_value[0])
+                s = int(self._dimension_value[1])
+                v = int(self._dimension_value[2])
+            except (TypeError, ValueError):
+                return None
+            if h <= 360 and (h, s, v) != (511, 127, 255):
+                return (h, s)
+        return None
+
+    @property
+    def hs_color(self) -> tuple[int, int] | None:
+        """Alias for :attr:`hs`."""
+        return self.hs
+
     @classmethod
     def status(cls, where: str | int) -> OWNLightingCommand:
         message = cls(f"*#1*{where}##")

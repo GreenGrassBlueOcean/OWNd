@@ -258,9 +258,34 @@ class OWNMessage:
         )
 
     @property
+    def what(self) -> int | None:
+        """The 'what' ID of this message"""
+        return getattr(self, "_what", None)
+
+    @property
+    def what_param(self) -> list[str]:
+        """The 'what' parameters of this message"""
+        return getattr(self, "_what_param", [])
+
+    @property
+    def where_param(self) -> list[str]:
+        """The 'where' parameters of this message"""
+        return getattr(self, "_where_param", [])
+
+    @property
     def dimension(self) -> int | None:
         """The 'dimension' ID of this message"""
-        return self._dimension
+        return getattr(self, "_dimension", None)
+
+    @property
+    def dimension_param(self) -> list[str]:
+        """The 'dimension' parameters of this message"""
+        return getattr(self, "_dimension_param", [])
+
+    @property
+    def dimension_value(self) -> list[str]:
+        """The 'dimension' values of this message"""
+        return getattr(self, "_dimension_value", [])
 
     @property
     def entity(self) -> str:

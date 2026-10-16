@@ -275,3 +275,24 @@ def test_who16_sound_source_events() -> None:
     blank_rds = OWNSoundEvent("*#16*101*8*32*32*32*32*32*32*32*32##")
     assert blank_rds.rds_text is None
     assert "RDS text: ''" in blank_rds.human_readable_log
+
+
+def test_who16_volume_step_delta_events() -> None:
+    """Verify WHO 16 stepped volume WHAT 1001..1015 and 1101..1115 decode volume_step_delta."""
+    vol_up_1 = OWNMessage.parse("*16*1001*21##")
+    assert isinstance(vol_up_1, OWNSoundEvent)
+    assert vol_up_1.volume_step_delta == 1
+    assert "increase volume by 1 step(s)" in vol_up_1.human_readable_log
+
+    vol_up_15 = OWNMessage.parse("*16*1015*21##")
+    assert isinstance(vol_up_15, OWNSoundEvent)
+    assert vol_up_15.volume_step_delta == 15
+
+    vol_down_1 = OWNMessage.parse("*16*1101*21##")
+    assert isinstance(vol_down_1, OWNSoundEvent)
+    assert vol_down_1.volume_step_delta == -1
+    assert "decrease volume by 1 step(s)" in vol_down_1.human_readable_log
+
+    vol_down_15 = OWNMessage.parse("*16*1115*21##")
+    assert isinstance(vol_down_15, OWNSoundEvent)
+    assert vol_down_15.volume_step_delta == -15
