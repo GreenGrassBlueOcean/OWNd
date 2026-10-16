@@ -368,17 +368,54 @@ def test_stop_and_go_firmware_oracle_conformance(
         if r["verdict"] == "out" and _decoded_bus_frames(r) == [expected_bus]
     ]
     supervisione_products = {r["product"] for r in supervisione_rows}
-    assert supervisione_products >= {
+    assert supervisione_products == {
+        "F453AV",
+        "F454",
         "F459",
+        "F460",
+        "F461",
+        "MH200N",
         "MH202",
         "MyHomeServer1",
     }
+    is_status_request = (
+        expected_frame.startswith("*#18*11*") and "*#212*" not in expected_frame
+    )
     for r in supervisione_rows:
-        if r["product"] != "MyHomeServer1" and (
-            not expected_frame.startswith("*#18*11*") or "*#212*" in expected_frame
-        ):
+        if is_status_request or r["product"] not in {
+            "F460",
+            "F461",
+            "MyHomeServer1",
+        }:
             assert r["reply"] == "ack"
         else:
-            assert r["reply"] in ("ack", "-", "nack")
+            assert r["reply"] == "nack"
 
+
+def test_stop_and_go_unrecognized_and_nonstandard_address_branches() -> None:
+    """Cover non-1N line addresses and unrecognized WHAT/dimension fallbacks."""
+    non_standard_where = OWNEvent.parse("*18*21*51##")
+    assert isinstance(non_standard_where, OWNStopAndGoEvent)
+    assert non_standard_where.line is None
+    assert non_standard_where.is_open is True
+
+    unknown_event_what = OWNStopAndGoEvent("*18*99*11##")
+    assert unknown_event_what.line == 1
+    assert unknown_event_what.state == 99
+    assert unknown_event_what.is_open is None
+
+    empty_dim_event = OWNStopAndGoEvent("*#18*11*250##")
+    assert empty_dim_event.status_mask is None
+
+    unknown_cmd_what = OWNStopAndGoCommand("*18*99*11##")
+    assert unknown_cmd_what.who == 18
+    assert str(unknown_cmd_what) == "*18*99*11##"
+
+    unknown_cmd_dim = OWNStopAndGoCommand("*#18*11*999##")
+    assert unknown_cmd_dim.who == 18
+    assert str(unknown_cmd_dim) == "*#18*11*999##"
+
+    status_req_cmd = OWNStopAndGoCommand("*#18*11##")
+    assert status_req_cmd.who == 18
+    assert str(status_req_cmd) == "*#18*11##"
 
