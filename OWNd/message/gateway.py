@@ -125,8 +125,8 @@ class OWNGatewayEvent(OWNEvent):
             elif self._dimension_value[0] == "200":
                 # Code 200 is shared across modern gateways (F454, MyHomeServer1,
                 # MH202, F461, H4890) and MH201 (fw 3.3.6, 3.6.27; MyHOME #370, #466
-                # and plant fixtures). WHO 1013 dimension 1 (*#1013**1##) tells them
-                # apart (model 10 on MH201).
+                # and plant fixtures). WHO 1013 dimension 1 tells them apart (the
+                # MH201 on 3.6.27 answers only *#1013**1##, model 10).
                 self._device_type = (
                     "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201"
                 )
