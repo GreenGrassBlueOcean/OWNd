@@ -2,9 +2,13 @@
 
 Firmware: ``bt_energia`` v2.0.2 (2003-05-08) ARM binary and
 ``tests/golden/firmware_oracle.json``, suite ``energy-ts10``
-(https://github.com/OpenWebNet-HA/own-firmware-oracle/blob/main/oracle/cases/energy-ts10.cases#L56-L65).
-Gateways packaging ``bt_energia`` (F453AV, F454, F459, H4684, MH200, MH200N,
-MH202) translate WHO 3 commands onto the SCS bus; gateways without
+(https://github.com/OpenWebNet-HA/own-firmware-oracle/blob/main/oracle/cases/energy-ts10.cases#L69-L86).
+All seven gateways packaging ``bt_energia`` (F453AV, F454, F459, H4684, MH200,
+MH200N, MH202) agree on every WHO 3 input in the oracle fixture: ``*3*2*#N##``
+is ACKed and emits ``$04B70N1300``, while ``*#3*#N##`` and ``*#3*10*D##``
+put their ``$03AA0016xx`` register reads on the bus and reply NACK on the
+command session (when no F421 answers within the 4 s bus timeout, opposite to
+``WHO_3.pdf`` p. 6 "ACK if command is sent to Bus"). Gateways without
 ``bt_energia`` (MyHomeServer1, F461, F460, F450) silently NACK all 15 WHO 3
 inputs.
 
@@ -43,7 +47,7 @@ from OWNd.message.load import _safe_int
 ORACLE = json.loads(
     (Path(__file__).parent / "golden" / "firmware_oracle.json").read_text(encoding="utf-8")
 )["verdicts"]
-BT_ENERGIA_CANDIDATES = (
+BT_ENERGIA_GATEWAYS = (
     "F453AV",
     "F454",
     "F459",
@@ -52,42 +56,27 @@ BT_ENERGIA_CANDIDATES = (
     "MH200N",
     "MH202",
 )
-ALIGNED_GATEWAYS = tuple(
-    p
-    for p in BT_ENERGIA_CANDIDATES
-    if any(
-        r["product"] == p
-        and r["reply"] == "ack"
-        and [bytes.fromhex(b.replace(" ", "")).decode().strip() for b in r["bus_frames"]]
-        == ["$04B7011300"]
-        for r in ORACLE["*3*2*#1##"]
-    )
-    and any(
-        r["product"] == p
-        and [bytes.fromhex(b.replace(" ", "")).decode().strip() for b in r["bus_frames"]]
-        == ["$03AA001614"]
-        for r in ORACLE["*#3*#1##"]
-    )
-)
 WITHOUT_BT_ENERGIA_GATEWAYS = ("F450", "F460", "F461", "MyHomeServer1")
 WHO3_INPUTS = sorted(f for f in ORACLE if f.startswith(("*3*", "*#3*")))
 
 
-def _aligned(frame: str) -> list[dict[str, Any]]:
-    rows = [r for r in ORACLE[frame] if r["product"] in ALIGNED_GATEWAYS]
-    assert {r["product"] for r in rows} == set(ALIGNED_GATEWAYS)
+def _bt_energia_rows(frame: str) -> list[dict[str, Any]]:
+    rows = [r for r in ORACLE[frame] if r["product"] in BT_ENERGIA_GATEWAYS]
+    assert {r["product"] for r in rows} == set(BT_ENERGIA_GATEWAYS)
     return rows
 
 
 def _forwarded(frame: str) -> bool:
-    """Put on the bus with at least one SCS telegram by every aligned bt_energia gateway."""
+    """Put on the bus with at least one SCS telegram by every bt_energia gateway."""
     return all(
-        r["verdict"] == "out" and bool(r["bus_frames"]) for r in _aligned(frame)
+        r["verdict"] == "out" and bool(r["bus_frames"]) for r in _bt_energia_rows(frame)
     )
 
 
 def _refused(frame: str) -> bool:
-    return all(r["reply"] == "nack" and r["verdict"] == "silent" for r in _aligned(frame))
+    return all(
+        r["reply"] == "nack" and r["verdict"] == "silent" for r in _bt_energia_rows(frame)
+    )
 
 
 def _bus_text(row: dict[str, Any]) -> list[str]:
@@ -102,7 +91,7 @@ def _all_builder_frames() -> set[str]:
 
 
 def test_gateways_without_bt_energia_refuse_all_who3_frames():
-    assert len(ALIGNED_GATEWAYS) >= 2
+    assert len(BT_ENERGIA_GATEWAYS) == 7
     for frame in WHO3_INPUTS:
         rows = {r["product"]: r for r in ORACLE[frame]}
         for gw in WITHOUT_BT_ENERGIA_GATEWAYS:
@@ -128,9 +117,13 @@ def test_every_oracle_input_dispatches_to_load_classes(frame: str):
 def test_force_is_forwarded_with_priority_in_the_telegram(priority: int):
     frame = str(OWNLoadCommand.force(priority))
     assert frame == f"*3*2*#{priority}##"
-    for row in _aligned(frame):
+    rows = _bt_energia_rows(frame)
+    for row in rows:
         assert row["reply"] == "ack"
+        assert row["verdict"] == "out"
         assert _bus_text(row) == [f"$04B70{priority}1300"]
+    echoing_gateways = {r["product"] for r in rows if r["emitted_own"] == [frame]}
+    assert echoing_gateways == {"F453AV", "F459", "H4684", "MH200", "MH200N", "MH202"}
 
 
 def test_force_echo_on_event_session_parses_as_forced():
@@ -160,6 +153,43 @@ def test_every_oracle_backed_builder_frame_reaches_the_bus():
     assert all(_forwarded(f) for f in in_oracle)
 
 
+@pytest.mark.parametrize(
+    ("frame", "expected_bus"),
+    [
+        ("*#3*#1##", ["$03AA001614"]),
+        ("*#3*#2##", ["$03AA001614"]),
+        (
+            "*#3*10*0##",
+            [
+                "$03AA001613",
+                "$03AA001612",
+                "$03AA001610",
+                "$03AA001611",
+                "$03AA001606",
+                "$03AA001607",
+                "$03AA001608",
+                "$03AA001609",
+            ],
+        ),
+        ("*#3*10*1##", ["$03AA001613"]),
+        ("*#3*10*2##", ["$03AA001612"]),
+        ("*#3*10*3##", ["$03AA001610", "$03AA001611"]),
+        (
+            "*#3*10*4##",
+            ["$03AA001606", "$03AA001607", "$03AA001608", "$03AA001609"],
+        ),
+    ],
+)
+def test_status_and_measurement_requests_reply_nack_while_forwarding_to_bus(
+    frame: str, expected_bus: list[str]
+):
+    """In the oracle fixture, *#3*#N## and *#3*10*D## reply NACK while emitting bus telegrams."""
+    for row in _bt_energia_rows(frame):
+        assert row["reply"] == "nack"
+        assert row["verdict"] == "out"
+        assert _bus_text(row) == expected_bus
+
+
 def test_no_builder_emits_a_frame_the_gateways_refuse():
     refused = {f for f in WHO3_INPUTS if _refused(f)}
     assert refused == {
@@ -186,10 +216,12 @@ def test_measurement_requests_read_distinct_registers():
     assert LOAD_DIMENSION_CURRENT == 2
     assert LOAD_DIMENSION_POWER == 3
     assert LOAD_DIMENSION_ENERGY == 4
-    for gateway in ALIGNED_GATEWAYS:
+    for gateway in BT_ENERGIA_GATEWAYS:
         registers = {
             d: next(
-                _bus_text(r) for r in _aligned(f"*#3*10*{d}##") if r["product"] == gateway
+                _bus_text(r)
+                for r in _bt_energia_rows(f"*#3*10*{d}##")
+                if r["product"] == gateway
             )
             for d in range(5)
         }
@@ -208,8 +240,7 @@ def test_measurement_requests_read_distinct_registers():
             + registers[LOAD_DIMENSION_POWER]
             + registers[LOAD_DIMENSION_ENERGY]
         )
-        assert registers[LOAD_DIMENSION_ALL][:4] == others[:4]
-        assert set(registers[LOAD_DIMENSION_ALL]) <= set(others)
+        assert registers[LOAD_DIMENSION_ALL] == others
 
 
 @pytest.mark.parametrize(
