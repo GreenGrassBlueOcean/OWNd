@@ -920,13 +920,16 @@ class OWNHeatingCommand(OWNCommand):
         mode_name = mode
         if mode == CLIMATE_MODE_AUTO:
             # Automatic is the central unit's program: the firmware refuses *4*311*Z##
-            # (NACK, no bus frame; OWNd#77 A3, oracle3/out/termo_f461.tsv) and only
-            # forwards *4*311*#Z##, a frame addressed to the central unit, so
+            # (NACK, no bus frame across all 11 emulated gateways in thermo-zone-mode.tsv
+            # and ownd-pr82-heating.tsv; OWNd#77 A3) and only forwards *4*311*#Z##, a
+            # frame addressed to the central unit (bus D1 00 03 02 C2 ZZ 00 00), so
             # standalone does not apply. Protection (302 / 102 / 202) is different:
             # the plain zone form is forwarded as a direct zone command (bus
-            # 93 ZZ 30 04) and is the only form a standalone thermostat acts on;
-            # the #Z form goes to a central unit and is ignored when there is none
-            # (F461 plant capture, tests/test_f461_live_plant.py).
+            # 93 ZZ 30 04, like *4*303*Z## -> 93 ZZ 30 0F in thermo-zone-mode.tsv)
+            # and is the only form a standalone thermostat acts on; the #Z form goes
+            # to a central unit (bus D1 00 03 02 C2 ZZ 07 00 in thermo-ts10.tsv) and
+            # is ignored when there is none (F461 plant capture,
+            # tests/test_f461_live_plant.py).
             if not zone.startswith("#"):
                 zone = f"#{zone}"
 
