@@ -2,24 +2,45 @@
 
 Evidence, in order of weight:
 
-- Firmware: own-firmware-oracle suite ``energy-ts10`` (vendored in
-  tests/golden/firmware_oracle.json). On F459 020105 and MH202 010024, whose
-  rows are aligned, only ``*3*2*#N##`` (force) is accepted as a command. It is
-  ACKed and put on the bus as ``$04B70N1300``, with the priority in the
-  telegram. ``*3*0*``, ``*3*1*`` and ``*3*3*`` are NACKed with nothing on the
-  bus, for a priority and for the general WHERE 0 alike. ``*#3*#N##`` and
-  ``*#3*10*D##`` (D 0-4) are forwarded to the bus; ``*#3*0##`` is NACKed.
-  F453AV, F454, H4684 and MH200N agree once their one-row capture lag is
-  allowed for, and three of them echo ``*3*2*#N##`` on the event session.
-- Specification: WHO 3 Load Control v1.0.0 (2006), as summarised by the
-  OpenWebNet Encyclopedia (functional/who-3-load-management). WHAT 0 load
-  disabled, 1 enabled, 2 forced, 3 forcing removed; WHERE 0 general, 10 control
-  unit, #1-#8 priority; DIMENSION 0-4 at WHERE 10 are measurements.
-
-No capture from a plant with a load-control central unit exists yet, so the
-state and measurement replies (``*3*STATE*#N##``, ``*#3*10*D*VAL##``) are
-parsed from the specification only. Measurement values are kept raw: the
-specification names the dimensions but defines no scaling, sign or unit.
+- Firmware: ``bt_energia`` v2.0.2 (2003-05-08) ARM binary and
+  ``own-firmware-oracle`` suite ``energy-ts10`` (vendored in
+  ``tests/golden/firmware_oracle.json``; see
+  https://github.com/OpenWebNet-HA/own-firmware-oracle/blob/main/oracle/cases/energy-ts10.cases#L56-L65
+  and
+  https://github.com/OpenWebNet-HA/own-firmware-oracle/blob/main/findings/MyHomeServer1/energy-ts10.md#35-who-3-load-management--f421).
+  On F459 020105 and MH202 010024, whose rows are aligned, only ``*3*2*#N##``
+  (force) is accepted as a command. It is ACKed and put on the bus as
+  ``$04B70N1300``, with the priority in the telegram. ``*3*0*``, ``*3*1*`` and
+  ``*3*3*`` are NACKed with nothing on the bus, for a priority and for the
+  general WHERE 0 alike. ``*#3*#N##`` and ``*#3*10*D##`` (D 0-4) are forwarded
+  to the bus; ``*#3*0##`` is NACKed (``bt_energia`` at ``0x00b91c``/``0x00b998``
+  only accepts ``*#3##`` and ``*#3*##`` for general status). F453AV, F454,
+  H4684 and MH200N agree once their one-row capture lag is allowed for, and
+  three of them echo ``*3*2*#N##`` on the event session.
+  In ``bt_energia``, ``0x00b140`` (jump table ``0x00b3e0``) polls the F421
+  central unit registers and ``0x00a63c`` decodes the ``$031900<REG>`` +
+  ``$031A00<HH>`` replies via ``htod`` into unsigned integers formatted with
+  ``%d``:
+  - Dimension 1 (Voltage, V): register ``0x13`` (1 byte, 8-bit int ``0..255``,
+    ``0x00b674`` / ``0x00af2c`` -> ``*#3*10*1*%d##``)
+  - Dimension 2 (Current, A): register ``0x12`` (1 byte, 8-bit int ``0..255``,
+    ``0x00b6f4`` / ``0x00ae7c`` -> ``*#3*10*2*%d##``)
+  - Dimension 3 (Power, W): registers ``0x10..0x11`` (2 bytes, 16-bit int
+    ``0..65535``, ``0x00b774`` / ``0x00ad88`` -> ``*#3*10*3*%d##``)
+  - Dimension 4 (Energy): registers ``0x06..0x09`` (4 bytes, 32-bit int,
+    ``0x00b830`` / ``0x00ac34`` -> ``*#3*10*4*%d##``)
+  - Dimension 0 (All measurements): polls all 8 registers ``13, 12, 10..11,
+    06..09`` (``0x00b3f4``) and joins them as ``*#3*10*0*%s*%s*%s*%s##``
+    (``0x00aa24``) in ``T*C*P*E`` (Voltage, Current, Power, Energy) order.
+- Specification: WHO 3 Load Control v1.0.0 (2006-08-30,
+  ``OpenWebNet_Community_6_powermanagement_v1_0_0_EN.doc``, archived at
+  https://archive.openwebnet-ha.org/sha256/4f/68/4f685a6ee3b16e6a7994a338186687bcea1dabba74dc5d24d22a07becb24dea1.pdf,
+  pp. 4, 6-7), as summarised by the OpenWebNet Encyclopedia
+  (https://github.com/OpenWebNet-HA/OpenWebNet-Encyclopedia/blob/main/functional/who-3-load-management/README.md#measurement-dimension-values).
+  WHAT 0 load disabled, 1 enabled, 2 forced, 3 forcing removed; WHERE 0
+  general, 10 control unit, #1-#8 priority; DIMENSION 0-4 at WHERE 10 are
+  All dimensions (``T*C*P*E``), Voltage (``T``, Volt), Current (``C``, Ampere),
+  Power (``P``, Watt), and Energy (``E``, unit unspecified in the spec).
 """
 
 from __future__ import annotations
@@ -38,10 +59,10 @@ LOAD_PRIORITIES = range(1, 9)
 LOAD_MEASUREMENT_DIMENSIONS = range(0, 5)
 
 LOAD_DIMENSION_ALL = 0
-LOAD_DIMENSION_POWER = 1
-LOAD_DIMENSION_VOLTAGE = 2
-LOAD_DIMENSION_CURRENT = 3
-LOAD_DIMENSION_POWER_FACTOR = 4
+LOAD_DIMENSION_VOLTAGE = 1
+LOAD_DIMENSION_CURRENT = 2
+LOAD_DIMENSION_POWER = 3
+LOAD_DIMENSION_ENERGY = 4
 
 _STATE_TEXT = {
     LOAD_STATE_DISABLED: "disabled",
@@ -50,18 +71,19 @@ _STATE_TEXT = {
     LOAD_STATE_FORCING_REMOVED: "no longer forced",
 }
 
-# Dimension mappings verified against central unit internal register polling
-# in bt_energia (findings/MyHomeServer1/energy-ts10.md):
-# - Dimension 1: Instantaneous Power (W) -> register $03AA001613
-# - Dimension 2: Voltage (V) -> register $03AA001612
-# - Dimension 3: Current (A) -> registers $03AA001610 & $03AA001611
-# - Dimension 4: Power Factor (cos phi) -> registers $03AA001606 through $03AA001609
+# Dimension mappings verified against WHO_3.pdf v1.0.0 (pp. 4, 6-7) and
+# central unit register polling/decoding in bt_energia v2.0.2 (0x00b140 / 0x00a63c):
+# - Dimension 0: All measurements (T*C*P*E) -> 8 registers $03AA001613, 12, 10..11, 06..09
+# - Dimension 1: Voltage (T, V) -> 1 register $03AA001613 (8-bit int)
+# - Dimension 2: Current (C, A) -> 1 register $03AA001612 (8-bit int)
+# - Dimension 3: Power (P, W) -> 2 registers $03AA001610..$03AA001611 (16-bit int)
+# - Dimension 4: Energy (E) -> 4 registers $03AA001606..$03AA001609 (32-bit int)
 _DIMENSION_NAMES = {
     LOAD_DIMENSION_ALL: "all measurements",
-    LOAD_DIMENSION_POWER: "instantaneous power",
     LOAD_DIMENSION_VOLTAGE: "voltage",
     LOAD_DIMENSION_CURRENT: "current",
-    LOAD_DIMENSION_POWER_FACTOR: "power factor",
+    LOAD_DIMENSION_POWER: "power",
+    LOAD_DIMENSION_ENERGY: "energy",
 }
 
 _PRIORITY_WHERE = re.compile(r"^#([1-8])$")
@@ -72,15 +94,6 @@ def _safe_int(value: str | None) -> int | None:
         return None
     try:
         return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _safe_float(value: str | None) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
     except (TypeError, ValueError):
         return None
 
@@ -106,10 +119,10 @@ class OWNLoadEvent(OWNEvent):
         self._priority = _priority_of(self._where)
         self._state: int | None = None
         self._measurement_values: list[str] = []
-        self._power: int | None = None
         self._voltage: int | None = None
-        self._current: float | None = None
-        self._power_factor: float | None = None
+        self._current: int | None = None
+        self._power: int | None = None
+        self._energy: int | None = None
 
         if self._priority is not None:
             _target = f"Load priority {self._priority} is"
@@ -127,42 +140,38 @@ class OWNLoadEvent(OWNEvent):
             and self._dimension is not None
         ):
             self._measurement_values = list(self._dimension_value)
-            if self._dimension == LOAD_DIMENSION_POWER and self._dimension_value:
-                self._power = _safe_int(self._dimension_value[0])
-                self._human_readable_log = (
-                    f"Load control unit power draw: {self._power} W."
-                )
-            elif self._dimension == LOAD_DIMENSION_VOLTAGE and self._dimension_value:
+            if self._dimension == LOAD_DIMENSION_VOLTAGE and self._dimension_value:
                 self._voltage = _safe_int(self._dimension_value[0])
                 self._human_readable_log = (
                     f"Load control unit voltage: {self._voltage} V."
                 )
             elif self._dimension == LOAD_DIMENSION_CURRENT and self._dimension_value:
-                self._current = _safe_float(self._dimension_value[0])
+                self._current = _safe_int(self._dimension_value[0])
                 self._human_readable_log = (
                     f"Load control unit current: {self._current} A."
                 )
-            elif (
-                self._dimension == LOAD_DIMENSION_POWER_FACTOR
-                and self._dimension_value
-            ):
-                self._power_factor = _safe_float(self._dimension_value[0])
+            elif self._dimension == LOAD_DIMENSION_POWER and self._dimension_value:
+                self._power = _safe_int(self._dimension_value[0])
                 self._human_readable_log = (
-                    f"Load control unit power factor: {self._power_factor}."
+                    f"Load control unit power: {self._power} W."
                 )
-            elif self._dimension == LOAD_DIMENSION_ALL:
-                if len(self._dimension_value) >= 1:
-                    self._power = _safe_int(self._dimension_value[0])
+            elif self._dimension == LOAD_DIMENSION_ENERGY and self._dimension_value:
+                self._energy = _safe_int(self._dimension_value[0])
+                self._human_readable_log = (
+                    f"Load control unit energy: {self._energy}."
+                )
+            elif self._dimension == LOAD_DIMENSION_ALL and self._dimension_value:
+                self._voltage = _safe_int(self._dimension_value[0])
                 if len(self._dimension_value) >= 2:
-                    self._voltage = _safe_int(self._dimension_value[1])
+                    self._current = _safe_int(self._dimension_value[1])
                 if len(self._dimension_value) >= 3:
-                    self._current = _safe_float(self._dimension_value[2])
+                    self._power = _safe_int(self._dimension_value[2])
                 if len(self._dimension_value) >= 4:
-                    self._power_factor = _safe_float(self._dimension_value[3])
+                    self._energy = _safe_int(self._dimension_value[3])
                 self._human_readable_log = (
                     f"Load control unit all measurements: "
-                    f"power={self._power} W, voltage={self._voltage} V, "
-                    f"current={self._current} A, power factor={self._power_factor}."
+                    f"voltage={self._voltage} V, current={self._current} A, "
+                    f"power={self._power} W, energy={self._energy}."
                 )
             else:
                 _name = _DIMENSION_NAMES.get(self._dimension)
@@ -197,24 +206,24 @@ class OWNLoadEvent(OWNEvent):
         return self._measurement_values
 
     @property
-    def power(self) -> int | None:
-        """Instantaneous power draw in W (dimension 1), None if not reported."""
-        return self._power
-
-    @property
     def voltage(self) -> int | None:
-        """Voltage in V (dimension 2), None if not reported."""
+        """Measured voltage in V (dimension 1, or index 0 of dimension 0), None if not reported."""
         return self._voltage
 
     @property
-    def current(self) -> float | None:
-        """Current in A (dimension 3), None if not reported."""
+    def current(self) -> int | None:
+        """Measured current in A (dimension 2, or index 1 of dimension 0), None if not reported."""
         return self._current
 
     @property
-    def power_factor(self) -> float | None:
-        """Power factor cos phi (dimension 4), None if not reported."""
-        return self._power_factor
+    def power(self) -> int | None:
+        """Measured power in W (dimension 3, or index 2 of dimension 0), None if not reported."""
+        return self._power
+
+    @property
+    def energy(self) -> int | None:
+        """Measured energy counter (dimension 4, or index 3 of dimension 0), None if not reported."""
+        return self._energy
 
 
 class OWNLoadCommand(OWNCommand):

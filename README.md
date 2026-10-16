@@ -78,7 +78,7 @@ OWNd parses OpenWebNet frames and dispatches typed commands and events across th
 | **0** | Scenarios | Basic scenario execution (1–32) from control panels, scenario module programming and memory lock states | `OWNScenarioEvent` |
 | **1** | Lighting | On/off switching, dimming level (0–100%), DALI Tunable White (Dimension 14, 2000K–6535K / mireds), status queries | `OWNLightingCommand`, `OWNLightingEvent` |
 | **2** | Automation | Shutters, blinds, motorized curtains, tilt angles, short & full replies | `OWNAutomationCommand`, `OWNAutomationEvent` |
-| **3** | Load Control | Priority forcing (`*3*2*#N##`, firmware-verified), priority states 0–3, priority status and central-unit measurement requests with typed power, voltage, current, and power factor properties from firmware register mappings | `OWNLoadCommand`, `OWNLoadEvent` |
+| **3** | Load Control | Priority forcing (`*3*2*#N##`, firmware-verified), priority states 0–3, priority status and central-unit measurement requests with typed voltage, current, power, and energy properties (`WHO_3.pdf` v1.0.0 & `bt_energia` register mappings) | `OWNLoadCommand`, `OWNLoadEvent` |
 | **4** | Thermoregulation / Climate | Multi-zone temperature readouts, target adjustments, HVAC modes (Heat/Cool/Auto/Off), local offsets, fan coil speeds, valve states, Central Unit 3550/4695 master coordination | `OWNHeatingCommand`, `OWNHeatingEvent` |
 | **5** | Burglar Alarm | Zone status, system arming / disarming states | `OWNAlarmCommand`, `OWNAlarmEvent` |
 | **6** | Door Entry & Lock | Door entry unit and electric lock status, door open/close events, lock release commands | `OWNDoorEntryCommand`, `OWNDoorEntryEvent` |

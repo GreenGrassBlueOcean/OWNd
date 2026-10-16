@@ -108,7 +108,7 @@ WHO_DEFINITIONS: tuple[WhoCatalogDefinition, ...] = (
     WhoCatalogDefinition(
         who="**3**",
         name="Load Control",
-        description="Priority forcing (`*3*2*#N##`, firmware-verified), priority states 0–3, priority status and central-unit measurement requests with typed power, voltage, current, and power factor properties from firmware register mappings",
+        description="Priority forcing (`*3*2*#N##`, firmware-verified), priority states 0–3, priority status and central-unit measurement requests with typed voltage, current, power, and energy properties (`WHO_3.pdf` v1.0.0 & `bt_energia` register mappings)",
         dispatch_who_keys=(3,),
     ),
     WhoCatalogDefinition(

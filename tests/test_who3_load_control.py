@@ -1,13 +1,17 @@
 """WHO 3 load control, pinned to the firmware oracle first and the specification second.
 
-Firmware: tests/golden/firmware_oracle.json, suite energy-ts10. Gateways
-packaging ``bt_energia`` (F453AV, F454, F459, H4684, MH200, MH200N, MH202)
-translate WHO 3 commands onto the SCS bus; gateways without ``bt_energia``
-(MyHomeServer1, F461, F460, F450) silently NACK all 15 WHO 3 inputs.
+Firmware: ``bt_energia`` v2.0.2 (2003-05-08) ARM binary and
+``tests/golden/firmware_oracle.json``, suite ``energy-ts10``
+(https://github.com/OpenWebNet-HA/own-firmware-oracle/blob/main/oracle/cases/energy-ts10.cases#L56-L65).
+Gateways packaging ``bt_energia`` (F453AV, F454, F459, H4684, MH200, MH200N,
+MH202) translate WHO 3 commands onto the SCS bus; gateways without
+``bt_energia`` (MyHomeServer1, F461, F460, F450) silently NACK all 15 WHO 3
+inputs.
 
-Specification: WHO 3 Load Control v1.0.0 (2006) via the OpenWebNet Encyclopedia
-(functional/who-3-load-management). No real-plant capture exists yet, so the
-state and measurement replies below come from the specification.
+Specification: WHO 3 Load Control v1.0.0 (2006-08-30, archived at
+https://archive.openwebnet-ha.org/sha256/4f/68/4f685a6ee3b16e6a7994a338186687bcea1dabba74dc5d24d22a07becb24dea1.pdf,
+pp. 4, 6-7) via the OpenWebNet Encyclopedia
+(https://github.com/OpenWebNet-HA/OpenWebNet-Encyclopedia/blob/main/functional/who-3-load-management/README.md#measurement-dimension-values).
 """
 
 from __future__ import annotations
@@ -19,6 +23,11 @@ from typing import Any
 import pytest
 
 from OWNd.message import (
+    LOAD_DIMENSION_ALL,
+    LOAD_DIMENSION_CURRENT,
+    LOAD_DIMENSION_ENERGY,
+    LOAD_DIMENSION_POWER,
+    LOAD_DIMENSION_VOLTAGE,
     LOAD_STATE_DISABLED,
     LOAD_STATE_ENABLED,
     LOAD_STATE_FORCED,
@@ -29,7 +38,7 @@ from OWNd.message import (
     OWNLoadEvent,
     OWNMessage,
 )
-from OWNd.message.load import _safe_float, _safe_int
+from OWNd.message.load import _safe_int
 
 ORACLE = json.loads(
     (Path(__file__).parent / "golden" / "firmware_oracle.json").read_text(encoding="utf-8")
@@ -167,9 +176,16 @@ def test_no_builder_emits_a_frame_the_gateways_refuse():
 def test_measurement_requests_read_distinct_registers():
     """Each dimension maps to its own register run; dimension 0 reads the others.
 
-    Run widths 1/1/2/4 fit the specification's voltage/current/power/energy
-    order, but the bus telegrams name no quantity, so values stay raw.
+    In ``bt_energia`` v2.0.2 (``0x00b140`` / ``0x00a63c``), register widths
+    1/1/2/4 bytes are decoded as 8/8/16/32-bit integers formatted with ``%d``,
+    matching the specification's Voltage (1) / Current (2) / Power (3) /
+    Energy (4) order.
     """
+    assert LOAD_DIMENSION_ALL == 0
+    assert LOAD_DIMENSION_VOLTAGE == 1
+    assert LOAD_DIMENSION_CURRENT == 2
+    assert LOAD_DIMENSION_POWER == 3
+    assert LOAD_DIMENSION_ENERGY == 4
     for gateway in ALIGNED_GATEWAYS:
         registers = {
             d: next(
@@ -177,13 +193,23 @@ def test_measurement_requests_read_distinct_registers():
             )
             for d in range(5)
         }
-        assert registers[1] == ["$03AA001613"]
-        assert registers[2] == ["$03AA001612"]
-        assert registers[3] == ["$03AA001610", "$03AA001611"]
-        assert registers[4] == ["$03AA001606", "$03AA001607", "$03AA001608", "$03AA001609"]
-        others = registers[1] + registers[2] + registers[3] + registers[4]
-        assert registers[0][:4] == others[:4]
-        assert set(registers[0]) <= set(others)
+        assert registers[LOAD_DIMENSION_VOLTAGE] == ["$03AA001613"]
+        assert registers[LOAD_DIMENSION_CURRENT] == ["$03AA001612"]
+        assert registers[LOAD_DIMENSION_POWER] == ["$03AA001610", "$03AA001611"]
+        assert registers[LOAD_DIMENSION_ENERGY] == [
+            "$03AA001606",
+            "$03AA001607",
+            "$03AA001608",
+            "$03AA001609",
+        ]
+        others = (
+            registers[LOAD_DIMENSION_VOLTAGE]
+            + registers[LOAD_DIMENSION_CURRENT]
+            + registers[LOAD_DIMENSION_POWER]
+            + registers[LOAD_DIMENSION_ENERGY]
+        )
+        assert registers[LOAD_DIMENSION_ALL][:4] == others[:4]
+        assert set(registers[LOAD_DIMENSION_ALL]) <= set(others)
 
 
 @pytest.mark.parametrize(
@@ -226,28 +252,28 @@ def test_measurement_reply_all_measurements():
     assert event.is_control_unit
     assert event.dimension == 0
     assert event.measurement_values == ["230", "12", "2760", "1520"]
-    assert event.power == 230
-    assert event.voltage == 12
-    assert event.current == 2760.0
-    assert event.power_factor == 1520.0
+    assert event.voltage == 230
+    assert event.current == 12
+    assert event.power == 2760
+    assert event.energy == 1520
     assert event.state is None
     assert event.human_readable_log == (
-        "Load control unit all measurements: power=230 W, voltage=12 V, "
-        "current=2760.0 A, power factor=1520.0."
+        "Load control unit all measurements: voltage=230 V, current=12 A, "
+        "power=2760 W, energy=1520."
     )
 
 
 @pytest.mark.parametrize(
     ("frame", "dim", "attr", "expected_value", "log_phrase"),
     [
-        ("*#3*10*1*2500##", 1, "power", 2500, "power draw: 2500 W"),
-        ("*#3*10*2*230##", 2, "voltage", 230, "voltage: 230 V"),
-        ("*#3*10*3*16##", 3, "current", 16.0, "current: 16.0 A"),
-        ("*#3*10*4*95##", 4, "power_factor", 95.0, "power factor: 95.0"),
+        ("*#3*10*1*230##", LOAD_DIMENSION_VOLTAGE, "voltage", 230, "voltage: 230 V."),
+        ("*#3*10*2*12##", LOAD_DIMENSION_CURRENT, "current", 12, "current: 12 A."),
+        ("*#3*10*3*2760##", LOAD_DIMENSION_POWER, "power", 2760, "power: 2760 W."),
+        ("*#3*10*4*1520##", LOAD_DIMENSION_ENERGY, "energy", 1520, "energy: 1520."),
     ],
 )
 def test_measurement_reply_individual_dimensions(
-    frame: str, dim: int, attr: str, expected_value: int | float, log_phrase: str
+    frame: str, dim: int, attr: str, expected_value: int, log_phrase: str
 ):
     event = OWNEvent.parse(frame)
     assert isinstance(event, OWNLoadEvent)
@@ -257,30 +283,27 @@ def test_measurement_reply_individual_dimensions(
     assert log_phrase in event.human_readable_log
 
 
-def test_safe_helpers():
+def test_safe_int():
     assert _safe_int(None) is None
     assert _safe_int("not_a_number") is None
     assert _safe_int("100") == 100
-    assert _safe_float(None) is None
-    assert _safe_float("not_a_float") is None
-    assert _safe_float("12.5") == 12.5
 
 
 def test_measurement_reply_empty_or_partial():
-    empty_power = OWNEvent.parse("*#3*10*1*##")
+    empty_voltage = OWNEvent.parse("*#3*10*1*##")
+    assert isinstance(empty_voltage, OWNLoadEvent)
+    assert empty_voltage.voltage is None
+
+    empty_power = OWNEvent.parse("*#3*10*3*##")
     assert isinstance(empty_power, OWNLoadEvent)
     assert empty_power.power is None
 
-    empty_float = OWNEvent.parse("*#3*10*3*##")
-    assert isinstance(empty_float, OWNLoadEvent)
-    assert empty_float.current is None
-
     partial = OWNEvent.parse("*#3*10*0*230##")
     assert isinstance(partial, OWNLoadEvent)
-    assert partial.power == 230
-    assert partial.voltage is None
+    assert partial.voltage == 230
     assert partial.current is None
-    assert partial.power_factor is None
+    assert partial.power is None
+    assert partial.energy is None
 
 
 def test_unnamed_dimension_and_other_where_are_not_measurements():
