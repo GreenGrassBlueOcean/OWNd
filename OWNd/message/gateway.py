@@ -63,7 +63,9 @@ WHO13_DEVICE_TYPES: dict[str, str] = {
     # catalogued on 030644 outside the Linux QEMU fleet). WHO 1013
     # dimension 1 tells them apart (the MH201 on 3.6.27 answers only
     # *#1013**1##, model 10, and NACKs *#1013*0*1##).
-    "200": "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201",
+    "200": (
+        "F454 / MyHomeServer1 / MH202 / F461 / H4890 / F450 / F459 / F460 / MH201"
+    ),
 }
 
 # WHO 1013 Dimension 1: Diagnostic object model (*#1013**1*<MODEL>*<N_CONF>*<BRAND>*<LINE>##).
@@ -77,6 +79,7 @@ WHO1013_DEVICE_TYPES: dict[str, str] = {
     "6": "F452",
     "7": "F452V",
     "8": "F455",
+    "10": "MH201",
     "11": "MHServer2",
     "12": "F453AV",
     "19": "H4684",
@@ -577,9 +580,11 @@ class OWNGatewayDiagnosticCommand(OWNCommand):
     """WHO 1013: Gateway diagnostic requests and commands."""
 
     @classmethod
-    def request_diagnostic_object_model(cls) -> OWNGatewayDiagnosticCommand:
+    def request_diagnostic_object_model(
+        cls, where: str = ""
+    ) -> OWNGatewayDiagnosticCommand:
         """Request the gateway diagnostic object model code (Dimension 1)."""
-        return cls("*#1013**1##")
+        return cls(f"*#1013*{where}*1##")
 
 
 register_event_parser(1013, OWNGatewayDiagnosticEvent)
