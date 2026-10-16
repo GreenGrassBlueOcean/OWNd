@@ -62,13 +62,19 @@ def test_mh200_keeps_the_mh200n_pacing() -> None:
     assert mh200.max_queue_size == mh200n.max_queue_size
     assert mh200.event_keepalive_interval == mh200n.event_keepalive_interval
     # Legrand WHO 25 spec (2010, p. 13): MH200 lacks WHO 25 (CEN+ / dry contact & IR); MH200N supports it.
-    assert set(mh200n.supported_who) - set(mh200.supported_who) == {WHO_CEN_PLUS}
+    # Firmware 2.1.2 on MH200 ships bt_difson (WHO 16) without bt_multi (WHO 22); MH200N 1.1.8 ships both.
+    assert set(mh200n.supported_who) - set(mh200.supported_who) == {
+        WHO_CEN_PLUS,
+        WHO_SOUND_DIFFUSION,
+    }
     assert mh200.supports_who(WHO_CEN) is True
     assert not mh200.supports_who(WHO_CEN_PLUS)
+    assert not mh200.supports_who(WHO_SOUND_DIFFUSION)
     assert mh200.supports_who(WHO_DOOR_ENTRY) is True
     assert mh200.supports_who(WHO_LOCK) is True
     assert mh200n.supports_who(WHO_CEN) is True
     assert mh200n.supports_who(WHO_CEN_PLUS) is True
+    assert mh200n.supports_who(WHO_SOUND_DIFFUSION) is True
     assert mh200n.supports_who(WHO_DOOR_ENTRY) is True
     assert mh200n.supports_who(WHO_LOCK) is True
 

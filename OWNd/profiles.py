@@ -444,9 +444,11 @@ class MH200Profile(GatewayProfile):
 class MH200NProfile(GatewayProfile):
     """The MH200N.
 
-    Supports sound system discovery (WHO 16). Hardware verified answering
-    ``*#16*0*5##`` without NACK and returning full source and amplifier inventory
-    (MyHOME#427 / comment 5848181845).
+    Supports sound system discovery (WHO 16) and WHO 22 sound diffusion
+    (``bt_multi`` translator verified in firmware 1.1.8 and live F500 tuner
+    traces). Hardware verified answering ``*#16*0*5##`` without NACK and
+    returning full source and amplifier inventory (MyHOME#427 / comment
+    5848181845).
 
     WHO 3 (Load Control) is verified by the firmware oracle: MH200N firmware
     1.1.8 (``010108``) ships ``bt_energia`` and translates all 9 WHO 3 force
@@ -477,6 +479,7 @@ class MH200NProfile(GatewayProfile):
                 WHO_SCENARIO,
                 WHO_CEN_PLUS,
                 WHO_SOUND,
+                WHO_SOUND_DIFFUSION,
             ),
         )
 

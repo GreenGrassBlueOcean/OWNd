@@ -1,5 +1,8 @@
 """Tests for WHO 22 advanced sound diffusion messages."""
 
+import json
+from pathlib import Path
+
 import pytest
 
 from OWNd.message import (
@@ -8,6 +11,9 @@ from OWNd.message import (
     OWNSoundDiffusionCommand,
     OWNSoundDiffusionEvent,
 )
+
+GOLDEN_PATH = Path(__file__).parent / "golden" / "firmware_oracle.json"
+ORACLE = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))["verdicts"]
 
 
 def test_who22_speaker_volume_event() -> None:
@@ -599,3 +605,133 @@ def test_who22_tuner_command_builders() -> None:
         OWNSoundDiffusionCommand.set_preset("2#1", 0)
     with pytest.raises(ValueError, match="preset must be positive"):
         OWNSoundDiffusionCommand.set_preset("2#1", -5)
+
+
+def _decoded_bus_frames(row: dict[str, object]) -> list[str]:
+    bus_frames = row.get("bus_frames", [])
+    assert isinstance(bus_frames, list)
+    decoded: list[str] = []
+    for bf in bus_frames:
+        assert isinstance(bf, str)
+        text = bytes.fromhex(bf.replace(" ", "")).decode("ascii").strip()
+        if text.startswith("$00"):
+            text = "$" + text[2:]
+        decoded.append(text)
+    return decoded
+
+
+@pytest.mark.parametrize(
+    ("builder", "expected_frame", "expected_bus"),
+    [
+        (
+            OWNSoundDiffusionCommand.turn_on_with_source("3#1#1", 1),
+            "*22*1#4#1*3#1#1##",
+            ["$0490018113"],
+        ),
+        (
+            OWNSoundDiffusionCommand.turn_off_atomic("3#0#6"),
+            "*22*0#4#0*3#0#6##",
+            ["$0491068003"],
+        ),
+        (
+            OWNSoundDiffusionCommand.turn_off_atomic("5#3#0#0"),
+            "*22*0#4#0*5#3#0#0##",
+            ["$04B1008003"],
+        ),
+        (
+            OWNSoundDiffusionCommand.volume_up("3#1#1", step=5),
+            "*22*3#5*3#1#1##",
+            ["$0494018105"],
+        ),
+        (
+            OWNSoundDiffusionCommand.set_volume("3#1#1", 20),
+            "*#22*3#1#1*#1*20##",
+            ["$0493018114"],
+        ),
+        (
+            OWNSoundDiffusionCommand.request_volume("3#1#1"),
+            "*#22*3#1#1*1##",
+            ["$0495018100"],
+        ),
+        (
+            OWNSoundDiffusionCommand.request_device_state("3#1#1"),
+            "*#22*3#1#1*12##",
+            ["$049501818F"],
+        ),
+        (
+            OWNSoundDiffusionCommand.request_frequency("2#1"),
+            "*#22*2#1*5##",
+            ["$0495018FA0"],
+        ),
+        (
+            OWNSoundDiffusionCommand.set_preset("2#1", 7),
+            "*#22*2#1*#6*7##",
+            ["$0493018FC6"],
+        ),
+        (
+            OWNSoundDiffusionCommand.request_preset("2#1"),
+            "*#22*2#1*6##",
+            ["$0495018FC0"],
+        ),
+        (
+            OWNSoundDiffusionCommand.next_station("2#1"),
+            "*22*9*2#1##",
+            ["$0494018FC1"],
+        ),
+        (
+            OWNSoundDiffusionCommand.previous_station("2#1"),
+            "*22*10*2#1##",
+            ["$0494018FD1"],
+        ),
+        (
+            OWNSoundDiffusionCommand.start_rds("2#1"),
+            "*22*31*2#1##",
+            ["$06D101F83501410400"],
+        ),
+        (
+            OWNSoundDiffusionCommand.stop_rds("2#1"),
+            "*22*32*2#1##",
+            ["$06D101F83501420400"],
+        ),
+        (
+            OWNSoundDiffusionCommand.store_preset("2#1", 3),
+            "*22*33#3*2#1##",
+            ["$0493018FD2"],
+        ),
+        (
+            OWNSoundDiffusionCommand.route_source("3#1#1", 2, matrix_area=1),
+            "*22*35#4#1#2*3#1#1##",
+            ["$04A10F8113", "$0490028F13", "$0490018113"],
+        ),
+        (
+            OWNSoundDiffusionCommand.route_source("3#2#0", 7, matrix_area=2),
+            "*22*35#4#2#7*3#2#0##",
+            ["$04A10F8123", "$0490078F23", "$0490008223"],
+        ),
+    ],
+)
+def test_who22_firmware_oracle_conformance(
+    builder: OWNSoundDiffusionCommand,
+    expected_frame: str,
+    expected_bus: list[str],
+) -> None:
+    """Verify WHO 22 command builders against bt_multi firmware oracle bus output."""
+    assert str(builder) == expected_frame
+    parsed = OWNCommand.parse(expected_frame)
+    assert isinstance(parsed, OWNSoundDiffusionCommand)
+    assert expected_frame in ORACLE
+    rows = ORACLE[expected_frame]
+    out_products = {
+        r["product"] for r in rows if r["verdict"] == "out" and r["bus_frames"]
+    }
+    assert out_products >= {
+        "F453AV",
+        "F454",
+        "F459",
+        "F461",
+        "MyHomeServer1",
+    }
+    mhs_row = next(r for r in rows if r["product"] == "MyHomeServer1")
+    assert _decoded_bus_frames(mhs_row) == expected_bus
+
+

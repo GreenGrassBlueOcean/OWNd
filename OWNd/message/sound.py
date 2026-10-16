@@ -1005,7 +1005,14 @@ class OWNSoundDiffusionCommand(OWNCommand):
 
     @classmethod
     def send_rds_text(cls, where: str | int, text: str) -> OWNSoundDiffusionCommand:
-        """Send an 8-character RDS Program Service name: ``*#22*WHERE*#10*c0*...*c7##``."""
+        """Format an 8-character RDS Program Service frame: ``*#22*WHERE*#10*c0*...*c7##``.
+
+        Note: In ``bt_multi`` gateway firmwares (F453AV, F454, F459, F460, F461,
+        MH200N, MH202, MyHomeServer1), ``DIMENSION 10`` is an upward tuner-to-gateway
+        report and client-originated ``*#22*WHERE*#10*...##`` writes are NACKed with
+        no SCS bus output. Use ``start_rds``, ``stop_rds``, and ``request_rds`` for
+        client-to-gateway RDS control.
+        """
         target = str(where).strip()
         formatted = text[:8].ljust(8)
         codes = [str(ord(c)) for c in formatted]
