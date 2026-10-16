@@ -38,3 +38,30 @@ def test_pep561_typing_marker_present():
     ownd_dir = Path(OWNd.__file__).resolve().parent
     py_typed = ownd_dir / "py.typed"
     assert py_typed.is_file(), "OWNd/py.typed must exist for PEP 561 type checking"
+
+
+def test_all_ownd_modules_import_without_deprecations():
+    """Import every module in OWNd and verify zero DeprecationWarning or PendingDeprecationWarning."""
+    import importlib
+    import tomllib
+    import warnings
+
+    repo_root = Path(__file__).resolve().parent.parent
+    pyproject = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    filters = pyproject.get("tool", {}).get("pytest", {}).get("ini_options", {}).get("filterwarnings", [])
+    assert "error::DeprecationWarning" in filters
+    assert "error::PendingDeprecationWarning" in filters
+
+    ownd_dir = repo_root / "OWNd"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        warnings.simplefilter("error", PendingDeprecationWarning)
+        for py_file in sorted(ownd_dir.rglob("*.py")):
+            if py_file.name == "__main__.py":
+                continue
+            rel_parts = py_file.relative_to(repo_root).with_suffix("").parts
+            if rel_parts[-1] == "__init__":
+                rel_parts = rel_parts[:-1]
+            mod_name = ".".join(rel_parts)
+            importlib.import_module(mod_name)
+
