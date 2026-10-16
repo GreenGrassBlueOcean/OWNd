@@ -134,6 +134,7 @@ from .heating import (
     OWNHeatingEvent,
 )
 from .lighting import (
+    LIGHTING_STATE_ANOMALY,
     MESSAGE_TYPE_ACTION,
     MESSAGE_TYPE_ILLUMINANCE,
     MESSAGE_TYPE_MOTION,
@@ -166,6 +167,7 @@ __all__ = [
     "register_command_parser",
     "_ensure_all_subsystems_registered",
     # Lighting (WHO 1)
+    "LIGHTING_STATE_ANOMALY",
     "MESSAGE_TYPE_ACTION",
     "MESSAGE_TYPE_MOTION",
     "MESSAGE_TYPE_PIR_SENSITIVITY",
