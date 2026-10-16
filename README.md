@@ -337,7 +337,7 @@ OWNd maintains an automated test suite with strict **100.0% line coverage** veri
 | [`OWNd/message/automation.py`](OWNd/message/automation.py) | **100%** | WHO 2: Automation and motorized shutter events and commands |
 | [`OWNd/message/base.py`](OWNd/message/base.py) | **100%** | Base message, signaling, and protocol dispatcher registries |
 | [`OWNd/message/cen.py`](OWNd/message/cen.py) | **100%** | WHO 15 & WHO 25: CEN, CEN+, and dry contact control events/commands |
-| [`OWNd/message/door_entry.py`](OWNd/message/door_entry.py) | **100%** | WHO 6 & WHO 8: Door entry, lock, and video intercom events and commands |
+| [`OWNd/message/door_entry.py`](OWNd/message/door_entry.py) | **100%** | WHO 6 & WHO 8: Door entry, electric lock, and video intercom events/commands |
 | [`OWNd/message/energy.py`](OWNd/message/energy.py) | **100%** | WHO 18: Energy management, power, and diagnostic pulse events/commands |
 | [`OWNd/message/gateway.py`](OWNd/message/gateway.py) | **100%** | WHO 13: Gateway management, clock/date configuration, and model telemetry |
 | [`OWNd/message/heating.py`](OWNd/message/heating.py) | **100%** | WHO 4: Thermoregulation, heating/cooling zone control, and temperature decoders |

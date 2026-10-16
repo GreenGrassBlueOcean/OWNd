@@ -505,7 +505,6 @@ class OWNHeatingEvent(OWNEvent):
             self._type = MESSAGE_TYPE_ACTION
             self._is_cooling = self._dimension_value[0] in _valve_active_states
             self._is_heating = self._dimension_value[1] in _valve_active_states
-            self._is_active = self._is_cooling | self._is_heating
             # Handle cooling valve status relative to fan speed/status
             _cooling_value = int(self._dimension_value[0])
             if _cooling_value == 0:
@@ -528,7 +527,6 @@ class OWNHeatingEvent(OWNEvent):
                 _fan_mode = _cooling_value - 5
                 if _fan_mode > 0:
                     self._cooling_fan_on = True
-                    self._is_active = True
                     self._cooling_fan_speed = _fan_mode
                     self._human_readable_log = f"Zone {self._zone}'s cooling fan is on at speed {self._cooling_fan_speed}"  # pylint: disable=line-too-long
                 else:
@@ -550,7 +548,6 @@ class OWNHeatingEvent(OWNEvent):
                 _fan_mode = _heating_value - 5
                 if _fan_mode > 0:
                     self._fan_on = True
-                    self._is_active = True
                     self._fan_speed = _fan_mode
                     self._human_readable_log += (
                         f"; heating fan is on at speed {self._fan_speed}."
@@ -560,7 +557,7 @@ class OWNHeatingEvent(OWNEvent):
                     self._human_readable_log += "; heating fan is off."
             # A fan-coil value on one side must not hide an open valve or a running fan
             # on the other side: *#4*2*19*5*1## (cooling fan off, heating valve on) is an
-            # active zone (F461 plant capture, tests/fixtures/f461_live_2026-10-15/).
+            # active zone (F461 plant capture, tests/test_f461_live_plant.py).
             self._is_active = bool(
                 self._is_cooling
                 or self._is_heating
@@ -923,13 +920,16 @@ class OWNHeatingCommand(OWNCommand):
         mode_name = mode
         if mode == CLIMATE_MODE_AUTO:
             # Automatic is the central unit's program: the firmware refuses *4*311*Z##
-            # (NACK, no bus frame; OWNd#77 A3, oracle3/out/termo_f461.tsv) and only
-            # forwards *4*311*#Z##, a frame addressed to the central unit, so
+            # (NACK, no bus frame across all 11 emulated gateways in thermo-zone-mode.tsv
+            # and ownd-pr82-heating.tsv; OWNd#77 A3) and only forwards *4*311*#Z##, a
+            # frame addressed to the central unit (bus D1 00 03 02 C2 ZZ 00 00), so
             # standalone does not apply. Protection (302 / 102 / 202) is different:
             # the plain zone form is forwarded as a direct zone command (bus
-            # 93 ZZ 30 04) and is the only form a standalone thermostat acts on;
-            # the #Z form goes to a central unit and is ignored when there is none
-            # (F461 plant capture, tests/fixtures/f461_live_2026-10-15/).
+            # 93 ZZ 30 04, like *4*303*Z## -> 93 ZZ 30 0F in thermo-zone-mode.tsv)
+            # and is the only form a standalone thermostat acts on; the #Z form goes
+            # to a central unit (bus D1 00 03 02 C2 ZZ 07 00 in thermo-ts10.tsv) and
+            # is ignored when there is none (F461 plant capture,
+            # tests/test_f461_live_plant.py).
             if not zone.startswith("#"):
                 zone = f"#{zone}"
 

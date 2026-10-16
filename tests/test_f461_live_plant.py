@@ -14,11 +14,13 @@ Three OWNd behaviours were wrong against that plant:
    valve states had set it. The plant reports this frame on every heating-season read.
 2. ``set_mode(zone, "protection" | "antifreeze" | "thermal_protection", standalone=True)``
    produced the ``#Z`` form, which the gateway forwards to a central unit (emulated
-   ``bt_termo``: ``*4*302*#23##`` -> ``D1 00 03 02 C2 17 07 00``) and which a standalone
-   thermostat ignores; the plain form (``93 17 30 04``) is the one that works. Only
-   ``311`` (automatic) is a central-unit-only command (``*4*311*Z##`` is NACKed).
+   ``bt_termo``: ``*4*302*#23##`` -> ``D1 00 03 02 C2 17 07 00`` in ``thermo-ts10.tsv``)
+   and which a standalone thermostat ignores; the plain form (``93 17 30 04``) is the one
+   that works. Only ``311`` (automatic) is a central-unit-only command (``*4*311*Z##`` is
+   NACKed across all 11 emulated gateways in ``thermo-zone-mode.tsv``).
 3. WHO 13 device type ``200`` was labelled ``F454`` although F454, MyHomeServer1, MH202,
-   F461 and H4890 all answer it.
+   F461, H4890 and MH201 (fw 3.3.6, 3.6.27; plus emulated F450/F459/F460 in
+   ``trace-corpus.tsv``) all answer it.
 """
 from __future__ import annotations
 
@@ -178,7 +180,7 @@ def test_capture_shows_only_the_plain_protection_form_acts() -> None:
 def test_device_type_200_is_not_a_single_model() -> None:
     msg = OWNEvent.parse("*#13**15*200##")
     assert msg.device_type_code == "200"
-    assert "F454" in msg.device_type and "F461" in msg.device_type
+    assert "F454" in msg.device_type and "F461" in msg.device_type and "MH201" in msg.device_type
     assert msg.human_readable_log == f"Gateway device type is: {msg.device_type}."
     assert OWNEvent.parse("*#13**15*2##").device_type == "MHServer"
     assert OWNEvent.parse("*#13**16*2*0*11##").device_type_code is None
