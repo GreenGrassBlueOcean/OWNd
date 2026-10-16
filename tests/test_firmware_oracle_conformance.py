@@ -21,6 +21,7 @@ from OWNd.message import (
     OWNCENPlusEvent,
     OWNDryContactEvent,
     OWNEvent,
+    OWNGatewayEvent,
     OWNLightingCommand,
     OWNLightingEvent,
     OWNLockCommand,
@@ -172,6 +173,22 @@ def test_emitted_own_frames_parseable_by_ownd():
     assert isinstance(nack_msg, OWNSignaling)
     assert nack_msg.is_nack() is True
     assert nack_msg.who is None
+
+    # 6. Semantic verification of H4684 and MH200 WHO 13 gateway identification frames
+    h4684_dev = OWNMessage.parse("*#13**15*13##")
+    assert isinstance(h4684_dev, OWNGatewayEvent)
+    assert h4684_dev.device_type == "H4684"
+    assert h4684_dev.device_type_code == "13"
+    h4684_fw = OWNMessage.parse("*#13**16*2*0*54##")
+    assert isinstance(h4684_fw, OWNGatewayEvent)
+    assert h4684_fw.firmware_version == "2.0.54"
+    mh200_dev = OWNMessage.parse("*#13**15*4##")
+    assert isinstance(mh200_dev, OWNGatewayEvent)
+    assert mh200_dev.device_type == "MH200"
+    assert mh200_dev.device_type_code == "4"
+    mh200_fw = OWNMessage.parse("*#13**16*2*1*2##")
+    assert isinstance(mh200_fw, OWNGatewayEvent)
+    assert mh200_fw.firmware_version == "2.1.2"
 
 
 def test_oracle_input_frames_ownd_parser_resilience():
