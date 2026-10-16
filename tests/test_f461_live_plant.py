@@ -211,7 +211,7 @@ def test_builders_used_by_myhome_match_frames_the_plant_accepted() -> None:
 
 
 def test_season_frames_and_area_zero_lights_parse_as_before() -> None:
-    assert OWNEvent.parse("*4*1*2##").mode == "heat" and OWNEvent.parse("*4*0*2##").mode == "cool"
+    assert OWNEvent.parse("*4*1*2##").season == "heating" and OWNEvent.parse("*4*0*2##").season == "conditioning"
     area0 = OWNEvent.parse("*1*1*00##")
     assert area0.is_area and area0.area == 0
     point = OWNEvent.parse("*1*1*01##")
