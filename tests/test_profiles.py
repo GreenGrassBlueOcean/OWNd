@@ -97,6 +97,19 @@ def test_profile_lookup_accepts_common_name_variants() -> None:
     assert profile.model_name == "MyHomeServer1"
     assert profile.supports_session_count(4)
     assert profile.supports_who(WHO_SOUND)
+    # Firmware oracle proves MyHomeServer1 omits bt_energia and rejects WHO 3
+    assert not profile.supports_who(WHO_LOAD_CONTROL)
+
+
+def test_myhomeserver1_lacks_who3_load_control() -> None:
+    """MyHomeServer1 and F461 firmwares do not package bt_energia and reject WHO 3."""
+    for model in ("MyHomeServer1", "F461"):
+        profile = get_gateway_profile(model)
+        assert WHO_LOAD_CONTROL not in profile.supported_who
+        assert not profile.supports_who(WHO_LOAD_CONTROL)
+    for model in ("MH200", "MH200N", "F454", "MH202"):
+        profile = get_gateway_profile(model)
+        assert profile.supports_who(WHO_LOAD_CONTROL)
 
 
 def test_f461_profile_lookup() -> None:
@@ -107,6 +120,7 @@ def test_f461_profile_lookup() -> None:
     assert profile.supports_hmac is True
     assert profile.command_queue_delay == 0.05
     assert profile.supports_native_transitions is True
+    assert not profile.supports_who(WHO_LOAD_CONTROL)
 
 
 def test_f455_basic_gateway_has_no_audio() -> None:

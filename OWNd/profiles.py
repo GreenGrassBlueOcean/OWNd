@@ -366,6 +366,15 @@ class F455Profile(GatewayProfile):
 
 
 class F461Profile(GatewayProfile):
+    """The F461 server gateway stack (AArch64 / ARM64).
+
+    Subsystems:
+    - WHO 3 (Load Control): Like MyHomeServer1 and F460, F461 firmware
+      (`020011`) does not package the ``bt_energia`` translator and strictly
+      NACKs all WHO 3 requests without bus activity (`results/F461/020011/oracle/full/energy-ts10.tsv`).
+      WHO 3 is therefore excluded from ``supported_who``.
+    """
+
     def __init__(self) -> None:
         super().__init__(
             model_name="F461",
@@ -377,6 +386,9 @@ class F461Profile(GatewayProfile):
             supports_hmac=True,
             supports_native_transitions=True,
             supports_extended_frames=True,
+            supported_who=tuple(
+                w for w in DEFAULT_SUPPORTED_WHO if w != WHO_LOAD_CONTROL
+            ),
         )
 
 
@@ -389,6 +401,10 @@ class MH200Profile(GatewayProfile):
     ``*#16*0##`` returned none (#53). Pacing, queue size, keepalive and the other
     subsystems are copied from the MH200N profile and have not been
     measured on an MH200.
+
+    WHO 3 (Load Control) is verified by the firmware oracle: MH200 firmware
+    2.1.2 (``020102``) ships ``bt_energia`` and translates all 9 WHO 3 force
+    and measurement requests onto the SCS bus (``results/MH200/020102/oracle/full/energy-ts10.tsv``).
 
     WHO 25 covers both CEN+ and dry contact / IR state functions (WHAT 31/32).
     As documented in Legrand's WHO 25 specification ("Dry contact and IR state
@@ -414,6 +430,7 @@ class MH200Profile(GatewayProfile):
             supported_who=(
                 WHO_LIGHTING,
                 WHO_AUTOMATION,
+                WHO_LOAD_CONTROL,
                 WHO_HEATING,
                 WHO_DOOR_ENTRY,
                 WHO_LOCK,
@@ -430,6 +447,10 @@ class MH200NProfile(GatewayProfile):
     Supports sound system discovery (WHO 16). Hardware verified answering
     ``*#16*0*5##`` without NACK and returning full source and amplifier inventory
     (MyHOME#427 / comment 5848181845).
+
+    WHO 3 (Load Control) is verified by the firmware oracle: MH200N firmware
+    1.1.8 (``010108``) ships ``bt_energia`` and translates all 9 WHO 3 force
+    and measurement requests onto the SCS bus (``results/MH200N/010108/oracle/full/energy-ts10.tsv``).
 
     WHO 6 and 8 are listed by family with the MH200, whose capture proves the
     relay (see ``MH200Profile``). Nothing has been captured on an MH200N itself;
@@ -448,6 +469,7 @@ class MH200NProfile(GatewayProfile):
             supported_who=(
                 WHO_LIGHTING,
                 WHO_AUTOMATION,
+                WHO_LOAD_CONTROL,
                 WHO_HEATING,
                 WHO_DOOR_ENTRY,
                 WHO_LOCK,
@@ -519,6 +541,16 @@ class H4890Profile(GatewayProfile):
 
 
 class MyHomeServer1Profile(GatewayProfile):
+    """The MyHomeServer1 (Eliot / Legrand Living Now gateway).
+
+    Subsystems:
+    - WHO 3 (Load Control): MyHomeServer1 firmware does not package the
+      ``bt_energia`` translator (unlike MH202, F454, and F459), so it strictly
+      NACKs all WHO 3 requests without bus activity (see own-firmware-oracle
+      findings/MyHomeServer1/energy-ts10.md). WHO 3 is therefore excluded from
+      ``supported_who``.
+    """
+
     def __init__(self) -> None:
         super().__init__(
             model_name="MyHomeServer1",
@@ -530,6 +562,9 @@ class MyHomeServer1Profile(GatewayProfile):
             supports_hmac=True,
             supports_native_transitions=True,
             supports_extended_frames=True,
+            supported_who=tuple(
+                w for w in DEFAULT_SUPPORTED_WHO if w != WHO_LOAD_CONTROL
+            ),
         )
 
 

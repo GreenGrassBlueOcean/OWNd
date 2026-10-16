@@ -78,7 +78,7 @@ OWNd parses OpenWebNet frames and dispatches typed commands and events across th
 | **0** | Scenarios | Basic scenario execution (1–32) from control panels, scenario module programming and memory lock states | `OWNScenarioEvent` |
 | **1** | Lighting | On/off switching, dimming level (0–100%), DALI Tunable White (Dimension 14, 2000K–6535K / mireds), status queries | `OWNLightingCommand`, `OWNLightingEvent` |
 | **2** | Automation | Shutters, blinds, motorized curtains, tilt angles, short & full replies | `OWNAutomationCommand`, `OWNAutomationEvent` |
-| **3** | Load Control | Load shedding status, circuit priority management | `OWNCommand`, `OWNEvent` |
+| **3** | Load Control | Priority forcing (`*3*2*#N##`, firmware-verified), priority states 0–3, priority status and central-unit measurement requests with typed voltage, current, power, and energy properties (`WHO_3.pdf` v1.0.0 & `bt_energia` register mappings) | `OWNLoadCommand`, `OWNLoadEvent` |
 | **4** | Thermoregulation / Climate | Multi-zone temperature readouts, target adjustments, HVAC modes (Heat/Cool/Auto/Off), local offsets, fan coil speeds, valve states, Central Unit 3550/4695 master coordination | `OWNHeatingCommand`, `OWNHeatingEvent` |
 | **5** | Burglar Alarm | Zone status, system arming / disarming states | `OWNAlarmCommand`, `OWNAlarmEvent` |
 | **6** | Door Entry & Lock | Door entry unit and electric lock status, door open/close events, lock release commands | `OWNDoorEntryCommand`, `OWNDoorEntryEvent` |
@@ -342,6 +342,7 @@ OWNd maintains an automated test suite with strict **100.0% line coverage** veri
 | [`OWNd/message/gateway.py`](OWNd/message/gateway.py) | **100%** | WHO 13: Gateway management, clock/date configuration, and model telemetry |
 | [`OWNd/message/heating.py`](OWNd/message/heating.py) | **100%** | WHO 4: Thermoregulation, heating/cooling zone control, and temperature decoders |
 | [`OWNd/message/lighting.py`](OWNd/message/lighting.py) | **100%** | WHO 1: Lighting controls, dimming, RGB/HSV color, and motion/PIR sensors |
+| [`OWNd/message/load.py`](OWNd/message/load.py) | **100%** | WHO 3: Load control, priority forcing, and central-unit measurement events/commands |
 | [`OWNd/message/scenario.py`](OWNd/message/scenario.py) | **100%** | WHO 0, WHO 9, WHO 17: Scenario activation, auxiliary commands, and MH200/MH202 scenes |
 | [`OWNd/message/sound.py`](OWNd/message/sound.py) | **100%** | WHO 16: Sound system and audio/video matrix routing (WHO 22 is not implemented) |
 | [`OWNd/profiles.py`](OWNd/profiles.py) | **100%** | Declarative hardware gateway models across 14 canonical hardware profiles |
