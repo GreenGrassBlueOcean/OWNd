@@ -118,6 +118,12 @@ def test_lighting_dimension_properties():
 
     cmd_hs._dimension_value = ["511", "127", "255"]
     assert cmd_hs.hs is None
+    cmd_hs._dimension_value = ["-1", "50", "80"]
+    assert cmd_hs.hs is None
+    cmd_hs._dimension_value = ["120", "-1", "80"]
+    assert cmd_hs.hs is None
+    cmd_hs._dimension_value = ["120", "101", "80"]
+    assert cmd_hs.hs is None
     cmd_hs._dimension_value = ["abc", "50", "80"]
     assert cmd_hs.hs is None
 
