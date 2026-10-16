@@ -5,18 +5,26 @@ Evidence, in order of weight:
 - Firmware: ``bt_energia`` v2.0.2 (2003-05-08) ARM binary and
   ``own-firmware-oracle`` suite ``energy-ts10`` (vendored in
   ``tests/golden/firmware_oracle.json``; see
-  https://github.com/OpenWebNet-HA/own-firmware-oracle/blob/main/oracle/cases/energy-ts10.cases#L56-L65
+  https://github.com/OpenWebNet-HA/own-firmware-oracle/blob/main/oracle/cases/energy-ts10.cases#L69-L86
   and
   https://github.com/OpenWebNet-HA/own-firmware-oracle/blob/main/findings/MyHomeServer1/energy-ts10.md#35-who-3-load-management--f421).
-  On F459 020105 and MH202 010024, whose rows are aligned, only ``*3*2*#N##``
-  (force) is accepted as a command. It is ACKed and put on the bus as
-  ``$04B70N1300``, with the priority in the telegram. ``*3*0*``, ``*3*1*`` and
-  ``*3*3*`` are NACKed with nothing on the bus, for a priority and for the
-  general WHERE 0 alike. ``*#3*#N##`` and ``*#3*10*D##`` (D 0-4) are forwarded
-  to the bus; ``*#3*0##`` is NACKed (``bt_energia`` at ``0x00b91c``/``0x00b998``
-  only accepts ``*#3##`` and ``*#3*##`` for general status). F453AV, F454,
-  H4684 and MH200N agree once their one-row capture lag is allowed for, and
-  three of them echo ``*3*2*#N##`` on the event session.
+  Across all seven ``bt_energia`` gateways (F453AV 030014, F454 020051,
+  F459 020105, H4684 020054, MH200 020102, MH200N 010108, and MH202 010024),
+  which agree on every WHO 3 input in the oracle fixture, only ``*3*2*#N##``
+  (force) is accepted as a command: it is ACKed and put on the bus as
+  ``$04B70N1300`` (with the priority in the telegram), and six of them (all
+  except F454) also echo ``*3*2*#N##`` on the event session. ``*3*0*``,
+  ``*3*1*`` and ``*3*3*`` are NACKed with nothing on the bus, for a priority
+  and for the general WHERE 0 alike; ``*#3*0##`` is also NACKed with nothing on
+  the bus (``bt_energia`` at ``0x00b91c``/``0x00b998`` only accepts ``*#3##``
+  and ``*#3*##`` for general status). ``*#3*#N##`` (``$03AA001614``) and
+  ``*#3*10*D##`` (D 0-4, ``$03AA0016xx``) still put their register-read
+  telegrams on the bus, but in the oracle fixture they get a NACK (``*#*0##``)
+  on the command session — the opposite of the specification's "ACK if command
+  is sent to Bus" (``WHO_3.pdf`` p. 6; in ``bt_energia``, ``0x00b140`` waits up
+  to 4.0 s in ``select()`` for an F421 reply on the bus before sending ACK at
+  ``0x00b030``, and sends NACK at ``0x009cf8`` when no F421 answers), so a
+  client will see the NACK when no F421 responds.
   In ``bt_energia``, ``0x00b140`` (jump table ``0x00b3e0``) polls the F421
   central unit registers and ``0x00a63c`` decodes the ``$031900<REG>`` +
   ``$031A00<HH>`` replies via ``htod`` into unsigned integers formatted with
@@ -229,9 +237,14 @@ class OWNLoadEvent(OWNEvent):
 class OWNLoadCommand(OWNCommand):
     """WHO 3 commands and requests.
 
-    Only frames that the firmware oracle shows reaching the bus get a builder.
-    WHAT 0, 1 and 3, the general WHERE 0 and the general status request
-    ``*#3*0##`` are refused by the gateways, so there is no builder for them.
+    Only frames that the firmware oracle shows reaching the bus get a builder:
+    ``*3*2*#N##`` (ACKed, emits ``$04B70N1300``), ``*#3*#N##`` and
+    ``*#3*10*D##`` (both put their ``$03AA0016xx`` register reads on the bus,
+    though in the oracle fixture the command session replies NACK when no F421
+    answers within the 4 s bus timeout, opposite to ``WHO_3.pdf`` p. 6 "ACK if
+    command is sent to Bus"). WHAT 0, 1 and 3, the general WHERE 0 and the
+    general status request ``*#3*0##`` are refused by the gateways with no bus
+    output, so there is no builder for them.
     """
 
     def __init__(self, data: str) -> None:
