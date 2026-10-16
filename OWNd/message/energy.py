@@ -18,6 +18,53 @@ MESSAGE_TYPE_MONTHLY_CONSUMPTION = "monthly_consumption"
 MESSAGE_TYPE_CURRENT_DAY_CONSUMPTION = "current_day_partial_consumption"
 MESSAGE_TYPE_CURRENT_MONTH_CONSUMPTION = "current_month_partial_consumption"
 MESSAGE_TYPE_AUTO_UPDATE_INTERVAL = "auto_update_interval"
+MESSAGE_TYPE_STOP_AND_GO = "stop_and_go"
+
+# Stop&Go (F16EB) automatic reset breaker constants (findings/MyHomeServer1/energy-ts10.md)
+STOP_AND_GO_OPEN = 21
+STOP_AND_GO_CLOSE = 22
+STOP_AND_GO_TEST_POSITIVE = 23
+STOP_AND_GO_TEST_NEGATIVE = 24
+STOP_AND_GO_AUTORESET_ENABLE = 26
+STOP_AND_GO_AUTORESET_DISABLE = 27
+STOP_AND_GO_TRACKING_ENABLE = 28
+STOP_AND_GO_TRACKING_DISABLE = 29
+
+STOP_AND_GO_DIM_TEST_FREQUENCY = 212
+STOP_AND_GO_DIM_STATUS_MASK = 250
+STOP_AND_GO_DIM_OPEN = 251
+STOP_AND_GO_DIM_FAILURE = 252
+STOP_AND_GO_DIM_BLOCKED = 253
+STOP_AND_GO_DIM_NEUTRAL_SHORT_CIRCUIT = 254
+STOP_AND_GO_DIM_GROUND_FAULT = 255
+STOP_AND_GO_DIM_MAX_VOLTAGE = 256
+STOP_AND_GO_DIM_SELF_TEST_DISABLED = 257
+STOP_AND_GO_DIM_AUTORESET_OFF = 258
+STOP_AND_GO_DIM_CHECK_OFF = 259
+STOP_AND_GO_DIM_WAITING_CLOSING = 260
+STOP_AND_GO_DIM_FIRST_24H_OPENING = 261
+STOP_AND_GO_DIM_DOWNSTREAM_POWER_FAILURE = 262
+STOP_AND_GO_DIM_UPSTREAM_POWER_FAILURE = 263
+
+STOP_AND_GO_FLAG_DIMENSIONS = frozenset(
+    range(STOP_AND_GO_DIM_OPEN, STOP_AND_GO_DIM_UPSTREAM_POWER_FAILURE + 1)
+)
+
+STOP_AND_GO_WHATS = {
+    STOP_AND_GO_OPEN,
+    STOP_AND_GO_CLOSE,
+    STOP_AND_GO_TEST_POSITIVE,
+    STOP_AND_GO_TEST_NEGATIVE,
+    STOP_AND_GO_AUTORESET_ENABLE,
+    STOP_AND_GO_AUTORESET_DISABLE,
+    STOP_AND_GO_TRACKING_ENABLE,
+    STOP_AND_GO_TRACKING_DISABLE,
+}
+STOP_AND_GO_DIMENSIONS = {
+    STOP_AND_GO_DIM_TEST_FREQUENCY,
+    STOP_AND_GO_DIM_STATUS_MASK,
+    *STOP_AND_GO_FLAG_DIMENSIONS,
+}
 
 
 def _integer_value(
@@ -400,5 +447,344 @@ class OWNEnergyCommand(OWNCommand):
         return message
 
 
-register_event_parser(18, OWNEnergyEvent)
-register_command_parser(18, OWNEnergyCommand)
+def _normalize_stop_and_go_where(where: str | int) -> str:
+    """Normalize Stop&Go line address to 1N format (11..19)."""
+    target = str(where).strip()
+    if target.isdigit():
+        val = int(target)
+        if 1 <= val <= 9:
+            return f"1{val}"
+        if 11 <= val <= 19:
+            return str(val)
+    raise ValueError(
+        f"Invalid Stop&Go line address '{where}': line must be 1..9 or address 11..19"
+    )
+
+
+class OWNStopAndGoEvent(OWNEvent):
+    """WHO 18: Stop&Go automatic reset breaker (F16EB) events and telemetry.
+
+    Derived from firmware evidence (energy-ts10 suite on MyHomeServer1, MH202, F454):
+    - Breaker open/close: *18*21*1N## / *18*22*1N##
+    - Differential self-test: *18*23*1N## (positive) / *18*24*1N## (negative)
+    - Auto-reset activation/deactivation: *18*26*1N## / *18*27*1N##
+    - Earth leakage tracking: *18*28*1N## / *18*29*1N##
+        - Self-test frequency: *#18*1N*212*DAYS## (read response)
+        - Status mask: *#18*1N*250*MASK##
+        - Individual status flags: *#18*1N*251..263*BIT##
+    Addresses are formatted as 1N (11..19, where line is 1..9).
+    """
+
+    def __init__(self, data: str) -> None:
+        super().__init__(data)
+
+        self._type = MESSAGE_TYPE_STOP_AND_GO
+        self._state: int | None = None
+        self._is_open: bool | None = None
+        self._is_closed: bool | None = None
+        self._is_auto_reset_active: bool | None = None
+        self._is_tracking_active: bool | None = None
+        self._differential_test_passed: bool | None = None
+        self._differential_test_result: str | None = None
+        self._test_frequency_days: int | None = None
+        self._status_mask: str | None = None
+        self._flag_dimension: int | None = None
+        self._flag_active: bool | None = None
+
+        line_num: int | None = None
+        if (
+            self._where
+            and len(self._where) == 2
+            and self._where.startswith("1")
+            and self._where[1].isdigit()
+        ):
+            line_num = int(self._where[1])
+
+        self._line = line_num
+
+        if self._what is not None:
+            self._state = self._what
+            if self._what == STOP_AND_GO_OPEN:
+                self._is_open = True
+                self._is_closed = False
+                self._human_readable_log = f"Stop&Go breaker {self._where} is open."
+            elif self._what == STOP_AND_GO_CLOSE:
+                self._is_open = False
+                self._is_closed = True
+                self._human_readable_log = f"Stop&Go breaker {self._where} is closed."
+            elif self._what == STOP_AND_GO_TEST_POSITIVE:
+                self._differential_test_passed = True
+                self._differential_test_result = "positive"
+                self._human_readable_log = (
+                    f"Stop&Go breaker {self._where} differential test passed (positive)."
+                )
+            elif self._what == STOP_AND_GO_TEST_NEGATIVE:
+                self._differential_test_passed = False
+                self._differential_test_result = "negative"
+                self._human_readable_log = (
+                    f"Stop&Go breaker {self._where} differential test failed (negative)."
+                )
+            elif self._what == STOP_AND_GO_AUTORESET_ENABLE:
+                self._is_auto_reset_active = True
+                self._human_readable_log = (
+                    f"Stop&Go breaker {self._where} auto-reset enabled."
+                )
+            elif self._what == STOP_AND_GO_AUTORESET_DISABLE:
+                self._is_auto_reset_active = False
+                self._human_readable_log = (
+                    f"Stop&Go breaker {self._where} auto-reset disabled."
+                )
+            elif self._what == STOP_AND_GO_TRACKING_ENABLE:
+                self._is_tracking_active = True
+                self._human_readable_log = (
+                    f"Stop&Go breaker {self._where} earth leakage tracking enabled."
+                )
+            elif self._what == STOP_AND_GO_TRACKING_DISABLE:
+                self._is_tracking_active = False
+                self._human_readable_log = (
+                    f"Stop&Go breaker {self._where} earth leakage tracking disabled."
+                )
+
+        if self._dimension is not None:
+            if (
+                self._dimension == STOP_AND_GO_DIM_TEST_FREQUENCY
+                and self._dimension_value
+            ):
+                self._test_frequency_days = _integer_value(self._dimension_value, 0)
+                self._human_readable_log = (
+                    f"Stop&Go breaker {self._where} test frequency is {self._test_frequency_days} days."
+                )
+            elif (
+                self._dimension == STOP_AND_GO_DIM_STATUS_MASK
+                and self._dimension_value
+            ):
+                self._status_mask = self._dimension_value[0]
+                self._human_readable_log = (
+                    f"Stop&Go breaker {self._where} status mask is {self._status_mask}."
+                )
+            elif (
+                self._dimension in STOP_AND_GO_FLAG_DIMENSIONS
+                and self._dimension_value
+            ):
+                bit = _integer_value(self._dimension_value, 0)
+                active = bit == 1
+                self._flag_dimension = self._dimension
+                self._flag_active = active
+                if self._dimension == STOP_AND_GO_DIM_OPEN:
+                    self._is_open = active
+                    self._is_closed = not active
+                elif self._dimension == STOP_AND_GO_DIM_AUTORESET_OFF:
+                    self._is_auto_reset_active = not active
+                elif self._dimension == STOP_AND_GO_DIM_CHECK_OFF:
+                    self._is_tracking_active = not active
+                self._human_readable_log = (
+                    f"Stop&Go breaker {self._where} status flag {self._dimension} is {bit}."
+                )
+
+    @property
+    def message_type(self) -> str | None:
+        return self._type
+
+    @property
+    def line(self) -> int | None:
+        """Line number (1..9) corresponding to address 1N, or None if non-standard."""
+        return self._line
+
+    @property
+    def state(self) -> int | None:
+        return self._state
+
+    @property
+    def is_open(self) -> bool | None:
+        return self._is_open
+
+    @property
+    def is_closed(self) -> bool | None:
+        return self._is_closed
+
+    @property
+    def is_auto_reset_active(self) -> bool | None:
+        return self._is_auto_reset_active
+
+    @property
+    def is_tracking_active(self) -> bool | None:
+        return self._is_tracking_active
+
+    @property
+    def differential_test_passed(self) -> bool | None:
+        return self._differential_test_passed
+
+    @property
+    def differential_test_result(self) -> str | None:
+        return self._differential_test_result
+
+    @property
+    def test_frequency_days(self) -> int | None:
+        return self._test_frequency_days
+
+    @property
+    def status_mask(self) -> str | None:
+        return self._status_mask
+
+    @property
+    def flag_dimension(self) -> int | None:
+        """Individual Stop&Go status flag dimension (251..263), if applicable."""
+        return self._flag_dimension
+
+    @property
+    def flag_active(self) -> bool | None:
+        """Whether the reported single-bit Stop&Go status flag (251..263) is set (`1`)."""
+        return self._flag_active
+
+
+class OWNStopAndGoCommand(OWNCommand):
+    """WHO 18: Stop&Go automatic reset breaker commands and requests."""
+
+    def __init__(self, data: str) -> None:
+        super().__init__(data)
+        if self._what is not None:
+            if self._what == STOP_AND_GO_OPEN:
+                self._human_readable_log = f"Opening Stop&Go breaker {self._where}."
+            elif self._what == STOP_AND_GO_CLOSE:
+                self._human_readable_log = f"Closing Stop&Go breaker {self._where}."
+            elif self._what == STOP_AND_GO_TEST_POSITIVE:
+                self._human_readable_log = (
+                    f"Triggering positive differential test on Stop&Go breaker {self._where}."
+                )
+            elif self._what == STOP_AND_GO_TEST_NEGATIVE:
+                self._human_readable_log = (
+                    f"Triggering negative differential test on Stop&Go breaker {self._where}."
+                )
+            elif self._what == STOP_AND_GO_AUTORESET_ENABLE:
+                self._human_readable_log = (
+                    f"Enabling auto-reset on Stop&Go breaker {self._where}."
+                )
+            elif self._what == STOP_AND_GO_AUTORESET_DISABLE:
+                self._human_readable_log = (
+                    f"Disabling auto-reset on Stop&Go breaker {self._where}."
+                )
+            elif self._what == STOP_AND_GO_TRACKING_ENABLE:
+                self._human_readable_log = (
+                    f"Enabling earth leakage tracking on Stop&Go breaker {self._where}."
+                )
+            elif self._what == STOP_AND_GO_TRACKING_DISABLE:
+                self._human_readable_log = (
+                    f"Disabling earth leakage tracking on Stop&Go breaker {self._where}."
+                )
+        elif self._dimension is not None:
+            if self._dimension == STOP_AND_GO_DIM_TEST_FREQUENCY:
+                if self._dimension_value:
+                    self._human_readable_log = (
+                        f"Setting Stop&Go breaker {self._where} test frequency to {self._dimension_value[0]} days."
+                    )
+                else:
+                    self._human_readable_log = (
+                        f"Requesting Stop&Go breaker {self._where} test frequency."
+                    )
+            elif self._dimension == STOP_AND_GO_DIM_STATUS_MASK:
+                self._human_readable_log = (
+                    f"Requesting Stop&Go breaker {self._where} status mask."
+                )
+            elif self._dimension in STOP_AND_GO_FLAG_DIMENSIONS:
+                self._human_readable_log = (
+                    f"Requesting Stop&Go breaker {self._where} status flag {self._dimension}."
+                )
+
+    @classmethod
+    def open_breaker(cls, where: str | int) -> OWNStopAndGoCommand:
+        target = _normalize_stop_and_go_where(where)
+        return cls(f"*18*{STOP_AND_GO_OPEN}*{target}##")
+
+    @classmethod
+    def close_breaker(cls, where: str | int) -> OWNStopAndGoCommand:
+        target = _normalize_stop_and_go_where(where)
+        return cls(f"*18*{STOP_AND_GO_CLOSE}*{target}##")
+
+    @classmethod
+    def test_differential_positive(cls, where: str | int) -> OWNStopAndGoCommand:
+        target = _normalize_stop_and_go_where(where)
+        return cls(f"*18*{STOP_AND_GO_TEST_POSITIVE}*{target}##")
+
+    @classmethod
+    def test_differential_negative(cls, where: str | int) -> OWNStopAndGoCommand:
+        target = _normalize_stop_and_go_where(where)
+        return cls(f"*18*{STOP_AND_GO_TEST_NEGATIVE}*{target}##")
+
+    @classmethod
+    def set_auto_reset(cls, where: str | int, enabled: bool) -> OWNStopAndGoCommand:
+        target = _normalize_stop_and_go_where(where)
+        what = (
+            STOP_AND_GO_AUTORESET_ENABLE if enabled else STOP_AND_GO_AUTORESET_DISABLE
+        )
+        return cls(f"*18*{what}*{target}##")
+
+    @classmethod
+    def enable_auto_reset(cls, where: str | int) -> OWNStopAndGoCommand:
+        return cls.set_auto_reset(where, True)
+
+    @classmethod
+    def disable_auto_reset(cls, where: str | int) -> OWNStopAndGoCommand:
+        return cls.set_auto_reset(where, False)
+
+    @classmethod
+    def set_tracking(cls, where: str | int, enabled: bool) -> OWNStopAndGoCommand:
+        target = _normalize_stop_and_go_where(where)
+        what = STOP_AND_GO_TRACKING_ENABLE if enabled else STOP_AND_GO_TRACKING_DISABLE
+        return cls(f"*18*{what}*{target}##")
+
+    @classmethod
+    def enable_tracking(cls, where: str | int) -> OWNStopAndGoCommand:
+        return cls.set_tracking(where, True)
+
+    @classmethod
+    def disable_tracking(cls, where: str | int) -> OWNStopAndGoCommand:
+        return cls.set_tracking(where, False)
+
+    @classmethod
+    def set_test_frequency(cls, where: str | int, days: int) -> OWNStopAndGoCommand:
+        target = _normalize_stop_and_go_where(where)
+        if days < 1 or days > 255:
+            raise ValueError(
+                f"Self-test frequency days must be between 1 and 255, got {days}"
+            )
+        return cls(f"*#18*{target}*#{STOP_AND_GO_DIM_TEST_FREQUENCY}*{days}##")
+
+    @classmethod
+    def request_test_frequency(cls, where: str | int) -> OWNStopAndGoCommand:
+        target = _normalize_stop_and_go_where(where)
+        return cls(f"*#18*{target}*{STOP_AND_GO_DIM_TEST_FREQUENCY}##")
+
+    @classmethod
+    def request_status_mask(cls, where: str | int) -> OWNStopAndGoCommand:
+        target = _normalize_stop_and_go_where(where)
+        return cls(f"*#18*{target}*{STOP_AND_GO_DIM_STATUS_MASK}##")
+
+    @classmethod
+    def request_status_flag(
+        cls, where: str | int, dimension: int
+    ) -> OWNStopAndGoCommand:
+        target = _normalize_stop_and_go_where(where)
+        if dimension not in STOP_AND_GO_FLAG_DIMENSIONS:
+            raise ValueError(
+                f"Stop&Go status flag dimension must be between {STOP_AND_GO_DIM_OPEN} and {STOP_AND_GO_DIM_UPSTREAM_POWER_FAILURE}, got {dimension}"
+            )
+        return cls(f"*#18*{target}*{dimension}##")
+
+
+def _parse_who18_event(data: str) -> OWNEvent:
+    event = OWNEvent(data)
+    if event._what in STOP_AND_GO_WHATS or event._dimension in STOP_AND_GO_DIMENSIONS:
+        return OWNStopAndGoEvent(data)
+    return OWNEnergyEvent(data)
+
+
+def _parse_who18_command(data: str) -> OWNCommand:
+    cmd = OWNCommand(data)
+    if cmd._what in STOP_AND_GO_WHATS or cmd._dimension in STOP_AND_GO_DIMENSIONS:
+        return OWNStopAndGoCommand(data)
+    return OWNEnergyCommand(data)
+
+
+register_event_parser(18, _parse_who18_event)
+register_command_parser(18, _parse_who18_command)
+
