@@ -1,8 +1,9 @@
 """WHO 3 load control, pinned to the firmware oracle first and the specification second.
 
-Firmware: tests/golden/firmware_oracle.json, suite energy-ts10. F459 020105 and
-MH202 010024 have aligned rows and are the reference; F453AV, F454, H4684 and
-MH200N lag by one row in that suite, so their per-row replies are not used.
+Firmware: tests/golden/firmware_oracle.json, suite energy-ts10. Gateways
+packaging ``bt_energia`` (F453AV, F454, F459, H4684, MH200, MH200N, MH202)
+translate WHO 3 commands onto the SCS bus; gateways without ``bt_energia``
+(MyHomeServer1, F461, F460, F450) silently NACK all 15 WHO 3 inputs.
 
 Specification: WHO 3 Load Control v1.0.0 (2006) via the OpenWebNet Encyclopedia
 (functional/who-3-load-management). No real-plant capture exists yet, so the
@@ -33,7 +34,33 @@ from OWNd.message.load import _safe_float, _safe_int
 ORACLE = json.loads(
     (Path(__file__).parent / "golden" / "firmware_oracle.json").read_text(encoding="utf-8")
 )["verdicts"]
-ALIGNED_GATEWAYS = ("F459", "MH202")
+BT_ENERGIA_CANDIDATES = (
+    "F453AV",
+    "F454",
+    "F459",
+    "H4684",
+    "MH200",
+    "MH200N",
+    "MH202",
+)
+ALIGNED_GATEWAYS = tuple(
+    p
+    for p in BT_ENERGIA_CANDIDATES
+    if any(
+        r["product"] == p
+        and r["reply"] == "ack"
+        and [bytes.fromhex(b.replace(" ", "")).decode().strip() for b in r["bus_frames"]]
+        == ["$04B7011300"]
+        for r in ORACLE["*3*2*#1##"]
+    )
+    and any(
+        r["product"] == p
+        and [bytes.fromhex(b.replace(" ", "")).decode().strip() for b in r["bus_frames"]]
+        == ["$03AA001614"]
+        for r in ORACLE["*#3*#1##"]
+    )
+)
+WITHOUT_BT_ENERGIA_GATEWAYS = ("F450", "F460", "F461", "MyHomeServer1")
 WHO3_INPUTS = sorted(f for f in ORACLE if f.startswith(("*3*", "*#3*")))
 
 
@@ -44,8 +71,10 @@ def _aligned(frame: str) -> list[dict[str, Any]]:
 
 
 def _forwarded(frame: str) -> bool:
-    """Not NACKed and put on the bus by every aligned gateway."""
-    return all(r["reply"] != "nack" and r["verdict"] == "out" for r in _aligned(frame))
+    """Put on the bus with at least one SCS telegram by every aligned bt_energia gateway."""
+    return all(
+        r["verdict"] == "out" and bool(r["bus_frames"]) for r in _aligned(frame)
+    )
 
 
 def _refused(frame: str) -> bool:
@@ -61,6 +90,16 @@ def _all_builder_frames() -> set[str]:
     frames |= {str(OWNLoadCommand.status(p)) for p in range(1, 9)}
     frames |= {str(OWNLoadCommand.request_measurement(d)) for d in range(5)}
     return frames
+
+
+def test_gateways_without_bt_energia_refuse_all_who3_frames():
+    assert len(ALIGNED_GATEWAYS) >= 2
+    for frame in WHO3_INPUTS:
+        rows = {r["product"]: r for r in ORACLE[frame]}
+        for gw in WITHOUT_BT_ENERGIA_GATEWAYS:
+            assert rows[gw]["reply"] == "nack"
+            assert rows[gw]["verdict"] == "silent"
+            assert rows[gw]["bus_frames"] == []
 
 
 def test_oracle_covers_who3():
