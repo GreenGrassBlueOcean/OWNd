@@ -71,6 +71,7 @@ def test_apl_addressing_helpers():
     assert normalize_where("02") == "02"
     assert normalize_where("0015") == "0015"
     assert normalize_where("0021") == "21"
+    assert normalize_where("0109") == "0109"
     assert normalize_where("15#4#01") == "15#4#01"
     assert normalize_where("#5") == "#5"
     assert normalize_where(None) == ""

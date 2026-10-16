@@ -83,7 +83,7 @@ def normalize_where(where: str | int | None) -> str:
     base = parts[0]
     if is_apl_address(base) or base in ("00", "100", "0"):
         norm_base = base
-    elif base.isdigit():
+    elif base.isdigit() and base.startswith("00") and int(base) > 15:
         norm_base = str(int(base))
     else:
         norm_base = base
