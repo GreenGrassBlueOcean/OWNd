@@ -244,6 +244,7 @@ def test_sound_is_measured_only_where_a_reply_is_captured() -> None:
         "f453av",
         "f454",
         "f461",
+        "h4684",
         "mh201",
         "mh202",
         "myhomeserver1",
@@ -594,6 +595,16 @@ def test_h4684_profile(name: str) -> None:
     profile = get_gateway_profile(name)
     assert isinstance(profile, H4684Profile)
     assert profile.model_name == "H4684"
+    assert profile.supports_who(WHO_LIGHTING) is True
+    assert profile.supports_who(WHO_AUTOMATION) is True
+    assert profile.supports_who(WHO_LOAD_CONTROL) is True
+    assert profile.supports_who(WHO_HEATING) is True
+    assert profile.supports_who(WHO_CEN) is True
+    assert profile.supports_who(WHO_SOUND) is True
+    assert profile.supports_who(WHO_ENERGY) is True
+    assert not profile.supports_who(WHO_SCENARIO)
+    assert not profile.supports_who(WHO_SOUND_DIFFUSION)
+    assert not profile.supports_who(WHO_CEN_PLUS)
 
 
 
