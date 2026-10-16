@@ -368,7 +368,7 @@ def test_stop_and_go_firmware_oracle_conformance(
         if r["verdict"] == "out" and _decoded_bus_frames(r) == [expected_bus]
     ]
     supervisione_products = {r["product"] for r in supervisione_rows}
-    assert supervisione_products == {
+    expected_products = {
         "F453AV",
         "F454",
         "F459",
@@ -378,6 +378,9 @@ def test_stop_and_go_firmware_oracle_conformance(
         "MH202",
         "MyHomeServer1",
     }
+    if expected_frame not in {"*#18*11*251##", "*#18*11*258##"}:
+        expected_products.add("F453")
+    assert supervisione_products == expected_products
     is_status_request = (
         expected_frame.startswith("*#18*11*") and "*#212*" not in expected_frame
     )

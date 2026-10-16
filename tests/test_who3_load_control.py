@@ -3,8 +3,8 @@
 Firmware: ``bt_energia`` v2.0.2 (2003-05-08) ARM binary and
 ``tests/golden/firmware_oracle.json``, suite ``energy-ts10``
 (https://github.com/OpenWebNet-HA/own-firmware-oracle/blob/main/oracle/cases/energy-ts10.cases#L69-L86).
-All seven gateways packaging ``bt_energia`` (F453AV, F454, F459, H4684, MH200,
-MH200N, MH202) agree on every WHO 3 input in the oracle fixture: ``*3*2*#N##``
+All eight gateways packaging ``bt_energia`` (F453, F453AV, F454, F459, H4684,
+MH200, MH200N, MH202) agree on every WHO 3 input in the oracle fixture: ``*3*2*#N##``
 is ACKed and emits ``$04B70N1300``, while ``*#3*#N##`` and ``*#3*10*D##``
 put their ``$03AA0016xx`` register reads on the bus and reply NACK on the
 command session (when no F421 answers within the 4 s bus timeout, opposite to
@@ -48,6 +48,7 @@ ORACLE = json.loads(
     (Path(__file__).parent / "golden" / "firmware_oracle.json").read_text(encoding="utf-8")
 )["verdicts"]
 BT_ENERGIA_GATEWAYS = (
+    "F453",
     "F453AV",
     "F454",
     "F459",
@@ -91,7 +92,7 @@ def _all_builder_frames() -> set[str]:
 
 
 def test_gateways_without_bt_energia_refuse_all_who3_frames():
-    assert len(BT_ENERGIA_GATEWAYS) == 7
+    assert len(BT_ENERGIA_GATEWAYS) == 8
     for frame in WHO3_INPUTS:
         rows = {r["product"]: r for r in ORACLE[frame]}
         for gw in WITHOUT_BT_ENERGIA_GATEWAYS:
@@ -123,7 +124,7 @@ def test_force_is_forwarded_with_priority_in_the_telegram(priority: int):
         assert row["verdict"] == "out"
         assert _bus_text(row) == [f"$04B70{priority}1300"]
     echoing_gateways = {r["product"] for r in rows if r["emitted_own"] == [frame]}
-    assert echoing_gateways == {"F453AV", "F459", "H4684", "MH200", "MH200N", "MH202"}
+    assert echoing_gateways == {"F453", "F453AV", "F459", "H4684", "MH200", "MH200N", "MH202"}
 
 
 def test_force_echo_on_event_session_parses_as_forced():

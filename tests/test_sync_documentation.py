@@ -16,6 +16,7 @@ from scripts.sync_documentation import (
     WHO_END_MARKER,
     WHO_START_MARKER,
     WhoCatalogDefinition,
+    _format_oracle_version,
     _replace_marker_block,
     _resolve_subsystem_classes,
     build_coverage_table,
@@ -25,6 +26,7 @@ from scripts.sync_documentation import (
     main,
     normalize_coverage_filename,
     sync_documentation,
+    verify_gateway_profiles_oracle,
     verify_who_catalog_coverage,
 )
 
@@ -547,3 +549,63 @@ def test_main_cli_modes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
 
     # 6. Explicit non-existent coverage XML exits 1
     assert main(["--coverage-xml", str(tmp_path / "nonexistent.xml")]) == 1
+
+
+def test_format_oracle_version() -> None:
+    """Verify 6-digit firmware version formatting and fallback."""
+    assert _format_oracle_version("010108") == "1.1.8"
+    assert _format_oracle_version("028206") == "2.82.6"
+    assert _format_oracle_version("010100") == "1.1.0"
+    assert _format_oracle_version("custom") == "custom"
+
+
+def test_verify_gateway_profiles_oracle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify verify_gateway_profiles_oracle passes on live data and catches drift."""
+    import json
+    import OWNd.profiles as profiles_mod
+
+    # 1. Live oracle fixture passes with zero violations
+    assert verify_gateway_profiles_oracle() == []
+
+    # 2. Missing oracle fixture reports error
+    missing_path = tmp_path / "missing_oracle.json"
+    violations_missing = verify_gateway_profiles_oracle(missing_path)
+    assert len(violations_missing) == 1
+    assert "Firmware oracle fixture not found" in violations_missing[0]
+
+    # 3. Simulated profile drift is caught (auth_measured, audio_measured, WHO support)
+    fake_oracle = {
+        "gateways": [
+            {"product": "F454", "version": "020051", "status": "emulated"},
+            {"product": "F450", "version": "020010", "status": "emulated"},  # Generic profile -> skipped
+            {"product": "3550", "version": "030020", "status": "catalogued"},  # Catalogued -> skipped
+        ],
+        "verdicts": {
+            "*#16*0*5##": [{"product": "F454", "reply": "nack", "verdict": "silent"}],
+            "*1*1*31##": [{"product": "F454", "reply": "ack", "verdict": "out"}],
+            "*2*1*31##": [{"product": "F454", "reply": "ack", "verdict": "out"}],
+            "*3*2*#1##": [{"product": "F454", "reply": "nack", "verdict": "silent"}],
+            "*#4*1*0##": [{"product": "F454", "reply": "ack", "verdict": "out"}],
+            "*25*21#1*21##": [{"product": "F454", "reply": "ack", "verdict": "out"}],
+        },
+    }
+    oracle_file = tmp_path / "oracle.json"
+    oracle_file.write_text(json.dumps(fake_oracle), encoding="utf-8")
+
+    # Also patch F454Profile.auth_measured to False temporarily to exercise all violation branches
+    monkeypatch.setattr(profiles_mod.F454Profile, "auth_measured", False)
+
+    violations = verify_gateway_profiles_oracle(oracle_file)
+    assert any("auth_measured=False" in v for v in violations)
+    assert any("audio_measured=True" in v for v in violations)
+    assert any("supports_who(3)=True" in v for v in violations)
+
+    repo_root = Path(__file__).resolve().parent.parent
+    in_sync, _, messages = sync_documentation(
+        readme_path=repo_root / "README.md",
+        coverage_xml_path=None,
+        check_only=True,
+    )
+    assert in_sync is False
+    assert any("Gateway profile oracle mismatch:" in m for m in messages)
+
