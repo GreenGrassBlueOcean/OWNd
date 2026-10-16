@@ -93,7 +93,7 @@ def test_firmware_oracle_integrity():
     }
     assert gateway_names == expected_gateways
 
-    # Verify 11 emulated gateways × 540.7 rows across 22 test suites (5,948 rows total)
+    # Verify 11 emulated gateways × 540-544 rows across 22 test suites (5,956 rows total)
     emulated_gateways = [g for g in data["gateways"] if g["status"] == "emulated"]
     assert len(emulated_gateways) == 11
     catalogued_gateways = [g for g in data["gateways"] if g["status"] == "catalogued"]
@@ -101,7 +101,7 @@ def test_firmware_oracle_integrity():
     assert {g["product"] for g in catalogued_gateways} == {"3550", "F455", "L4561N", "MH201"}
 
     total_rows = sum(len(entries) for entries in verdicts.values())
-    assert total_rows == 5948
+    assert total_rows == 5956
 
     for g in emulated_gateways:
         prod = g["product"]
@@ -113,7 +113,7 @@ def test_firmware_oracle_integrity():
 def test_emitted_own_frames_parseable_by_ownd():
     """Verify that every OpenWebNet frame emitted by real firmware parses cleanly in OWNd.
 
-    The fixture captures 135 unique authentic firmware-emitted frames across the fleet.
+    The fixture captures 136 unique authentic firmware-emitted frames across the fleet.
     Key diagnostic examples include:
     1. *1*19*74##: WHO 1 lighting diagnostic fault event (WHAT 19) emitted by MH200N.
     2. *#1001*74*11*111110111111111111110111##: WHO 1001 diagnostic device mask emitted by MH200N.
@@ -127,7 +127,7 @@ def test_emitted_own_frames_parseable_by_ownd():
             for own_frame in entry.get("emitted_own", []):
                 all_emitted.add(own_frame)
 
-    assert len(all_emitted) == 135
+    assert len(all_emitted) == 136
     for frame in all_emitted:
         msg = OWNMessage.parse(frame)
         assert msg is not None, f"Failed to parse authentic emitted frame {frame}"
@@ -259,30 +259,46 @@ def test_golden_corpus_bidirectional_cross_validation():
         if fixture_id == "thermo.req.temp.zone1":
             for prod, entry in by_product.items():
                 if prod == "MH202":
-                    assert entry["reply"] in ("ack", "nack")
+                    assert entry["reply"] == "ack"
                 else:
                     assert entry["reply"] == "nack", f"Expected NACK for {fixture_id} on {prod}"
+                assert entry["verdict"] == "out", f"Expected 'out' verdict for {fixture_id} on {prod}"
 
         elif fixture_id == "cen.event.extended_press.btn1.0001":
             assert by_product["MH202"]["reply"] == "ack"
-            for prod in ("MH200N", "MyHomeServer1", "F453AV", "F454", "F459"):
-                assert by_product[prod]["reply"] == "nack"
+            assert by_product["MH202"]["verdict"] == "out"
+            for prod, entry in by_product.items():
+                if prod != "MH202":
+                    assert entry["reply"] == "nack"
+                    assert entry["verdict"] == "silent"
 
         elif fixture_id == "energy.req.unit.meter51":
             for prod in ("MH202", "MyHomeServer1", "F453AV", "F454", "F459", "F460", "F461", "MH200N"):
                 assert by_product[prod]["reply"] == "ack"
-            assert by_product["F450"]["reply"] == "nack"
+                assert by_product[prod]["verdict"] == "out"
+            for prod in ("F450", "H4684", "MH200"):
+                assert by_product[prod]["reply"] == "nack"
+                assert by_product[prod]["verdict"] == "silent"
 
         elif fixture_id.startswith("thermo.cmd.central.mode."):
             assert by_product["MH200N"]["reply"] == "ack"
+            assert by_product["MH200N"]["verdict"] == "out"
             for prod in ("F453AV", "F454", "F459", "MH202"):
                 assert by_product[prod]["reply"] == "ack"
+                assert by_product[prod]["verdict"] == "out"
             assert by_product["F460"]["reply"] == "nack"
+            assert by_product["F460"]["verdict"] == "out"
             assert by_product["F461"]["reply"] == "nack"
+            assert by_product["F461"]["verdict"] == "out"
 
 
 def test_harness_limitations_classification():
-    """Explicitly identify and categorize test-harness limitations vs protocol verdicts."""
+    """Explicitly identify and categorize test-harness limitations vs protocol verdicts.
+
+    With the upstream fix in own-firmware-oracle#48 (pruning boot-exiting translators and creating
+    /var/volatile/tmp/upnp), MH202 and F450 no longer segfault or crash. Across all 5,956 empirical
+    verdict rows for the 11 emulated gateways in the fleet, exactly 0 crashes and 0 timeouts are recorded.
+    """
     crashes: list[tuple[str, str, str]] = []
     timeouts: list[tuple[str, str, str]] = []
 
@@ -294,12 +310,8 @@ def test_harness_limitations_classification():
             elif verdict == "timeout":
                 timeouts.append((e["product"], e["suite"], frame))
 
-    assert len(crashes) == 1080
+    assert len(crashes) == 0
     assert len(timeouts) == 0
-
-    crash_counts = Counter(c[0] for c in crashes)
-    assert crash_counts["F450"] == 540
-    assert crash_counts["MH202"] == 540
 
 
 def test_multi_suite_divergence_bounded():
@@ -328,9 +340,11 @@ def test_energy_dimension_51_bus_dispatch_reconciliation():
     for e in entries:
         by_prod.setdefault(e["product"], []).append(e)
 
-    # F450 refuses with NACK (no energy daemon)
-    for e in by_prod["F450"]:
-        assert e["reply"] == "nack"
+    # Gateways without energy daemons refuse with NACK and silent verdict
+    for prod in ("F450", "H4684", "MH200"):
+        for e in by_prod[prod]:
+            assert e["reply"] == "nack"
+            assert e["verdict"] == "silent"
 
     # MH200N forwards raw PIC frame in both suites
     mh200n_entries = by_prod["MH200N"]
@@ -344,7 +358,7 @@ def test_energy_dimension_51_bus_dispatch_reconciliation():
     for prod in ("F453AV", "F454", "F459", "F460", "F461", "MH202", "MyHomeServer1"):
         for e in by_prod[prod]:
             assert e["reply"] == "ack"
-            assert e["verdict"] in ("out", "crash")
+            assert e["verdict"] == "out"
 
 
 @pytest.mark.parametrize(
@@ -457,18 +471,20 @@ def test_firmware_nack_with_bus_forwarding():
                     entry.get("emitted_own", []),
                 ))
 
-    assert len(nack_and_out) == 939
+    assert len(nack_and_out) == 1028
 
     counts = Counter(item[0] for item in nack_and_out)
     assert counts["F460"] == 228
     assert counts["F461"] == 228
     assert counts["MyHomeServer1"] == 228
+    assert counts["MH202"] == 70
     assert counts["F453AV"] == 53
     assert counts["MH200N"] == 53
     assert counts["F454"] == 51
     assert counts["F459"] == 51
     assert counts["MH200"] == 24
     assert counts["H4684"] == 23
+    assert counts["F450"] == 19
 
     for _product, _suite, _frame, bus_frames, emitted_own in nack_and_out:
         assert len(bus_frames) > 0 or len(emitted_own) > 0, (
