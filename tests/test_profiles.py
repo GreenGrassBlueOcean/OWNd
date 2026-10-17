@@ -229,19 +229,16 @@ def test_sound_system_feature_matches_capabilities() -> None:
 
 
 def test_sound_is_measured_only_where_a_reply_is_captured() -> None:
-    """Only MH200, MH200N and H4890 have captured WHO 16/22 replies (MyHOME#53, #427, #466)."""
+    """MH200, MH200N, H4890, F453, F453AV, and F454 have captured/oracle WHO 16 replies."""
     measured = {
         key
         for key, profile in _PROFILES.items()
         if "Sound system (WHO 16)" in profile.features_summary
     }
-    assert measured == {"mh200", "mh200n", "h4890"}
+    assert measured == {"f453", "f453av", "f454", "mh200", "mh200n", "h4890"}
     for key in (
         "f452",
         "f452v",
-        "f453",
-        "f453av",
-        "f454",
         "f461",
         "mh201",
         "mh202",
@@ -251,7 +248,7 @@ def test_sound_is_measured_only_where_a_reply_is_captured() -> None:
         assert profile.supports_audio is True
         assert profile.audio_measured is False
         assert "Sound unmeasured" in profile.features_summary
-    assert get_gateway_profile("F453AV", "2.1.7").audio_measured is False
+    assert get_gateway_profile("F453AV", "2.1.7").audio_measured is True
 
 
 def test_hmac_profiles_never_show_legacy_auth() -> None:
@@ -298,7 +295,7 @@ def test_gateway_profile_summary_properties() -> None:
     assert f454.keepalive_summary == "90 s"
     assert (
         f454.features_summary
-        == "HMAC-SHA2, Native transitions, Extended frames, Sound unmeasured"
+        == "HMAC-SHA2, Native transitions, Extended frames, Sound system (WHO 16)"
     )
 
     f455 = get_gateway_profile("F455")
@@ -412,7 +409,7 @@ def test_f452_and_f452v_profiles() -> None:
 
 
 def test_f453_profile() -> None:
-    """F453 keeps the class default: WHO 25 is documented YES, nothing is dropped."""
+    """F453 keeps the class default: WHO 25 is documented YES and verified in 010100."""
     f453 = get_gateway_profile("F453")
     assert isinstance(f453, F453Profile)
     assert f453.model_name == "F453"
@@ -421,10 +418,12 @@ def test_f453_profile() -> None:
     assert f453.supported_who == DEFAULT_SUPPORTED_WHO
     assert f453.supports_who(WHO_CEN_PLUS)
     assert f453.supports_who(WHO_ENERGY)
-    # The TiF453 guide offers only an OPEN password; no handshake is captured.
+    # Verified by firmware oracle (F453 010100 openserver + bt_difson):
     assert f453.supports_hmac is False
-    assert f453.auth_measured is False
-    assert "Auth unmeasured" in f453.features_summary
+    assert f453.auth_measured is True
+    assert f453.audio_measured is True
+    assert "Legacy password auth" in f453.features_summary
+    assert "Sound system (WHO 16)" in f453.features_summary
 
 
 def test_f453av_profile_firmware_discrimination() -> None:
@@ -442,7 +441,8 @@ def test_f453av_profile_firmware_discrimination() -> None:
     }
     assert note in f453av_default.extra_features
     assert note in f453av_default.features_summary
-    assert f453av_default.auth_measured is False
+    assert f453av_default.auth_measured is True
+    assert f453av_default.audio_measured is True
     assert f453av_default.supports_hmac is False
     assert f453av_default.command_queue_delay == MH200Profile().command_queue_delay
 

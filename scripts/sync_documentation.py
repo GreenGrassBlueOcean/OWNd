@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import difflib
+import json
 import os
 from pathlib import Path
 import re
@@ -31,11 +32,21 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from OWNd.profiles import canonical_profiles  # noqa: E402
+from OWNd.profiles import (  # noqa: E402
+    GenericGatewayProfile,
+    WHO_AUTOMATION,
+    WHO_CEN_PLUS,
+    WHO_HEATING,
+    WHO_LIGHTING,
+    WHO_LOAD_CONTROL,
+    canonical_profiles,
+    get_gateway_profile,
+)
 
 README_MD = REPO_ROOT / "README.md"
 COVERAGE_XML = REPO_ROOT / "coverage.xml"
 COVERAGE_SVG = REPO_ROOT / "coverage.svg"
+ORACLE_JSON = REPO_ROOT / "tests" / "golden" / "firmware_oracle.json"
 
 # Sentinel block markers
 GATEWAY_START_MARKER = "<!-- START_GATEWAY_PROFILES_TABLE -->"
@@ -215,6 +226,71 @@ def build_gateway_profiles_table() -> str:
             f"{profile.features_summary} |"
         )
     return "\n".join(lines)
+
+
+def _format_oracle_version(version_code: str) -> str:
+    """Convert 6-digit oracle version code (VVRRBB) to dotted string 'V.R.B'."""
+    if len(version_code) == 6 and version_code.isdigit():
+        return f"{int(version_code[0:2])}.{int(version_code[2:4])}.{int(version_code[4:6])}"
+    return version_code
+
+
+def verify_gateway_profiles_oracle(oracle_path: Path = ORACLE_JSON) -> list[str]:
+    """Verify dedicated gateway profiles against empirical firmware oracle verdicts."""
+    if not oracle_path.is_file():
+        return [f"Firmware oracle fixture not found: {oracle_path}"]
+
+    data = json.loads(oracle_path.read_text(encoding="utf-8"))
+    verdicts: dict[str, list[dict[str, Any]]] = data.get("verdicts", {})
+    gateways: list[dict[str, Any]] = data.get("gateways", [])
+
+    def _verdict(product: str, frame: str) -> tuple[str, str] | None:
+        for row in verdicts.get(frame, []):
+            if row.get("product") == product:
+                return (str(row.get("reply")), str(row.get("verdict")))
+        return None
+
+    violations: list[str] = []
+    probe_checks: tuple[tuple[int, str, str], ...] = (
+        (WHO_LIGHTING, "*1*1*31##", "WHO 1 Lighting"),
+        (WHO_AUTOMATION, "*2*1*31##", "WHO 2 Automation"),
+        (WHO_LOAD_CONTROL, "*3*2*#1##", "WHO 3 Load Control"),
+        (WHO_HEATING, "*#4*1*0##", "WHO 4 Heating"),
+        (WHO_CEN_PLUS, "*25*21#1*21##", "WHO 25 CEN+"),
+    )
+
+    for gw in gateways:
+        if gw.get("status") != "emulated":
+            continue
+        product = str(gw["product"])
+        fw_dotted = _format_oracle_version(str(gw.get("version", "")))
+        profile = get_gateway_profile(product, fw_dotted)
+        if isinstance(profile, GenericGatewayProfile):
+            continue
+
+        if not profile.auth_measured:
+            violations.append(
+                f"{product} ({fw_dotted}) is emulated in firmware oracle but has auth_measured=False."
+            )
+
+        expected_audio = _verdict(product, "*#16*0*5##") == ("ack", "out")
+        if profile.audio_measured != expected_audio:
+            violations.append(
+                f"{product} ({fw_dotted}) audio_measured={profile.audio_measured} disagrees with "
+                f"oracle *#16*0*5## verdict (expected {expected_audio})."
+            )
+
+        for who_code, probe_frame, label in probe_checks:
+            verdict_pair = _verdict(product, probe_frame)
+            expected_supported = verdict_pair is not None and verdict_pair[1] == "out"
+            actual_supported = profile.supports_who(who_code)
+            if actual_supported != expected_supported:
+                violations.append(
+                    f"{product} ({fw_dotted}) supports_who({who_code})={actual_supported} for {label} "
+                    f"disagrees with oracle {probe_frame} verdict (expected {expected_supported})."
+                )
+
+    return violations
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -461,7 +537,14 @@ def sync_documentation(
     original_content = raw_bytes.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
     working_content = original_content
 
-    # 1. Gateway Profiles Table
+    # 1. Gateway Profiles Table & Firmware Oracle Cross-Verification
+    profile_oracle_violations = verify_gateway_profiles_oracle()
+    if profile_oracle_violations:
+        for violation in profile_oracle_violations:
+            messages.append(f"Gateway profile oracle mismatch: {violation}")
+    else:
+        messages.append("Gateway profiles are consistent with firmware oracle verdicts.")
+
     gw_table = build_gateway_profiles_table()
     working_content, gw_changed = _replace_marker_block(
         working_content,
@@ -526,7 +609,7 @@ def sync_documentation(
             if svg_drifted:
                 messages.append(f"{coverage_svg_path.name} drifted from {coverage_xml_path.name} ({rate_round}%).")
                 if not check_only:
-                    if coverage_violations:
+                    if coverage_violations or profile_oracle_violations:
                         messages.append(
                             f"Refused to update {coverage_svg_path.name} while WHO catalog coverage gaps exist."
                         )
@@ -553,6 +636,7 @@ def sync_documentation(
         and (not has_crlf)
         and (not svg_drifted)
         and (not coverage_violations)
+        and (not profile_oracle_violations)
     )
 
     diff_str = ""
@@ -568,7 +652,7 @@ def sync_documentation(
         diff_str = "".join(diff_lines)
 
     if not check_only and (content_changed or has_crlf):
-        if coverage_violations:
+        if coverage_violations or profile_oracle_violations:
             messages.append(
                 f"Refused to update {readme_path.name} while WHO catalog coverage gaps exist."
             )
