@@ -5,14 +5,16 @@ from __future__ import annotations
 import math
 import re
 
-from .base import OWNCommand, OWNEvent, register_command_parser, register_event_parser
+from .base import (
+    OWNCommand,
+    OWNEvent,
+    register_command_parser,
+    register_event_parser,
+    require_non_empty_where,
+)
 
 
-def _require_non_empty_where(where: str | int) -> str:
-    target = str(where).strip()
-    if not target or "*" in target:
-        raise ValueError("where must be a non-empty address without '*'")
-    return target
+_require_non_empty_where = require_non_empty_where
 
 
 
@@ -226,9 +228,13 @@ class OWNAVCommand(OWNCommand):
     def receive_video(cls, where: str | int) -> OWNAVCommand | None:
         camera_id: str | int = where
         where_str = str(where)
-        if 0 <= int(where) < 100:
+        try:
+            val = int(where)
+        except (ValueError, TypeError):
+            return None
+        if 0 <= val < 100:
             where_str = f"40{camera_id}"
-        elif int(where) >= 4000 and int(where) < 5000:
+        elif 4000 <= val < 5000:
             camera_id = where_str[2:]
         else:
             return None

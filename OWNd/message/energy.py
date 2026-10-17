@@ -8,7 +8,13 @@ from typing import Any
 
 from dateutil.relativedelta import relativedelta
 
-from .base import OWNCommand, OWNEvent, register_command_parser, register_event_parser
+from .base import (
+    OWNCommand,
+    OWNEvent,
+    register_command_parser,
+    register_event_parser,
+    require_non_empty_where,
+)
 
 MESSAGE_TYPE_ACTIVE_POWER = "active_power"
 MESSAGE_TYPE_ENERGY_TOTALIZER = "energy_totalizer"
@@ -319,9 +325,7 @@ class OWNEnergyEvent(OWNEvent):
 
 def _normalize_actuator_where(where: str | int) -> str:
     """Normalize actuator address by ensuring #0 suffix per WHO 18 specification."""
-    target = str(where).strip()
-    if not target or "*" in target:
-        raise ValueError("where must be a non-empty address without '*'")
+    target = require_non_empty_where(where)
     if target.startswith("7") and not target.endswith("#0"):
         return f"{target}#0"
     return target

@@ -836,6 +836,8 @@ class TestLightingEdgeCases:
         evt = OWNLightingEvent("*#1*21*12*400*50*50##")
         assert evt.hs is None
         assert evt.rgb is None
+        evt_bad = OWNLightingEvent("*#1*21*12**50*50##")
+        assert evt_bad.hs is None
         cmd = OWNLightingCommand("*#1*21*#12*180*50*200##")
         assert cmd.hs is None
 
@@ -860,6 +862,9 @@ class TestAutomationEdgeCases:
         for bad in (-1, 101):
             with pytest.raises(ValueError, match="shutter level must be between 0 and 100"):
                 OWNAutomationCommand.set_shutter_level("21", bad)
+        for bad_where in ("", "   ", "21*1"):
+            with pytest.raises(ValueError, match="where must be a non-empty address without '\\*'"):
+                OWNAutomationCommand.set_shutter_level(bad_where, 50)
 
 
 # ── AV Command Edge Cases ─────────────────────────────────────────────────
@@ -871,9 +876,11 @@ class TestAVEdgeCases:
         assert cmd is not None
 
     def test_receive_video_invalid(self):
-        """Camera ID in invalid range returns None."""
+        """Camera ID in invalid range or non-numeric returns None."""
         assert OWNAVCommand.receive_video("5000") is None
         assert OWNAVCommand.receive_video(-1) is None
+        assert OWNAVCommand.receive_video("invalid") is None
+        assert OWNAVCommand.receive_video("") is None
 
 
 # ── Command Parse Additional WHO Coverage ─────────────────────────────────
