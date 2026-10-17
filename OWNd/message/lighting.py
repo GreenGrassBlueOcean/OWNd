@@ -235,7 +235,7 @@ class OWNLightingEvent(OWNEvent):
                         self._supports_hsv = False
                         self._supports_rgb = False
                         self._human_readable_log = f"Light {self._where}{self._interface_log_text} reports HSV color is not supported."
-                    else:
+                    elif 0 <= h <= 360 and 0 <= s <= 100 and 0 <= v <= 100:
                         self._supports_hsv = True
                         self._supports_rgb = True
                         self._hue = h
@@ -430,7 +430,7 @@ class OWNLightingCommand(OWNCommand):
                 v = int(self._dimension_value[2])
             except (TypeError, ValueError):
                 return None
-            if 0 <= h <= 360 and 0 <= s <= 100 and (h, s, v) != (511, 127, 255):
+            if 0 <= h <= 360 and 0 <= s <= 100 and 0 <= v <= 100:
                 return (h, s)
         return None
 

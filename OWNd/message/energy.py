@@ -320,6 +320,8 @@ class OWNEnergyEvent(OWNEvent):
 def _normalize_actuator_where(where: str | int) -> str:
     """Normalize actuator address by ensuring #0 suffix per WHO 18 specification."""
     target = str(where).strip()
+    if not target or "*" in target:
+        raise ValueError("where must be a non-empty address without '*'")
     if target.startswith("7") and not target.endswith("#0"):
         return f"{target}#0"
     return target
@@ -337,8 +339,11 @@ class OWNEnergyCommand(OWNCommand):
         electricity, 2 gas, 3 heat, 4 water (libqtdevices energy_device.cpp:50-56).
         """
         where = _normalize_actuator_where(where)
+        etype = int(energy_type)
+        if not 1 <= etype <= 4:
+            raise ValueError("energy_type must be between 1 and 4")
         duration = 255 if duration > 255 else max(0, int(duration))
-        message = cls(f"*#18*{where}*#1200#{energy_type}*{duration}##")
+        message = cls(f"*#18*{where}*#1200#{etype}*{duration}##")
         if duration == 0:
             message._human_readable_log = f"Stopping instant power draw updates from sensor {where}."  # pylint: disable=line-too-long
         else:
@@ -355,7 +360,10 @@ class OWNEnergyCommand(OWNCommand):
         D1 A1 02 32 00 02 1D 00; the meter then reports *#18*W*1200#type*0##.
         """
         where = _normalize_actuator_where(where)
-        message = cls(f"*#18*{where}*#1200#{energy_type}*0##")
+        etype = int(energy_type)
+        if not 1 <= etype <= 4:
+            raise ValueError("energy_type must be between 1 and 4")
+        message = cls(f"*#18*{where}*#1200#{etype}*0##")
         message._human_readable_log = f"Stopping instant power draw updates from sensor {where}."  # pylint: disable=line-too-long
         return message
 
@@ -433,8 +441,14 @@ class OWNEnergyCommand(OWNCommand):
         cls, where: str | int, year: int, month: int
     ) -> OWNEnergyCommand:
         where = _normalize_actuator_where(where)
-        message = cls(f"*#18*{where}*52#{str(year)[2:]}#{month}##")
-        message._human_readable_log = f"Requesting monthly power consumption for {year}-{month} from sensor {where}."  # pylint: disable=line-too-long
+        y = int(year)
+        m = int(month)
+        if not (2000 <= y <= 2099):
+            raise ValueError("year must be between 2000 and 2099")
+        if not (1 <= m <= 12):
+            raise ValueError("month must be between 1 and 12")
+        message = cls(f"*#18*{where}*52#{y % 100:02d}#{m}##")
+        message._human_readable_log = f"Requesting monthly power consumption for {y}-{m} from sensor {where}."  # pylint: disable=line-too-long
         return message
 
     @classmethod

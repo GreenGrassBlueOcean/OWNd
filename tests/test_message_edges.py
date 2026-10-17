@@ -831,6 +831,14 @@ class TestLightingEdgeCases:
         cmd = OWNLightingCommand.set_brightness("21", _level=50, _transition=-5)
         assert "*0##" in str(cmd)
 
+    def test_hsv_out_of_range_ignored(self):
+        """Out-of-range HSV values should not set invalid hs/rgb tuples."""
+        evt = OWNLightingEvent("*#1*21*12*400*50*50##")
+        assert evt.hs is None
+        assert evt.rgb is None
+        cmd = OWNLightingCommand("*#1*21*#12*180*50*200##")
+        assert cmd.hs is None
+
 
 # ── Automation Edge Cases ─────────────────────────────────────────────────
 
@@ -847,6 +855,12 @@ class TestAutomationEdgeCases:
         assert isinstance(msg, OWNAutomationEvent)
         assert msg.is_closing is True
 
+    def test_set_shutter_level_bounds(self):
+        """Shutter level outside 0..100 must raise ValueError."""
+        for bad in (-1, 101):
+            with pytest.raises(ValueError, match="shutter level must be between 0 and 100"):
+                OWNAutomationCommand.set_shutter_level("21", bad)
+
 
 # ── AV Command Edge Cases ─────────────────────────────────────────────────
 
@@ -858,8 +872,8 @@ class TestAVEdgeCases:
 
     def test_receive_video_invalid(self):
         """Camera ID in invalid range returns None."""
-        cmd = OWNAVCommand.receive_video("5000")
-        assert cmd is None
+        assert OWNAVCommand.receive_video("5000") is None
+        assert OWNAVCommand.receive_video(-1) is None
 
 
 # ── Command Parse Additional WHO Coverage ─────────────────────────────────
