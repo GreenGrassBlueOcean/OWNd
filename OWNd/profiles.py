@@ -226,63 +226,52 @@ class F452VProfile(GatewayProfile):
 class F453Profile(GatewayProfile):
     """The F453 Web Server.
 
-    Documented:
+    Documented & firmware-verified (``F453 010100``, ``results/F453/010100/oracle/full/``):
     - WHO 25: YES in Legrand's WHO 25 specification (p. 13,
       https://developer.legrand.com/uploads/2019/12/WHO_25.pdf) and WHO 15-25
-      specification (p. 24, https://developer.legrand.com/uploads/2019/12/WHO_15-25.pdf).
-    - WHO 18: the TiF453 user guide has an Energy Management chapter (load
-      control and energy data pages, pp. 39-40,
+      specification (p. 24, https://developer.legrand.com/uploads/2019/12/WHO_15-25.pdf),
+      and verified on ``010100`` via ``bt_cen``.
+    - WHO 3 & 18: ``bt_energia`` (WHO 3) and ``bt_energy`` (WHO 18) are both
+      packaged and verified in ``energy-ts10.tsv`` alongside the TiF453 user
+      guide (load control and energy data pages, pp. 39-40,
       https://www.bticino.be/sites/default/files/Service-en-support/software-en-schemas2/My%20Home/Tif453/TiF453%20Version2_0_07/Software_Manual_F453_EN.pdf).
-      That shows the gateway handles energy on its own web pages, not that
-      it relays WHO 18 to OpenWebNet clients.
-    - Authentication: the same guide (p. 17) configures only an OPEN
-      password (default 12345). The F454 user manual (p. 69,
-      https://dar.bticino.com/asset/Documents/O1755J_U_EN.pdf) offers OPEN or
-      HMAC; the F453 guide has no HMAC option, so ``supports_hmac`` stays
-      False. No handshake is captured, so ``auth_measured`` is False.
-
-    Every other subsystem, including sound (WHO 16/22), is the class default
-    and unverified. Sessions are the class default; pacing is copied from the
-    MH200 because nothing is measured.
+    - WHO 16 & 22: packages both ``bt_difson`` (answering ``*#16*0*5##`` and 69
+      other WHO 16 requests with ``ack``/``out``) and ``bt_multi`` (answering 58
+      WHO 22 requests with ``out``) in ``sound-ts08.tsv`` and ``sound-who22.tsv``.
+    - Authentication: ``openserver`` uses legacy OPEN password authentication
+      (no HMAC), matching the TiF453 user guide (p. 17, default 12345).
     """
 
     def __init__(self) -> None:
         super().__init__(
             model_name="F453",
             command_queue_delay=0.15,
-            auth_measured=False,
-            audio_measured=False,
         )
 
 
 class F453AVProfile(GatewayProfile):
     """The F453AV Web Server (Legrand Arteor 573992).
 
-    Documented:
+    Documented & firmware-verified (``F453AV 030014``, ``results/F453AV/030014/oracle/full/``):
     - WHO 25: Legrand's WHO 25 specification (p. 13,
       https://developer.legrand.com/uploads/2019/12/WHO_25.pdf) and WHO 15-25
       specification (p. 24, https://developer.legrand.com/uploads/2019/12/WHO_15-25.pdf)
-      list F453AV v1.0.19 as NO and F453AV / 573992 v2.1.7 as YES. Behaviour
-      between those two versions is not documented. Firmware below 2.1.7, or
-      unknown firmware, is treated as without CEN+; that is a conservative
-      choice, not a documented threshold.
-    - WHO 18: the TiF453AV user guide has an Energy Management chapter (pp.
-      39-40,
+      list F453AV v1.0.19 as NO and F453AV / 573992 v2.1.7 as YES (verified on
+      ``030014`` via ``bt_cen``). Behaviour between those two versions is not
+      documented. Firmware below 2.1.7, or unknown firmware, is treated as
+      without CEN+; that is a conservative choice, not a documented threshold.
+    - WHO 3 & 18: ``bt_energia`` (WHO 3) and ``bt_energy`` (WHO 18) are both
+      packaged and verified in ``energy-ts10.tsv`` alongside the TiF453AV user
+      guide (pp. 39-40,
       https://www.bticino.be/sites/default/files/Service-en-support/software-en-schemas2/My%20Home/TiF453AV/Version%203_0_64/Software_Manual_F453AV_EN.pdf).
-      That shows the gateway handles energy on its own web pages, not that
-      it relays WHO 18 to OpenWebNet clients.
-    - Authentication: the same guide (p. 18) configures only an OPEN
-      password (default 12345) and, unlike the F454 user manual (p. 69,
-      https://dar.bticino.com/asset/Documents/O1755J_U_EN.pdf), offers no HMAC
-      option, so ``supports_hmac`` stays False. No handshake is captured, so
-      ``auth_measured`` is False.
+    - WHO 16 & 22: packages both ``bt_difson`` (answering ``*#16*0*5##`` and 69
+      other WHO 16 requests with ``ack``/``out``) and ``bt_multi`` (answering 58
+      WHO 22 requests with ``out``) in ``sound-ts08.tsv`` and ``sound-who22.tsv``.
+    - Authentication: ``openserver`` uses legacy OPEN password authentication
+      (no HMAC), matching the TiF453AV user guide (p. 18, default 12345).
     - WHO 7: Legrand's WHO 7 specification names the F453AV as its device
       (p. 1, https://developer.legrand.com/uploads/2019/12/WHO_7.pdf). OWNd does
       not model WHO 7, so it is not listed in ``supported_who``.
-
-    Every other subsystem, including sound (WHO 16/22), is the class default
-    and unverified. Sessions are the class default; pacing is copied from the
-    MH200 because nothing is measured.
     """
 
     def __init__(
@@ -302,8 +291,6 @@ class F453AVProfile(GatewayProfile):
             model_name="F453AV",
             firmware_version=fw_str,
             command_queue_delay=0.15,
-            auth_measured=False,
-            audio_measured=False,
             supported_who=(
                 DEFAULT_SUPPORTED_WHO if has_cen_plus else _DEFAULT_WITHOUT_CEN_PLUS
             ),
@@ -312,13 +299,21 @@ class F453AVProfile(GatewayProfile):
 
 
 class F454Profile(GatewayProfile):
+    """The F454 Web Server (Legrand 003598).
+
+    Verified by the firmware oracle (``F454 020051``, ``results/F454/020051/oracle/full/``):
+    packages ``openserver`` (HMAC-SHA2), ``bt_fls`` (WHO 1/2), ``bt_energia`` (WHO 3),
+    ``bt_H4690`` (WHO 4), ``bt_cen`` (WHO 15/25), ``bt_difson`` (WHO 16, answering
+    ``*#16*0*5##`` and 69 other WHO 16 requests with ``ack``/``out``), ``bt_multi``
+    (WHO 22), and ``bt_energy`` (WHO 18).
+    """
+
     def __init__(self) -> None:
         super().__init__(
             model_name="F454",
             max_command_sessions=4,
             max_queue_size=250,
             event_keepalive_interval=90,
-            audio_measured=False,
             supports_hmac=True,
             supports_native_transitions=True,
             supports_extended_frames=True,
