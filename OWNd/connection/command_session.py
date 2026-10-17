@@ -183,11 +183,15 @@ class OWNCommandSession(OWNSession):
     async def _locked_send(
         self, message: str | OWNMessage, is_status_request: bool = False
     ) -> list[OWNMessage | str] | bool | None:
-        raw_str = str(message)
-        is_valid_frame = (
-            message.is_valid and not isinstance(message, OWNSignaling)
+        msg_obj = (
+            message
             if isinstance(message, OWNMessage)
-            else OWNMessage(raw_str).is_valid and not OWNSignaling(raw_str).is_valid
+            else OWNMessage.parse(str(message))
+        )
+        is_valid_frame = (
+            msg_obj is not None
+            and msg_obj.is_valid
+            and not isinstance(msg_obj, OWNSignaling)
         )
         if not is_valid_frame:
             self._logger.error(

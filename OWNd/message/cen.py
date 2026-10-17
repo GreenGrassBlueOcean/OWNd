@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import re
 
-from .base import OWNCommand, OWNEvent, register_command_parser, register_event_parser
+from .base import (
+    OWNCommand,
+    OWNEvent,
+    register_command_parser,
+    register_event_parser,
+    require_non_empty_where,
+)
 
 
 class OWNCENEvent(OWNEvent):
@@ -181,12 +187,7 @@ class OWNScenarioPlusEvent(OWNEvent):
         return self._action
 
 
-def _require_non_empty_where(where: str | int) -> str:
-    """Reject empty or wildcard-polluted WHERE strings."""
-    w = str(where).strip()
-    if not w or "*" in w:
-        raise ValueError("where must be a non-empty address without '*'")
-    return w
+_require_non_empty_where = require_non_empty_where
 
 
 class OWNScenarioPlusCommand(OWNCommand):
