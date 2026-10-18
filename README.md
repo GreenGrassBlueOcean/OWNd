@@ -85,6 +85,7 @@ OWNd parses OpenWebNet frames and dispatches typed commands and events across th
 | **8** | Intercom / Video Door Entry | Video door entry and intercom call signaling, answering, camera and audio control | `OWNIntercomCommand`, `OWNIntercomEvent` |
 | **9** | Auxiliary | Auxiliary channel status (aux 1–9) for remote relays and inter-system signaling | `OWNAuxEvent` |
 | **13** / **1013** | Gateway Diagnostics & Clock | Gateway date/time synchronization, timezone offsets, firmware and diagnostic object model metadata | `OWNGatewayCommand`, `OWNGatewayDiagnosticCommand`, `OWNGatewayEvent`, `OWNGatewayDiagnosticEvent` |
+| **14** | Special Commands / Actuator Lock | Actuator lock (`*14*0*WHERE##`, `$03WW001100`) and unlock (`*14*1*WHERE##`, `$03WW001000`) commands and events across Point-to-Point (`APL`) and `#4#01..09` local bus interface addresses | `OWNActuatorLockCommand`, `OWNActuatorLockEvent` |
 | **15** | CEN Scenarios | Scenario control, pushbutton push/release/extended press events, strongly typed command builders | `OWNCenCommand`, `OWNCENEvent` |
 | **16** / **22** | Sound Diffusion | Multi-source selection, zone activation, volume adjustment, F441 matrix routing, WHO 22 paging and standby | `OWNSoundCommand`, `OWNSoundDiffusionCommand`, `OWNSoundEvent`, `OWNSoundDiffusionEvent`, `OWNAVCommand` |
 | **17** | Scenario Programmer | MH200N / MH202 scenario activation and state monitoring | `OWNSceneCommand`, `OWNSceneEvent` |
@@ -334,6 +335,7 @@ OWNd maintains an automated test suite with strict **100.0% line coverage** veri
 | [`OWNd/connection/session.py`](OWNd/connection/session.py) | **100%** | Base TCP transport, negotiation state machine, and frame buffering |
 | [`OWNd/discovery.py`](OWNd/discovery.py) | **100%** | SSDP multicast and UPnP XML gateway discovery and descriptor parsing |
 | [`OWNd/message/__init__.py`](OWNd/message/__init__.py) | **100%** | OpenWebNet message package exports & WHO subsystem registries |
+| [`OWNd/message/actuator_lock.py`](OWNd/message/actuator_lock.py) | **100%** | WHO 14: Special commands and actuator lock/unlock events and commands |
 | [`OWNd/message/alarm.py`](OWNd/message/alarm.py) | **100%** | WHO 5: Intrusion and technical alarm subsystem events and commands |
 | [`OWNd/message/automation.py`](OWNd/message/automation.py) | **100%** | WHO 2: Automation and motorized shutter events and commands |
 | [`OWNd/message/base.py`](OWNd/message/base.py) | **100%** | Base message, signaling, and protocol dispatcher registries |

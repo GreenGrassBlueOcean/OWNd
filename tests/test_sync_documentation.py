@@ -76,6 +76,10 @@ def test_build_who_catalog_table() -> None:
     assert "| **9** | Auxiliary |" in table
     assert "`OWNAuxEvent`" in table
 
+    # Verify WHO 14 includes Actuator Lock classes
+    assert "| **14** | Special Commands / Actuator Lock |" in table
+    assert "`OWNActuatorLockCommand`, `OWNActuatorLockEvent`" in table
+
     # Verify WHO 15 includes CEN classes without OWNScenarioEvent
     assert "| **15** | CEN Scenarios |" in table
     assert "`OWNCenCommand`, `OWNCENEvent`" in table

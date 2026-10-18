@@ -67,6 +67,7 @@ COMPONENT_NOTES: dict[str, str] = {
     "OWNd/connection/session.py": "Base TCP transport, negotiation state machine, and frame buffering",
     "OWNd/discovery.py": "SSDP multicast and UPnP XML gateway discovery and descriptor parsing",
     "OWNd/message/__init__.py": "OpenWebNet message package exports & WHO subsystem registries",
+    "OWNd/message/actuator_lock.py": "WHO 14: Special commands and actuator lock/unlock events and commands",
     "OWNd/message/alarm.py": "WHO 5: Intrusion and technical alarm subsystem events and commands",
     "OWNd/message/automation.py": "WHO 2: Automation and motorized shutter events and commands",
     "OWNd/message/base.py": "Base message, signaling, and protocol dispatcher registries",
@@ -157,6 +158,12 @@ WHO_DEFINITIONS: tuple[WhoCatalogDefinition, ...] = (
         name="Gateway Diagnostics & Clock",
         description="Gateway date/time synchronization, timezone offsets, firmware and diagnostic object model metadata",
         dispatch_who_keys=(13, 1013),
+    ),
+    WhoCatalogDefinition(
+        who="**14**",
+        name="Special Commands / Actuator Lock",
+        description="Actuator lock (`*14*0*WHERE##`, `$03WW001100`) and unlock (`*14*1*WHERE##`, `$03WW001000`) commands and events across Point-to-Point (`APL`) and `#4#01..09` local bus interface addresses",
+        dispatch_who_keys=(14,),
     ),
     WhoCatalogDefinition(
         who="**15**",

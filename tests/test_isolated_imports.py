@@ -69,6 +69,13 @@ assert type(evt_energy).__name__ == "OWNEnergyEvent", f"Expected OWNEnergyEvent,
 evt_gw = OWNEvent.parse("*#13**15*4##")
 assert type(evt_gw).__name__ == "OWNGatewayEvent", f"Expected OWNGatewayEvent, got {type(evt_gw)}"
 
+# Actuator Lock WHO 14
+evt_lock14 = OWNEvent.parse("*14*0*07##")
+assert type(evt_lock14).__name__ == "OWNActuatorLockEvent", f"Expected OWNActuatorLockEvent, got {type(evt_lock14)}"
+
+cmd_lock14 = OWNCommand.parse("*14*1*07##")
+assert type(cmd_lock14).__name__ == "OWNActuatorLockCommand", f"Expected OWNActuatorLockCommand, got {type(cmd_lock14)}"
+
 # Top-level OWNMessage.parse
 msg_heat = OWNMessage.parse("*4*0*1##")
 assert type(msg_heat).__name__ == "OWNHeatingEvent", f"Expected OWNHeatingEvent, got {type(msg_heat)}"
