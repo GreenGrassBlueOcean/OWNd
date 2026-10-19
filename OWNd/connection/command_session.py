@@ -209,6 +209,10 @@ class OWNCommandSession(OWNSession):
         # gateway may have executed it even if its acknowledgement was lost.
         # Status requests are idempotent and can be retried safely after a
         # transport reset.
+        is_idempotent_query = is_status_request and (
+            getattr(msg_obj, "_message_type", None)
+            in ("STATUS_REQUEST", "DIMENSION_REQUEST")
+        )
         max_attempts = 2
 
         for attempt in range(1, max_attempts + 1):
@@ -304,7 +308,7 @@ class OWNCommandSession(OWNSession):
                 # state yet: a retry that succeeds is an internal recycle and
                 # must not flap the consumer (offline, then online again).
                 await self._close_streams()
-                if attempt < max_attempts and (is_status_request or not written):
+                if attempt < max_attempts and (is_idempotent_query or not written):
                     self._logger.debug(
                         "%s Command session connection lost (%s), retrying once...",
                         self._log_id,
