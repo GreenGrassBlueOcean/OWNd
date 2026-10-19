@@ -55,11 +55,9 @@ tests/golden/
     who18_energy.yaml           # WHO=18 Energy Management
     who25_cen_plus.yaml         # WHO=25 CEN+ & Dry Contacts
 tools/golden/
-  MCP_NOTES.md                  # MCP tool capabilities & verification log
   validate_corpus.py            # Corpus schema validator
   harvest_4j_fixtures.py        # Oracle test harvester & divergence detector
   HARVEST_REPORT.md             # Harvest analysis report
-  MASSI_OUTREACH.md             # Community proposal draft for Massi Valla
 tests/golden/
   corpus.json                   # Zero-dependency standard library runtime cache
   firmware_oracle.json          # Hash-pinned empirical verdict index from own-firmware-oracle

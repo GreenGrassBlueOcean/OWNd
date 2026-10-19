@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -16,7 +17,21 @@ from .session import (
     KEEPALIVE_INTERVAL,
     OWNSession,
 )
+from ..exceptions import (
+    OWNAuthError,
+    OWNConnectionError,
+    OWNError,
+    OWNNackError,
+    OWNProtocolError,
+    OWNTimeoutError,
+)
 from ..message import OWNMessage, OWNSignaling
+
+# Cooldown window (seconds) after an in-send() reconnect attempt fails, so
+# concurrent callers queued behind _send_lock fail fast instead of each
+# repeating a socket connect attempt while the gateway is unreachable.
+SEND_RECONNECT_COOLDOWN = 2.0
+
 
 class OWNCommandSession(OWNSession):
     def __init__(
@@ -24,24 +39,44 @@ class OWNCommandSession(OWNSession):
         gateway: OWNGateway | None = None,
         logger: logging.Logger | None = None,
         on_state_change: Callable[[bool], None] | None = None,
+        on_auth_error: Callable[[OWNAuthError], Any] | None = None,
     ):
         super().__init__(
             gateway=gateway,
             connection_type="command",
             logger=logger,
             on_state_change=on_state_change,
+            on_auth_error=on_auth_error,
         )
         # Serializes concurrent senders sharing this session (e.g. the
         # keepalive loop and a regular command): interleaved write/read pairs
         # on the same stream would steal each other's acknowledgements.
         self._send_lock = asyncio.Lock()
+        self._last_reconnect_failure: float | None = None
+
+    async def connect(
+        self, *, raise_on_error: bool = False
+    ) -> dict[str, Any] | None:
+        if self._connect_max_attempts_override is None:
+            self._last_reconnect_failure = None
+        result = await super().connect(raise_on_error=raise_on_error)
+        if result is not None and result.get("Success", False):
+            self._last_reconnect_failure = None
+        return result
 
     @classmethod
     async def send_to_gateway(
-        cls, message: str | OWNMessage, gateway: OWNGateway
+        cls,
+        message: str | OWNMessage,
+        gateway: OWNGateway,
+        *,
+        raise_on_error: bool = False,
     ) -> list[OWNMessage | str] | bool | None:
         connection = cls(gateway)
         try:
+            if raise_on_error:
+                await connection.connect(raise_on_error=True)
+                return await connection.send(message, raise_on_error=True)
             await connection.connect()
             return await connection.send(message)
         finally:
@@ -50,10 +85,12 @@ class OWNCommandSession(OWNSession):
 
     @classmethod
     async def connect_to_gateway(
-        cls, gateway: OWNGateway
+        cls, gateway: OWNGateway, *, raise_on_error: bool = False
     ) -> dict[str, Any] | None:
         connection = cls(gateway)
         try:
+            if raise_on_error:
+                return await connection.connect(raise_on_error=True)
             return await connection.connect()
         finally:
             with contextlib.suppress(Exception):
@@ -159,7 +196,11 @@ class OWNCommandSession(OWNSession):
         return signaling
 
     async def send(
-        self, message: str | OWNMessage, is_status_request: bool = False
+        self,
+        message: str | OWNMessage,
+        is_status_request: bool = False,
+        *,
+        raise_on_error: bool = False,
     ) -> list[OWNMessage | str] | bool | None:
         """Send the attached message on an existing 'command' connection,
         actively reconnecting it if it had been reset.
@@ -178,11 +219,18 @@ class OWNCommandSession(OWNSession):
         the call stack nor loop forever.
         """
         async with self._send_lock:
-            return await self._locked_send(message, is_status_request)
+            return await self._locked_send(
+                message, is_status_request, raise_on_error=raise_on_error
+            )
 
     async def _locked_send(
-        self, message: str | OWNMessage, is_status_request: bool = False
+        self,
+        message: str | OWNMessage,
+        is_status_request: bool = False,
+        *,
+        raise_on_error: bool = False,
     ) -> list[OWNMessage | str] | bool | None:
+        self._last_error = None
         msg_obj = (
             message
             if isinstance(message, OWNMessage)
@@ -194,11 +242,19 @@ class OWNCommandSession(OWNSession):
             and not isinstance(msg_obj, OWNSignaling)
         )
         if not is_valid_frame:
+            err: OWNError = OWNProtocolError(
+                f"Invalid OpenWebNet frame `{message}`",
+                frame=str(message),
+                reason="invalid_frame",
+            )
+            self._last_error = err
             self._logger.error(
                 "%s Refusing to send invalid OpenWebNet frame `%s`.",
                 self._log_id,
                 message,
             )
+            if raise_on_error:
+                raise err
             return None
 
         # One retry is enough for a command NACK or for a connection that was
@@ -209,28 +265,67 @@ class OWNCommandSession(OWNSession):
         # gateway may have executed it even if its acknowledgement was lost.
         # Status requests are idempotent and can be retried safely after a
         # transport reset.
+        is_idempotent_query = is_status_request and (
+            getattr(msg_obj, "_message_type", None)
+            in ("STATUS_REQUEST", "DIMENSION_REQUEST")
+        )
         max_attempts = 2
 
         for attempt in range(1, max_attempts + 1):
             # After an outage the previous connect()/reconnect may have given up
-            # and left the writer at None; rebuild the session here so commands
-            # resume automatically when the gateway comes back, instead of
-            # crashing forever on `NoneType.write`.
+            # and left the writer at None; rebuild the session here with a
+            # single fast connect attempt (and a short cooldown on failure) so
+            # queued callers behind _send_lock never stall for a full 5-attempt
+            # exponential backoff loop.
             if self._stream_reader is None or self._stream_writer is None:
-                result = await self.connect()
+                now = time.monotonic()
+                if (
+                    self._last_reconnect_failure is not None
+                    and (now - self._last_reconnect_failure)
+                    < SEND_RECONNECT_COOLDOWN
+                ):
+                    err = self._last_error or OWNConnectionError(
+                        f"Command session unavailable; message `{message}` not sent",
+                        reason="connection_unavailable",
+                    )
+                    self._last_error = err
+                    self._logger.warning(
+                        "%s Command session unavailable; message `%s` not sent.",
+                        self._log_id,
+                        message,
+                    )
+                    if raise_on_error:
+                        raise err
+                    return None
+
+                self._connect_max_attempts_override = 1
+                try:
+                    result = await self.connect()
+                finally:
+                    self._connect_max_attempts_override = None
+
                 if (
                     result is None
                     or not result.get("Success", False)
                     or self._stream_reader is None
                     or self._stream_writer is None
                 ):
+                    self._last_reconnect_failure = time.monotonic()
+                    err = self._last_error or OWNConnectionError(
+                        f"Command session unavailable; message `{message}` not sent",
+                        reason="connection_unavailable",
+                    )
                     await self.close()
+                    self._last_error = err
                     self._logger.warning(
                         "%s Command session unavailable; message `%s` not sent.",
                         self._log_id,
                         message,
                     )
+                    if raise_on_error:
+                        raise err
                     return None
+                self._last_reconnect_failure = None
 
             written = False
             try:
@@ -241,11 +336,11 @@ class OWNCommandSession(OWNSession):
                 resulting_message, collected = await self._read_command_response()
 
                 if resulting_message.is_ack():
-                    log_message = "%s Message `%s` was successfully sent."
-                    if not is_status_request:
-                        self._logger.info(log_message, self._log_id, message)
-                    else:
-                        self._logger.debug(log_message, self._log_id, message)
+                    self._logger.debug(
+                        "%s Message `%s` was successfully sent.",
+                        self._log_id,
+                        message,
+                    )
                     return collected or True
 
                 if resulting_message.is_nack():
@@ -265,6 +360,14 @@ class OWNCommandSession(OWNSession):
                                 self._log_id,
                                 message,
                             )
+                        err = OWNNackError(
+                            f"Gateway rejected message `{message}` with NACK",
+                            frame=str(message),
+                            responses=list(collected),
+                        )
+                        self._last_error = err
+                        if raise_on_error:
+                            raise err
                         return None
                     self._logger.error(
                         "%s Could not send message `%s`. Retrying (%d)...",
@@ -280,19 +383,36 @@ class OWNCommandSession(OWNSession):
                     resulting_message,
                     message,
                 )
+                err = OWNProtocolError(
+                    f"Unexpected response `{resulting_message}` to message `{message}`",
+                    frame=str(resulting_message),
+                    reason="unexpected_response",
+                )
+                self._last_error = err
+                if raise_on_error:
+                    raise err
                 return None
 
             except asyncio.CancelledError:
                 await self.close()
                 raise
-            except TimeoutError:
+            except OWNError:
+                raise
+            except TimeoutError as error:
                 await self.close()
+                err = OWNTimeoutError(
+                    f"Timed out awaiting the complete response for `{message}`",
+                    reason="command_timeout",
+                )
+                self._last_error = err
                 self._logger.warning(
                     "%s Timed out awaiting the complete response for `%s`; "
                     "command session closed.",
                     self._log_id,
                     message,
                 )
+                if raise_on_error:
+                    raise err from error
                 return None
             except (
                 ConnectionResetError,
@@ -304,7 +424,7 @@ class OWNCommandSession(OWNSession):
                 # state yet: a retry that succeeds is an internal recycle and
                 # must not flap the consumer (offline, then online again).
                 await self._close_streams()
-                if attempt < max_attempts and (is_status_request or not written):
+                if attempt < max_attempts and (is_idempotent_query or not written):
                     self._logger.debug(
                         "%s Command session connection lost (%s), retrying once...",
                         self._log_id,
@@ -313,19 +433,32 @@ class OWNCommandSession(OWNSession):
                     continue
                 # No retry: this is a definitive loss, and the consumer hears it.
                 self._set_connected(False)
+                err = OWNConnectionError(
+                    f"Connection lost before acknowledgement of `{message}` ({error})",
+                    reason="connection_lost",
+                )
+                self._last_error = err
                 self._logger.warning(
                     "%s Connection lost before acknowledgement of `%s`; "
                     "message will not be replayed.",
                     self._log_id,
                     message,
                 )
+                if raise_on_error:
+                    raise err from error
                 return None
-            except Exception:  # pylint: disable=broad-except
+            except Exception as error:  # pylint: disable=broad-except
                 await self.close()
+                err = OWNConnectionError(
+                    f"Command session crashed ({error})",
+                    reason="session_crash",
+                )
+                self._last_error = err
                 self._logger.exception(
                     "%s Command session crashed.", self._log_id
                 )
+                if raise_on_error:
+                    raise err from error
                 return None
 
         return None  # pragma: no cover
-

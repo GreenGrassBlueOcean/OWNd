@@ -229,7 +229,7 @@ async def test_negotiation_has_an_absolute_deadline() -> None:
         return {"Success": True, "Message": None}
 
     session._negotiate_exchange = stalled_exchange
-    with patch("OWNd.connection.NEGOTIATION_TOTAL_TIMEOUT", 0.01):
+    with patch("OWNd.connection.session.NEGOTIATION_TOTAL_TIMEOUT", 0.01):
         result = await session._negotiate()
 
     assert result == {"Success": False, "Message": "negotiation_timeout"}
@@ -243,7 +243,7 @@ async def test_temporary_test_session_always_closes() -> None:
     )
 
     with patch(
-        "OWNd.connection.asyncio.open_connection",
+        "OWNd.connection.session.asyncio.open_connection",
         new=AsyncMock(return_value=(asyncio.StreamReader(), writer)),
     ):
         result = await session.test_connection()
@@ -273,7 +273,7 @@ async def test_command_response_frame_count_is_bounded() -> None:
     session._read_frame = AsyncMock(return_value="*1*1*12##")
 
     with (
-        patch("OWNd.connection.COMMAND_RESPONSE_MAX_FRAMES", 3),
+        patch("OWNd.connection.command_session.COMMAND_RESPONSE_MAX_FRAMES", 3),
         pytest.raises(TimeoutError),
     ):
         await session._read_command_response()
@@ -451,7 +451,10 @@ async def test_event_connection_loss_oversized_frame_is_warning() -> None:
 def _fake_clock(*times: float):
     """Patch only the module's ``time`` so asyncio's own loop clock is untouched."""
     it = iter(times)
-    return patch("OWNd.connection.time", SimpleNamespace(monotonic=lambda: next(it)))
+    return patch(
+        "OWNd.connection.event_session.time",
+        SimpleNamespace(monotonic=lambda: next(it)),
+    )
 
 
 def _dropping_event_session() -> tuple[OWNEventSession, MagicMock]:
@@ -628,4 +631,182 @@ async def test_command_session_rejects_invalid_or_empty_message() -> None:
     assert await session.send("*#*1##") is None
     assert await session.send("*#123456789##") is None
     assert logger.error.call_count == 6
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "*1*1*11##",
+        "*#4*000*0*0215##",
+        "*#4*000*#0*0215##",
+    ],
+)
+async def test_written_non_query_with_status_request_flag_is_not_replayed_after_lost_ack(
+    frame: str,
+) -> None:
+    session, writer = make_session(OWNCommandSession)
+    assert isinstance(session, OWNCommandSession)
+    assert session._stream_reader is not None
+    session._stream_reader.feed_eof()
+
+    with patch.object(session, "connect", new_callable=AsyncMock) as connect:
+        result = await session.send(frame, is_status_request=True)
+
+    assert result is None
+    assert writer.written == [frame.encode()]
+    connect.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_disconnected_dimension_request_retries_once() -> None:
+    session, original_writer = make_session(OWNCommandSession)
+    assert isinstance(session, OWNCommandSession)
+    assert session._stream_reader is not None
+    session._stream_reader.feed_eof()
+
+    retry_writer = FakeWriter()
+
+    async def reconnect() -> dict[str, object]:
+        session._stream_reader = asyncio.StreamReader()
+        session._stream_reader.feed_eof()
+        session._stream_writer = retry_writer  # type: ignore[assignment]
+        return {"Success": True, "Message": None}
+
+    with patch.object(session, "connect", side_effect=reconnect) as connect:
+        result = await session.send("*#4*000*0##", is_status_request=True)
+
+    assert result is None
+    connect.assert_awaited_once()
+    assert original_writer.written == [b"*#4*000*0##"]
+    assert retry_writer.written == [b"*#4*000*0##"]
+
+
+@pytest.mark.asyncio
+async def test_typed_exceptions_and_last_error() -> None:
+    from OWNd import (
+        OWNAuthError,
+        OWNConnectionError,
+        OWNError,
+        OWNNackError,
+        OWNProtocolError,
+        OWNTimeoutError,
+    )
+
+    session, _ = make_session(OWNCommandSession)
+    assert isinstance(session, OWNCommandSession)
+
+    # 1. Invalid frame -> OWNProtocolError
+    with pytest.raises(OWNProtocolError) as exc_info:
+        await session.send("not-a-frame", raise_on_error=True)
+    assert isinstance(session.last_error, OWNProtocolError)
+    assert exc_info.value.frame == "not-a-frame"
+
+    # 2. NACK response -> OWNNackError
+    assert session._stream_reader is not None
+    session._stream_reader.feed_data(b"*#*0##")
+    with pytest.raises(OWNNackError) as nack_exc:
+        await session.send("*#1*11##", is_status_request=True, raise_on_error=True)
+    assert isinstance(session.last_error, OWNNackError)
+    assert nack_exc.value.frame == "*#1*11##"
+
+    # 3. Timeout response -> OWNTimeoutError (subclass of OWNConnectionError and OWNError)
+    session2, _ = make_session(OWNCommandSession)
+    assert isinstance(session2, OWNCommandSession)
+    session2._read_command_response = AsyncMock(side_effect=TimeoutError("Timed out"))  # type: ignore[method-assign]
+    with pytest.raises(OWNTimeoutError):
+        await session2.send("*1*1*11##", raise_on_error=True)
+    assert isinstance(session2.last_error, OWNTimeoutError)
+    assert isinstance(session2.last_error, OWNConnectionError)
+    assert isinstance(session2.last_error, OWNError)
+
+    # 4. Auth failure on connect(raise_on_error=True) -> OWNAuthError
+    auth_seen: list[OWNAuthError] = []
+    session3, _ = make_session(OWNCommandSession)
+    session3.on_auth_error = auth_seen.append
+    with (
+        patch(
+            "OWNd.connection.session.asyncio.open_connection",
+            new=AsyncMock(return_value=(MagicMock(), MagicMock())),
+        ),
+        patch.object(
+            session3,
+            "_negotiate",
+            new=AsyncMock(
+                return_value={"Success": False, "Message": "password_error"}
+            ),
+        ),
+    ):
+        with pytest.raises(OWNAuthError):
+            await session3.connect(raise_on_error=True)
+    assert len(auth_seen) == 1
+    assert auth_seen[0].reason == "password_error"
+    assert isinstance(session3.last_error, OWNAuthError)
+
+
+@pytest.mark.asyncio
+async def test_event_session_raise_on_auth_error() -> None:
+    from OWNd import OWNAuthError
+
+    auth_seen: list[OWNAuthError] = []
+    session, _ = make_session(OWNEventSession)
+    assert isinstance(session, OWNEventSession)
+    session.on_auth_error = auth_seen.append
+    session._stream_reader = None
+    session._stream_writer = None
+
+    with (
+        patch(
+            "OWNd.connection.session.asyncio.open_connection",
+            new=AsyncMock(return_value=(MagicMock(), MagicMock())),
+        ),
+        patch.object(
+            session,
+            "_negotiate",
+            new=AsyncMock(
+                return_value={"Success": False, "Message": "password_required"}
+            ),
+        ),
+    ):
+        with pytest.raises(OWNAuthError) as exc_info:
+            await session.get_next(raise_on_auth_error=True)
+
+    assert exc_info.value.reason == "password_required"
+    assert len(auth_seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_send_when_disconnected_uses_single_connect_attempt_and_cooldown() -> None:
+    session, _ = make_session(OWNCommandSession)
+    assert isinstance(session, OWNCommandSession)
+    session._stream_reader = None
+    session._stream_writer = None
+
+    open_conn = AsyncMock(side_effect=ConnectionRefusedError)
+    with patch("OWNd.connection.session.asyncio.open_connection", new=open_conn):
+        # First send() attempts only 1 TCP connect (not 5 with backoff)
+        assert await session.send("*1*1*11##") is None
+        assert open_conn.await_count == 1
+
+        # Second send() within cooldown window fails fast without calling open_connection again
+        assert await session.send("*1*1*12##") is None
+        assert open_conn.await_count == 1
+
+
+def test_gateway_clock_builders_accept_tzinfo() -> None:
+    import datetime as dt
+    from OWNd.message import OWNGatewayCommand
+
+    tz = dt.timezone(dt.timedelta(hours=2))
+    cmd_dt = OWNGatewayCommand.set_datetime_to_now(tz)
+    cmd_d = OWNGatewayCommand.set_date_to_today(tz)
+    cmd_t = OWNGatewayCommand.set_time_to_now(tz)
+    assert str(cmd_dt).startswith("*#13**#22*")
+    assert "*002*" in str(cmd_dt)
+    assert str(cmd_d).startswith("*#13**#1*0")
+    assert str(cmd_t).startswith("*#13**#0*")
+    assert str(cmd_t).endswith("*002##")
+    with pytest.raises(ValueError, match="time_zone must be a datetime.tzinfo"):
+        OWNGatewayCommand.set_datetime_to_now(123)  # type: ignore[arg-type]
+
 

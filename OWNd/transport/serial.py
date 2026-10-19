@@ -142,7 +142,7 @@ class AsyncSerialTransport(OWNTransport):
         self._pending_frames.append(message)
 
     async def send(
-        self, message: str, is_status_request: bool = False
+        self, message: str | OWNMessage, is_status_request: bool = False
     ) -> list[OWNMessage | str] | bool | None:
         del is_status_request
         if not self._connected or self._writer is None:

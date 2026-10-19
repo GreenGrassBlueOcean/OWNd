@@ -19,9 +19,12 @@ from .session import (
     OWNSession,
     RECONNECT_PAUSE,
     RECONNECT_PAUSE_FATAL,
+    _AUTH_NEGOTIATION_ERRORS,
     _FATAL_NEGOTIATION_ERRORS,
 )
+from ..exceptions import OWNAuthError
 from ..message import OWNMessage
+
 
 class OWNEventSession(OWNSession):
     def __init__(
@@ -30,16 +33,20 @@ class OWNEventSession(OWNSession):
         logger: logging.Logger | None = None,
         inactivity_timeout: float | None = EVENT_INACTIVITY_TIMEOUT,
         on_state_change: Callable[[bool], None] | None = None,
+        on_auth_error: Callable[[OWNAuthError], Any] | None = None,
+        raise_on_auth_error: bool = False,
     ):
         super().__init__(
             gateway=gateway,
             connection_type="event",
             logger=logger,
             on_state_change=on_state_change,
+            on_auth_error=on_auth_error,
         )
         # Passive watchdog: reconnect if no frame arrives for this long.
         # Set to None to disable (pure blocking read, never times out).
         self._inactivity_timeout = inactivity_timeout
+        self._raise_on_auth_error = raise_on_auth_error
         # The event session is the long-lived monitored connection: let the OS
         # actively probe it so a silent outage is detected in ~60s.
         self._tcp_keepalive = True
@@ -50,9 +57,11 @@ class OWNEventSession(OWNSession):
         self._recent_drops: list[float] = []
         self._last_drop_warning: float | None = None
 
-    async def connect(self) -> dict[str, Any] | None:
+    async def connect(
+        self, *, raise_on_error: bool = False
+    ) -> dict[str, Any] | None:
         await self._stop_keepalive()
-        result = await super().connect()
+        result = await super().connect(raise_on_error=raise_on_error)
         if result is not None and result.get("Success"):
             self._start_keepalive()
         return result
@@ -98,16 +107,45 @@ class OWNEventSession(OWNSession):
 
     @classmethod
     async def connect_to_gateway(
-        cls, gateway: OWNGateway
+        cls, gateway: OWNGateway, *, raise_on_error: bool = False
     ) -> dict[str, Any] | None:
         connection = cls(gateway)
         try:
+            if raise_on_error:
+                return await connection.connect(raise_on_error=True)
             return await connection.connect()
         finally:
             with contextlib.suppress(Exception):
                 await connection.close()
 
-    async def get_next(self) -> OWNMessage | str | None:
+    def _maybe_raise_auth_error(
+        self,
+        result: dict[str, Any] | None,
+        raise_on_auth_error: bool | None,
+    ) -> None:
+        should_raise = (
+            self._raise_on_auth_error
+            if raise_on_auth_error is None
+            else raise_on_auth_error
+        )
+        if not should_raise:
+            return
+        if isinstance(self._last_error, OWNAuthError):
+            raise self._last_error
+        if (
+            result is not None
+            and result.get("Message") in _AUTH_NEGOTIATION_ERRORS
+        ):
+            reason = str(result.get("Message"))
+            err = OWNAuthError(
+                f"Gateway authentication failed ({reason})", reason=reason
+            )
+            self._last_error = err
+            raise err
+
+    async def get_next(
+        self, *, raise_on_auth_error: bool | None = None
+    ) -> OWNMessage | str | None:
         """Acts as an entry point to read messages on the event bus.
         It will read one frame and return it as an OWNMessage object.
 
@@ -127,6 +165,7 @@ class OWNEventSession(OWNSession):
             )
             result = await self._reconnect()
             if self._stream_reader is None:
+                self._maybe_raise_auth_error(result, raise_on_auth_error)
                 # Still no stream: connect() gave up or failed fatally and
                 # returned IMMEDIATELY (its internal back-off only covers the
                 # transient retries). Pause here, otherwise the caller's read
@@ -157,14 +196,18 @@ class OWNEventSession(OWNSession):
                 self._log_id,
                 self._inactivity_timeout,
             )
-            await self._reconnect()
+            result = await self._reconnect()
+            if self._stream_reader is None:
+                self._maybe_raise_auth_error(result, raise_on_auth_error)
             return None
         except asyncio.LimitOverrunError:
             self._logger.warning(
                 "%s Received oversized or garbage frame, dropping connection and reconnecting...",
                 self._log_id,
             )
-            await self._reconnect()
+            result = await self._reconnect()
+            if self._stream_reader is None:
+                self._maybe_raise_auth_error(result, raise_on_auth_error)
             return None
         except (
             asyncio.IncompleteReadError,
@@ -200,13 +243,17 @@ class OWNEventSession(OWNSession):
                 self._logger.debug(
                     "%s Event connection lost, reconnecting...", self._log_id
                 )
-            await self._reconnect()
+            result = await self._reconnect()
+            if self._stream_reader is None:
+                self._maybe_raise_auth_error(result, raise_on_auth_error)
             return None
         except Exception:  # pylint: disable=broad-except
             self._logger.exception(
                 "%s Event session crashed, reconnecting...", self._log_id
             )
-            await self._reconnect()
+            result = await self._reconnect()
+            if self._stream_reader is None:
+                self._maybe_raise_auth_error(result, raise_on_auth_error)
             return None
 
         # A frame was read successfully: from here on, any failure is a
@@ -225,4 +272,3 @@ class OWNEventSession(OWNSession):
                 error,
             )
             return _decoded_data
-
