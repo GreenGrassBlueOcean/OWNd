@@ -111,9 +111,7 @@ class OWNEventSession(OWNSession):
     ) -> dict[str, Any] | None:
         connection = cls(gateway)
         try:
-            if raise_on_error:
-                return await connection.connect(raise_on_error=True)
-            return await connection.connect()
+            return await connection.connect(raise_on_error=raise_on_error)
         finally:
             with contextlib.suppress(Exception):
                 await connection.close()
@@ -130,18 +128,30 @@ class OWNEventSession(OWNSession):
         )
         if not should_raise:
             return
-        if isinstance(self._last_error, OWNAuthError):
-            raise self._last_error
-        if (
-            result is not None
-            and result.get("Message") in _AUTH_NEGOTIATION_ERRORS
-        ):
-            reason = str(result.get("Message"))
-            err = OWNAuthError(
-                f"Gateway authentication failed ({reason})", reason=reason
+        err = (
+            self._last_error
+            if isinstance(self._last_error, OWNAuthError)
+            else (
+                OWNAuthError(
+                    f"Gateway authentication failed ({result.get('Message')})",
+                    reason=str(result.get("Message")),
+                )
+                if result is not None
+                and result.get("Message") in _AUTH_NEGOTIATION_ERRORS
+                else None
             )
+        )
+        if err is not None:
             self._last_error = err
             raise err
+
+    async def _reconnect_and_check_auth(
+        self, raise_on_auth_error: bool | None
+    ) -> dict[str, Any] | None:
+        result = await self._reconnect()
+        if self._stream_reader is None:
+            self._maybe_raise_auth_error(result, raise_on_auth_error)
+        return result
 
     async def get_next(
         self, *, raise_on_auth_error: bool | None = None
@@ -163,9 +173,8 @@ class OWNEventSession(OWNSession):
                 "%s Event session not connected, reconnecting...",
                 self._log_id,
             )
-            result = await self._reconnect()
+            result = await self._reconnect_and_check_auth(raise_on_auth_error)
             if self._stream_reader is None:
-                self._maybe_raise_auth_error(result, raise_on_auth_error)
                 # Still no stream: connect() gave up or failed fatally and
                 # returned IMMEDIATELY (its internal back-off only covers the
                 # transient retries). Pause here, otherwise the caller's read
@@ -196,18 +205,14 @@ class OWNEventSession(OWNSession):
                 self._log_id,
                 self._inactivity_timeout,
             )
-            result = await self._reconnect()
-            if self._stream_reader is None:
-                self._maybe_raise_auth_error(result, raise_on_auth_error)
+            await self._reconnect_and_check_auth(raise_on_auth_error)
             return None
         except asyncio.LimitOverrunError:
             self._logger.warning(
                 "%s Received oversized or garbage frame, dropping connection and reconnecting...",
                 self._log_id,
             )
-            result = await self._reconnect()
-            if self._stream_reader is None:
-                self._maybe_raise_auth_error(result, raise_on_auth_error)
+            await self._reconnect_and_check_auth(raise_on_auth_error)
             return None
         except (
             asyncio.IncompleteReadError,
@@ -243,17 +248,13 @@ class OWNEventSession(OWNSession):
                 self._logger.debug(
                     "%s Event connection lost, reconnecting...", self._log_id
                 )
-            result = await self._reconnect()
-            if self._stream_reader is None:
-                self._maybe_raise_auth_error(result, raise_on_auth_error)
+            await self._reconnect_and_check_auth(raise_on_auth_error)
             return None
         except Exception:  # pylint: disable=broad-except
             self._logger.exception(
                 "%s Event session crashed, reconnecting...", self._log_id
             )
-            result = await self._reconnect()
-            if self._stream_reader is None:
-                self._maybe_raise_auth_error(result, raise_on_auth_error)
+            await self._reconnect_and_check_auth(raise_on_auth_error)
             return None
 
         # A frame was read successfully: from here on, any failure is a

@@ -317,9 +317,7 @@ class OWNSession:
         cls, gateway: OWNGateway, *, raise_on_error: bool = False
     ) -> dict[str, Any]:
         connection = cls(gateway)
-        if raise_on_error:
-            return await connection.test_connection(raise_on_error=True)
-        return await connection.test_connection()
+        return await connection.test_connection(raise_on_error=raise_on_error)
 
     async def test_connection(
         self, *, raise_on_error: bool = False

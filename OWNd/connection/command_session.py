@@ -57,12 +57,8 @@ class OWNCommandSession(OWNSession):
     async def connect(
         self, *, raise_on_error: bool = False
     ) -> dict[str, Any] | None:
-        if self._connect_max_attempts_override is None:
-            self._last_reconnect_failure = None
-        result = await super().connect(raise_on_error=raise_on_error)
-        if result is not None and result.get("Success", False):
-            self._last_reconnect_failure = None
-        return result
+        self._last_reconnect_failure = None
+        return await super().connect(raise_on_error=raise_on_error)
 
     @classmethod
     async def send_to_gateway(
@@ -89,9 +85,7 @@ class OWNCommandSession(OWNSession):
     ) -> dict[str, Any] | None:
         connection = cls(gateway)
         try:
-            if raise_on_error:
-                return await connection.connect(raise_on_error=True)
-            return await connection.connect()
+            return await connection.connect(raise_on_error=raise_on_error)
         finally:
             with contextlib.suppress(Exception):
                 await connection.close()
