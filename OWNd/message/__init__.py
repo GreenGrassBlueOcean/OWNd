@@ -10,6 +10,15 @@ from zoneinfo import ZoneInfo
 
 from dateutil.relativedelta import relativedelta
 
+from .actuator_lock import (
+    ACTUATOR_LOCK_STATE_NAMES,
+    ACTUATOR_STATE_LOCKED,
+    ACTUATOR_STATE_UNLOCKED,
+    OWNActuatorLockCommand,
+    OWNActuatorLockEvent,
+    OWNSpecialCommand,
+    OWNSpecialEvent,
+)
 from .alarm import (
     OWNAlarmCommand,
     OWNAlarmEvent,
@@ -343,6 +352,14 @@ __all__ = [
     "OWNGatewayDiagnosticCommand",
     "WHO13_DEVICE_TYPES",
     "WHO1013_DEVICE_TYPES",
+    # Special commands / Actuator lock (WHO 14)
+    "ACTUATOR_STATE_LOCKED",
+    "ACTUATOR_STATE_UNLOCKED",
+    "ACTUATOR_LOCK_STATE_NAMES",
+    "OWNActuatorLockEvent",
+    "OWNActuatorLockCommand",
+    "OWNSpecialEvent",
+    "OWNSpecialCommand",
     # CEN & Dry Contact (WHO 15 & 25)
     "OWNCENEvent",
     "OWNDryContactEvent",
