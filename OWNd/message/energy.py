@@ -6,8 +6,6 @@ import datetime
 import re
 from typing import Any
 
-from dateutil.relativedelta import relativedelta
-
 from .base import (
     OWNCommand,
     OWNEvent,
@@ -393,7 +391,10 @@ class OWNEnergyCommand(OWNCommand):
     ) -> OWNEnergyCommand | None:
         where = _normalize_actuator_where(where)
         today = datetime.date.today()
-        one_year_ago = today - relativedelta(years=1)
+        one_year_ago = today.replace(
+            year=today.year - 1,
+            day=28 if (today.month, today.day) == (2, 29) else today.day,
+        )
         if date < one_year_ago:
             return None
         message = cls(f"*#18*{where}*511#{date.month}#{date.day}##")
@@ -417,8 +418,14 @@ class OWNEnergyCommand(OWNCommand):
     ) -> OWNEnergyCommand | None:
         where = _normalize_actuator_where(where)
         today = datetime.date.today()
-        one_year_ago = today - relativedelta(years=1)
-        two_year_ago = today - relativedelta(years=2)
+        one_year_ago = today.replace(
+            year=today.year - 1,
+            day=28 if (today.month, today.day) == (2, 29) else today.day,
+        )
+        two_year_ago = today.replace(
+            year=today.year - 2,
+            day=28 if (today.month, today.day) == (2, 29) else today.day,
+        )
         target = datetime.date(year=year, month=month, day=1)
         if target > today:
             return None

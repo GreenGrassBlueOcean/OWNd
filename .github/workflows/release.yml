@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[test]" packaging ruff mypy types-python-dateutil types-pytz
+          python -m pip install -e ".[test]" packaging ruff mypy
       - name: Lint and type check
         run: |
           ruff check OWNd tests setup.py
