@@ -337,6 +337,55 @@ async def test_disconnected_status_request_retries_once() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "*1*1*11##",
+        "*#4*000*0*0215##",
+        "*#4*000*#0*0215##",
+    ],
+)
+async def test_written_non_query_with_status_request_flag_is_not_replayed_after_lost_ack(
+    frame: str,
+) -> None:
+    session, writer = make_session(OWNCommandSession)
+    assert isinstance(session, OWNCommandSession)
+    assert session._stream_reader is not None
+    session._stream_reader.feed_eof()
+
+    with patch.object(session, "connect", new_callable=AsyncMock) as connect:
+        result = await session.send(frame, is_status_request=True)
+
+    assert result is None
+    assert writer.written == [frame.encode()]
+    connect.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_disconnected_dimension_request_retries_once() -> None:
+    session, original_writer = make_session(OWNCommandSession)
+    assert isinstance(session, OWNCommandSession)
+    assert session._stream_reader is not None
+    session._stream_reader.feed_eof()
+
+    retry_writer = FakeWriter()
+
+    async def reconnect() -> dict[str, object]:
+        session._stream_reader = asyncio.StreamReader()
+        session._stream_reader.feed_eof()
+        session._stream_writer = retry_writer  # type: ignore[assignment]
+        return {"Success": True, "Message": None}
+
+    with patch.object(session, "connect", side_effect=reconnect) as connect:
+        result = await session.send("*#4*000*0##", is_status_request=True)
+
+    assert result is None
+    connect.assert_awaited_once()
+    assert original_writer.written == [b"*#4*000*0##"]
+    assert retry_writer.written == [b"*#4*000*0##"]
+
+
+@pytest.mark.asyncio
 async def test_cancelled_command_closes_stream() -> None:
     session, writer = make_session(OWNCommandSession)
     assert isinstance(session, OWNCommandSession)
