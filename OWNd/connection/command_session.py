@@ -271,6 +271,17 @@ class OWNCommandSession(OWNSession):
             # single fast connect attempt (and a short cooldown on failure) so
             # queued callers behind _send_lock never stall for a full 5-attempt
             # exponential backoff loop.
+            #
+            # Note on single-slot gateways (e.g. MH201, which accepts TCP and
+            # closes during negotiation when its session slot is exhausted; see
+            # OpenWebNet-HA/OWNd#132 and OpenWebNet-HA/MyHOME#758): callers that
+            # recycle idle command sockets (such as MyHOME's
+            # CommandWorkerPool.sending_loop() after COMMAND_SESSION_IDLE_TIMEOUT)
+            # invoke `await session.connect()` directly when `not session.is_open`
+            # before calling `send()`, preserving the full MAX_CONNECT_ATTEMPTS=5
+            # (~13.3 s) retry window on session open. This single-attempt path
+            # only runs when `send()` is called directly on a closed session or
+            # on attempt 2 after a mid-flight transport drop.
             if self._stream_reader is None or self._stream_writer is None:
                 now = time.monotonic()
                 if (
