@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from decimal import Decimal, ROUND_HALF_UP
 import math
 import re
 import warnings
 
-from .base import OWNCommand, OWNEvent, register_command_parser, register_event_parser
+from .base import (
+    OWNCommand,
+    OWNEvent,
+    register_command_parser,
+    register_event_parser,
+    require_non_empty_where,
+)
 from .lighting import MESSAGE_TYPE_ACTION
 
 MESSAGE_TYPE_MAIN_TEMPERATURE = "main_temperature"
@@ -1303,6 +1310,62 @@ class OWNHeatingCommand(OWNCommand):
         )
         message = cls(f"*#4*{where}*14##")
         message._human_readable_log = f"Requesting Central Unit {where} status."
+        return message
+
+    @property
+    def is_temperature_query(self) -> bool:
+        """True if this message is a temperature dimension query (*#4*WHERE*0##)."""
+        return (
+            self.is_dimension_request
+            and self._dimension == 0
+            and bool(self._where)
+        )
+
+    @staticmethod
+    def encode_temperature(temperature: float) -> str:
+        """Encode a temperature in °C into WHO 4 4-digit SXXX format (tenths of a degree)."""
+        if isinstance(temperature, bool):
+            raise ValueError("temperature must be finite")
+        temp_val = float(temperature)
+        if not math.isfinite(temp_val):
+            raise ValueError("temperature must be finite")
+        if not -99.9 <= temp_val <= 99.9:
+            raise ValueError("temperature must be between -99.9 and 99.9")
+        tenths = int(
+            (Decimal(str(temp_val)) * Decimal(10)).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+        )
+        if tenths < 0:
+            return f"1{abs(tenths):03d}"
+        return f"0{tenths:03d}"
+
+    @classmethod
+    def report_temperature(
+        cls, where: str | int, temperature: float
+    ) -> OWNHeatingCommand:
+        """Build a WHO 4 Dimension 0 temperature report frame (*#4*WHERE*0*TTTT##)."""
+        target = require_non_empty_where(where)
+        encoded = cls.encode_temperature(temperature)
+        decoded = who4_temperature(encoded)
+        message = cls(f"*#4*{target}*0*{encoded}##")
+        message._human_readable_log = (
+            f"Reporting temperature {decoded}°C for {message._where}{message._interface_log_text}."
+        )
+        return message
+
+    @classmethod
+    def write_temperature(
+        cls, where: str | int, temperature: float
+    ) -> OWNHeatingCommand:
+        """Build a WHO 4 Dimension #0 temperature write frame (*#4*WHERE*#0*TTTT##)."""
+        target = require_non_empty_where(where)
+        encoded = cls.encode_temperature(temperature)
+        decoded = who4_temperature(encoded)
+        message = cls(f"*#4*{target}*#0*{encoded}##")
+        message._human_readable_log = (
+            f"Writing temperature {decoded}°C for {message._where}{message._interface_log_text}."
+        )
         return message
 
 

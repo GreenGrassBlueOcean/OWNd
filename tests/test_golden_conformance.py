@@ -3,6 +3,7 @@
 Tests parser extraction fidelity, roundtrip string serialization,
 and builder factory parity against OWNd.
 """
+import datetime
 import json
 from pathlib import Path
 from typing import Any, Dict, List
@@ -12,6 +13,8 @@ from OWNd.message import (
     OWNAutomationCommand,
     OWNCenCommand,
     OWNCenPlusCommand,
+    OWNEnergyCommand,
+    OWNGatewayCommand,
     OWNHeatingCommand,
     OWNLightingCommand,
     OWNMessage,
@@ -160,6 +163,8 @@ def test_golden_frame_builder_parity(fixture: Dict[str, Any]):
         "OWNAutomationCommand": OWNAutomationCommand,
         "OWNCenCommand": OWNCenCommand,
         "OWNCenPlusCommand": OWNCenPlusCommand,
+        "OWNEnergyCommand": OWNEnergyCommand,
+        "OWNGatewayCommand": OWNGatewayCommand,
         "OWNHeatingCommand": OWNHeatingCommand,
     }
     cls = class_map.get(builder["class"])
@@ -168,7 +173,16 @@ def test_golden_frame_builder_parity(fixture: Dict[str, Any]):
     method = getattr(cls, builder["method"], None)
     assert method is not None, f"Method {builder['method']} not found on {cls.__name__}"
 
-    built_message = method(*builder["args"])
+    args = list(builder["args"])
+    if cls is OWNGatewayCommand and args and isinstance(args[0], str):
+        if builder["method"] in ("set_datetime", "report_datetime"):
+            args[0] = datetime.datetime.fromisoformat(args[0])
+        elif builder["method"] in ("set_date", "report_date"):
+            args[0] = datetime.date.fromisoformat(args[0])
+        elif builder["method"] in ("set_time", "report_time"):
+            args[0] = datetime.time.fromisoformat(args[0])
+
+    built_message = method(*args)
     assert str(built_message) == fixture["frame"], (
         f"Builder {builder['class']}.{builder['method']}({builder['args']}) produced "
         f"'{str(built_message)}', expected '{fixture['frame']}'"

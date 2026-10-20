@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import math
 import re
 from typing import Any
 
@@ -463,6 +464,163 @@ class OWNEnergyCommand(OWNCommand):
             f"Requesting total power consumption from sensor {where}."
         )
         return message
+
+    @property
+    def is_dimension_query(self) -> bool:
+        """True if this message is a WHO 18 dimension request (*#18*WHERE*DIM##)."""
+        return self.is_dimension_request and bool(self._where)
+
+    @property
+    def is_auto_update_command(self) -> bool:
+        """True if this message is a WHO 18 Dimension 1200 streaming write (*#18*WHERE*#1200#TYPE*TIME##)."""
+        return (
+            self.is_dimension_writing
+            and self._dimension == 1200
+            and bool(self._where)
+        )
+
+    @property
+    def stream_duration(self) -> int | None:
+        """Decoded stream duration in minutes (0..255) for a Dimension 1200 command, or None."""
+        if self._dimension == 1200 and self._dimension_value:
+            return max(0, min(255, _integer_value(self._dimension_value, 0)))
+        return None
+
+    @classmethod
+    def report_active_power(
+        cls, where: str | int, watts: int | float
+    ) -> OWNEnergyCommand:
+        """Build a WHO 18 Dimension 113 active power report (*#18*WHERE*113*W##)."""
+        target = _normalize_actuator_where(where)
+        w = _validate_non_negative_energy(watts, "watts")
+        message = cls(f"*#18*{target}*113*{w}##")
+        message._human_readable_log = (
+            f"Reporting active power of {w} W for sensor {target}."
+        )
+        return message
+
+    @classmethod
+    def report_total_energy(
+        cls, where: str | int, wh: int | float
+    ) -> OWNEnergyCommand:
+        """Build a WHO 18 Dimension 51 total energy report (*#18*WHERE*51*Wh##)."""
+        target = _normalize_actuator_where(where)
+        val = _validate_non_negative_energy(wh, "wh")
+        message = cls(f"*#18*{target}*51*{val}##")
+        message._human_readable_log = (
+            f"Reporting total energy consumption of {val} Wh for sensor {target}."
+        )
+        return message
+
+    @classmethod
+    def report_current_month_energy(
+        cls,
+        where: str | int,
+        wh: int | float,
+        year: int | None = None,
+        month: int | None = None,
+    ) -> OWNEnergyCommand:
+        """Build a WHO 18 Dimension 52 monthly energy report (*#18*WHERE*52[#YY#M]*Wh##)."""
+        target = _normalize_actuator_where(where)
+        val = _validate_non_negative_energy(wh, "wh")
+        if (year is None) != (month is None):
+            raise ValueError("year and month must both be provided or both omitted")
+        if year is not None and month is not None:
+            if any(
+                isinstance(x, bool) or (isinstance(x, float) and x % 1 != 0)
+                for x in (year, month)
+            ):
+                raise ValueError("year and month must be integers")
+            y = int(year)
+            m = int(month)
+            if not 2000 <= y <= 2099:
+                raise ValueError("year must be between 2000 and 2099")
+            if not 1 <= m <= 12:
+                raise ValueError("month must be between 1 and 12")
+            message = cls(f"*#18*{target}*52#{y % 100:02d}#{m}*{val}##")
+        else:
+            message = cls(f"*#18*{target}*52*{val}##")
+        message._human_readable_log = (
+            f"Reporting monthly energy consumption of {val} Wh for sensor {target}."
+        )
+        return message
+
+    @classmethod
+    def report_partial_month_energy(
+        cls, where: str | int, wh: int | float, month: int | None = None
+    ) -> OWNEnergyCommand:
+        """Build a WHO 18 Dimension 53 current-month partial energy report (*#18*WHERE*53[#M]*Wh##)."""
+        target = _normalize_actuator_where(where)
+        val = _validate_non_negative_energy(wh, "wh")
+        if month is not None:
+            if (
+                isinstance(month, bool)
+                or (isinstance(month, float) and month % 1 != 0)
+                or not 1 <= int(month) <= 12
+            ):
+                raise ValueError("month must be between 1 and 12")
+            message = cls(f"*#18*{target}*53#{int(month)}*{val}##")
+        else:
+            message = cls(f"*#18*{target}*53*{val}##")
+        message._human_readable_log = (
+            f"Reporting partial monthly energy consumption of {val} Wh for sensor {target}."
+        )
+        return message
+
+    @classmethod
+    def report_partial_day_energy(
+        cls, where: str | int, wh: int | float, day: int | None = None
+    ) -> OWNEnergyCommand:
+        """Build a WHO 18 Dimension 54 current-day partial energy report (*#18*WHERE*54[#D]*Wh##)."""
+        target = _normalize_actuator_where(where)
+        val = _validate_non_negative_energy(wh, "wh")
+        if day is not None:
+            if (
+                isinstance(day, bool)
+                or (isinstance(day, float) and day % 1 != 0)
+                or not 1 <= int(day) <= 31
+            ):
+                raise ValueError("day must be between 1 and 31")
+            message = cls(f"*#18*{target}*54#{int(day)}*{val}##")
+        else:
+            message = cls(f"*#18*{target}*54*{val}##")
+        message._human_readable_log = (
+            f"Reporting partial daily energy consumption of {val} Wh for sensor {target}."
+        )
+        return message
+
+    @classmethod
+    def report_streaming_state(
+        cls, where: str | int, duration: int, energy_type: int = 1
+    ) -> OWNEnergyCommand:
+        """Build a WHO 18 Dimension 1200 streaming confirmation/expiry reply (*#18*WHERE*1200#TYPE*TIME##)."""
+        target = _normalize_actuator_where(where)
+        if any(
+            isinstance(x, bool) or (isinstance(x, float) and x % 1 != 0)
+            for x in (duration, energy_type)
+        ):
+            raise ValueError("duration and energy_type must be integers")
+        et = int(energy_type)
+        if not 1 <= et <= 4:
+            raise ValueError("energy_type must be between 1 and 4")
+        dur = int(duration)
+        if not 0 <= dur <= 255:
+            raise ValueError("duration must be between 0 and 255")
+        message = cls(f"*#18*{target}*1200#{et}*{dur}##")
+        message._human_readable_log = (
+            f"Reporting instant power stream state ({dur} min) for sensor {target}."
+        )
+        return message
+
+
+def _validate_non_negative_energy(value: int | float, name: str) -> int:
+    """Validate that an energy or power value is a finite non-negative number."""
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a finite non-negative number")
+    fval = float(value)
+    if not math.isfinite(fval) or fval < 0:
+        raise ValueError(f"{name} must be a finite non-negative number")
+    return int(round(fval))
 
 
 def _normalize_stop_and_go_where(where: str | int) -> str:

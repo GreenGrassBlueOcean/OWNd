@@ -59,3 +59,146 @@
   mcp_valid: true
   mcp_notes: "Energy Management: Request energy meter 51 diagnostic/unit parameter 113"
   roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: request_active_power
+    args: ["51"]
+
+# Authentic BTicino F454 & F520 Dimension 1200 stream lifecycle and scalar energy
+# reports (@xtimmy86x, @caiosweet, @anotherjulien, MyHOME#466 / #661 / #669)
+- id: energy.cmd.start_stream.meter56.2
+  frame: "*#18*56*#1200#1*2##"
+  direction: dimension_write
+  who: 18
+  what: null
+  where: "56"
+  dimension: 1200
+  dimension_values: ["2"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Start 2-minute instantaneous active power auto-update stream on F520 meter 56 (BTicino F454 FW 2.0 capture by @xtimmy86x, MyHOME#661 comment 6067730589)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: start_sending_instant_power
+    args: ["56", 2]
+
+- id: energy.resp.auto_update_interval.meter56.2
+  frame: "*#18*56*1200#1*2##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "56"
+  dimension: 1200
+  dimension_values: ["2"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: F520 meter 56 confirms 2-minute active power auto-update interval active ~235 ms after *#18*56*#1200#1*2## (@xtimmy86x F454 FW 2.0 capture, MyHOME#661 comment 6067730589)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_streaming_state
+    args: ["56", 2, 1]
+
+- id: energy.resp.auto_update_interval.meter56.0
+  frame: "*#18*56*1200#1*0##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "56"
+  dimension: 1200
+  dimension_values: ["0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: F520 meter 56 reports instantaneous active power auto-update expired (interval 0) ~126.18 s after activation (@xtimmy86x F454 FW 2.0 capture, MyHOME#661 comment 6067730589)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_streaming_state
+    args: ["56", 0, 1]
+
+- id: energy.resp.active_power.meter51.572
+  frame: "*#18*51*113*572##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "51"
+  dimension: 113
+  dimension_values: ["572"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: F520 meter 51 reports 572 W instantaneous active power on Dimension 113 during active stream (@xtimmy86x F454 FW 2.0 capture, MyHOME#661 comment 6067730589)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_active_power
+    args: ["51", 572]
+
+- id: energy.resp.actuator_power.channel77.161
+  frame: "*#18*77#0*113*161##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "77"
+  dimension: 113
+  dimension_values: ["161"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Local-bus actuator channel 77#0 reports 161 W active power on Dimension 113 (MyHOME#669)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_active_power
+    args: ["77#0", 161]
+
+- id: energy.resp.cumulative_totalizer.meter51
+  frame: "*#18*51*51*23791364##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "51"
+  dimension: 51
+  dimension_values: ["23791364"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: F520 meter 51 reports 23,791,364 Wh cumulative energy totalizer on Dimension 51 (@caiosweet MH200N FW 1.1.8 capture, MyHOME#466 comment 5834435606)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_total_energy
+    args: ["51", 23791364]
+
+- id: energy.resp.partial_month.meter52.1
+  frame: "*#18*52*53*1##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "52"
+  dimension: 53
+  dimension_values: ["1"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: F520 meter 52 reports 1 Wh current-month partial energy on Dimension 53 (@anotherjulien F454 FW 2.0.5 capture, MyHOME#466 comment 5849027587)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_partial_month_energy
+    args: ["52", 1]
+
+- id: energy.resp.partial_day.meter51.13165
+  frame: "*#18*51*54*13165##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "51"
+  dimension: 54
+  dimension_values: ["13165"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: F520 meter 51 reports 13,165 Wh current-day partial energy on Dimension 54 (@xtimmy86x F454 FW 2.0 capture, MyHOME#661 comment 6067730589)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_partial_day_energy
+    args: ["51", 13165]
+
