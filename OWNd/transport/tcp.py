@@ -91,7 +91,7 @@ class AsyncTcpTransport(OWNTransport):
             await command_session.close()
 
     async def send(
-        self, message: str, is_status_request: bool = False
+        self, message: str | OWNMessage, is_status_request: bool = False
     ) -> list[OWNMessage | str] | bool | None:
         if self._command_session is None:
             raise RuntimeError("TCP transport is not connected")

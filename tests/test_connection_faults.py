@@ -74,7 +74,7 @@ class TestConnectionFaults:
 
     @pytest.mark.asyncio
     async def test_get_first_available_gateway_empty(self) -> None:
-        with patch("OWNd.connection.find_gateways", new=AsyncMock(return_value=[])):
+        with patch("OWNd.connection.gateway.find_gateways", new=AsyncMock(return_value=[])):
             result = await OWNGateway.get_first_available_gateway()
             assert result is None
 
@@ -155,7 +155,7 @@ class TestConnectionFaults:
         with (
             patch("asyncio.open_connection", side_effect=OSError("Network unreachable")),
             patch("asyncio.sleep", new=AsyncMock()),
-            patch("OWNd.connection.MAX_CONNECT_ATTEMPTS", 1),
+            patch("OWNd.connection.session.MAX_CONNECT_ATTEMPTS", 1),
         ):
             result = await session.connect()
             assert result is None
@@ -166,7 +166,7 @@ class TestConnectionFaults:
         session, writer = make_fault_session(password="12345")
         # Gateway sends ACK then SHA challenge, but with max_frames=1, second read exceeds limit
         session._read_frame = AsyncMock(side_effect=["*#*1##", "*98*1##"])
-        with patch("OWNd.connection.NEGOTIATION_MAX_FRAMES", 1):
+        with patch("OWNd.connection.session.NEGOTIATION_MAX_FRAMES", 1):
             result = await session._negotiate()
             assert result == {"Success": False, "Message": "negotiation_timeout"}
 
@@ -272,7 +272,7 @@ class TestConnectionFaults:
         assert sig2.is_ack()
 
         # 3. Malformed frame raises ValueError during OWNMessage.parse (lines 1217-1224)
-        with patch("OWNd.connection.OWNMessage.parse", side_effect=[ValueError("Malformed"), OWNSignaling("*#*1##")]):
+        with patch("OWNd.connection.command_session.OWNMessage.parse", side_effect=[ValueError("Malformed"), OWNSignaling("*#*1##")]):
             session._read_frame = AsyncMock(side_effect=["*#bad##", "*#*1##"])
             sig3, collected3 = await session._read_command_response()
             assert sig3.is_ack()
@@ -316,7 +316,7 @@ class TestConnectionFaults:
             patch.object(session, "_negotiate", new=AsyncMock(return_value={"Success": False, "Reason": "temporary_busy", "Message": "Busy"})),
             patch("asyncio.open_connection", new=AsyncMock(return_value=(MagicMock(), writer))),
             patch("asyncio.sleep", new=AsyncMock()),
-            patch("OWNd.connection.MAX_CONNECT_ATTEMPTS", 2),
+            patch("OWNd.connection.session.MAX_CONNECT_ATTEMPTS", 2),
         ):
             res = await session.connect()
             assert res is None

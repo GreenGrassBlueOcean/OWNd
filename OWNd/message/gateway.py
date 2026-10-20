@@ -426,9 +426,21 @@ class OWNGatewayCommand(OWNCommand):
         """Return True if the gateway reported an unconfigured timezone (sentinel 999)."""
         return self._raw_timezone == "999"
 
+    @staticmethod
+    def _resolve_tzinfo(time_zone: _dt.tzinfo | str) -> _dt.tzinfo:
+        if isinstance(time_zone, _dt.tzinfo):
+            return time_zone
+        if isinstance(time_zone, str):
+            return ZoneInfo(time_zone)
+        raise ValueError(
+            "time_zone must be a datetime.tzinfo instance or IANA timezone string"
+        )
+
     @classmethod
-    def set_datetime_to_now(cls, time_zone: str) -> OWNGatewayCommand:
-        timezone = ZoneInfo(time_zone)
+    def set_datetime_to_now(
+        cls, time_zone: _dt.tzinfo | str
+    ) -> OWNGatewayCommand:
+        timezone = cls._resolve_tzinfo(time_zone)
         now = _dt.datetime.now(timezone)
         timezone_offset = (
             f"0{now.strftime('%z')[1:3]}"
@@ -442,16 +454,20 @@ class OWNGatewayCommand(OWNCommand):
         return message
 
     @classmethod
-    def set_date_to_today(cls, time_zone: str) -> OWNGatewayCommand:
-        timezone = ZoneInfo(time_zone)
+    def set_date_to_today(
+        cls, time_zone: _dt.tzinfo | str
+    ) -> OWNGatewayCommand:
+        timezone = cls._resolve_tzinfo(time_zone)
         now = _dt.datetime.now(timezone)
         message = cls(f"*#13**#1*0{now.strftime('%w*%d*%m*%Y##')}")
         message._human_readable_log = f"Setting gateway date to: {message._date}."
         return message
 
     @classmethod
-    def set_time_to_now(cls, time_zone: str) -> OWNGatewayCommand:
-        timezone = ZoneInfo(time_zone)
+    def set_time_to_now(
+        cls, time_zone: _dt.tzinfo | str
+    ) -> OWNGatewayCommand:
+        timezone = cls._resolve_tzinfo(time_zone)
         now = _dt.datetime.now(timezone)
         timezone_offset = (
             f"0{now.strftime('%z')[1:3]}"

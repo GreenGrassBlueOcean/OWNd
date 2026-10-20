@@ -23,6 +23,14 @@ from .auth import (
 )
 from .gateway import OWNGateway, _first_scalar
 from ..discovery import get_port
+from ..exceptions import (
+    OWNAuthError,
+    OWNConnectionError,
+    OWNError,
+    OWNNackError,
+    OWNProtocolError,
+    OWNTimeoutError,
+)
 from ..message import OWNMessage, OWNSignaling
 from ..profiles import GatewayProfile, get_gateway_profile
 
@@ -60,6 +68,8 @@ EVENT_INACTIVITY_TIMEOUT = 3900  # 65 minutes
 TCP_KEEPALIVE_IDLE = 30  # start probing after 30s of silence
 TCP_KEEPALIVE_INTVL = 10  # probe every 10s
 TCP_KEEPALIVE_CNT = 3  # declare dead after 3 missed probes (~60s total)
+# Authentication negotiation failures (missing/wrong/unsupported password).
+_AUTH_NEGOTIATION_ERRORS = frozenset({"password_required", "password_error"})
 # Negotiation failures that will never succeed on a retry: don't loop on them.
 _FATAL_NEGOTIATION_ERRORS = frozenset(
     {"password_required", "password_error", "negotiation_error"}
@@ -84,6 +94,29 @@ DROP_BURST_WINDOW = 600  # 10 minutes
 DROP_WARNING_INTERVAL = 3600  # 1 hour
 
 
+def _negotiation_error_to_exception(reason: str | None) -> OWNError:
+    """Map a negotiation error code to a typed OWNError subclass."""
+    if reason in _AUTH_NEGOTIATION_ERRORS:
+        return OWNAuthError(
+            f"Gateway authentication failed ({reason})", reason=reason
+        )
+    if reason == "negotiation_timeout":
+        return OWNTimeoutError(
+            "Timed out negotiating OpenWebNet session", reason=reason
+        )
+    if reason == "negotiation_refused":
+        return OWNNackError(
+            "Gateway refused session negotiation with NACK", reason=reason
+        )
+    if reason in ("negotiation_error", "negotiation_failed"):
+        return OWNProtocolError(
+            f"OpenWebNet negotiation protocol error ({reason})", reason=reason
+        )
+    return OWNConnectionError(
+        f"Gateway connection failed ({reason or 'unknown'})", reason=reason
+    )
+
+
 class OWNSession:
     """Connection to OpenWebNet gateway"""
 
@@ -95,6 +128,7 @@ class OWNSession:
         connection_type: str = "test",
         logger: logging.Logger | None = None,
         on_state_change: Callable[[bool], None] | None = None,
+        on_auth_error: Callable[[OWNAuthError], Any] | None = None,
     ):
         """Initialize the class
         Arguments:
@@ -105,6 +139,9 @@ class OWNSession:
             connection comes up / goes down. Lets a consumer (e.g. the Home
             Assistant integration) flip entity availability instantly instead of
             waiting for the next keepalive.
+        on_auth_error: optional callback invoked with an ``OWNAuthError`` when
+            session authentication fails (e.g. password changed on the gateway
+            at runtime so Home Assistant can trigger a reauthentication flow).
         """
 
         self._gateway = gateway
@@ -114,6 +151,9 @@ class OWNSession:
         # instead of crashing on `None.warning(...)` and masking the real error.
         self._logger = logger if logger is not None else logging.getLogger(__name__)
         self._on_state_change = on_state_change
+        self._on_auth_error = on_auth_error
+        self._last_error: OWNError | None = None
+        self._connect_max_attempts_override: int | None = None
         self._connected = False
         # Enable OS-level TCP keepalive on the socket (event session only).
         self._tcp_keepalive = False
@@ -121,6 +161,33 @@ class OWNSession:
         # Stream reader/writer, initialised on connect():
         self._stream_reader: asyncio.StreamReader | None = None
         self._stream_writer: asyncio.StreamWriter | None = None
+
+    @property
+    def last_error(self) -> OWNError | None:
+        """The typed ``OWNError`` from the most recent failed operation, or ``None``."""
+        return self._last_error
+
+    @property
+    def on_auth_error(self) -> Callable[[OWNAuthError], Any] | None:
+        """Optional callback invoked when gateway authentication is rejected."""
+        return self._on_auth_error
+
+    @on_auth_error.setter
+    def on_auth_error(
+        self, callback: Callable[[OWNAuthError], Any] | None
+    ) -> None:
+        self._on_auth_error = callback
+
+    def _notify_auth_error(self, error: OWNAuthError) -> None:
+        """Invoke the consumer's auth-failure callback without letting it crash the session."""
+        if self._on_auth_error is not None:
+            try:
+                self._on_auth_error(error)
+            except Exception:  # noqa: BLE001
+                if self._logger is not None:
+                    self._logger.exception(
+                        "%s on_auth_error callback raised.", self._log_id
+                    )
 
     @property
     def is_connected(self) -> bool:
@@ -246,12 +313,17 @@ class OWNSession:
         self._type = connection_type.lower()
 
     @classmethod
-    async def test_gateway(cls, gateway: OWNGateway) -> dict[str, Any]:
+    async def test_gateway(
+        cls, gateway: OWNGateway, *, raise_on_error: bool = False
+    ) -> dict[str, Any]:
         connection = cls(gateway)
-        return await connection.test_connection()
+        return await connection.test_connection(raise_on_error=raise_on_error)
 
-    async def test_connection(self) -> dict[str, Any]:
+    async def test_connection(
+        self, *, raise_on_error: bool = False
+    ) -> dict[str, Any]:
         assert self._gateway is not None
+        self._last_error = None
         retry_count = 0
         retry_timer = 1
 
@@ -262,6 +334,13 @@ class OWNSession:
                         "%s Test session connection still refused after 3 attempts.",
                         self._log_id,
                     )
+                    err: OWNError = OWNConnectionError(
+                        "Test session connection still refused after 3 attempts",
+                        reason="connection_error",
+                    )
+                    self._last_error = err
+                    if raise_on_error:
+                        raise err
                     return {"Success": False, "Message": "connection_error"}
                 (
                     self._stream_reader,
@@ -286,13 +365,28 @@ class OWNSession:
 
         try:
             try:
-                return await self._negotiate()
+                result = await self._negotiate()
+                if not result.get("Success"):
+                    err = _negotiation_error_to_exception(result.get("Message"))
+                    self._last_error = err
+                    if isinstance(err, OWNAuthError):
+                        self._notify_auth_error(err)
+                    if raise_on_error:
+                        raise err
+                return result
             except ConnectionResetError:
                 self._logger.error(
                     "%s Negotiation reset while opening %s session. Wait 60 seconds before retrying.",
                     self._log_id,
                     self._type,
                 )
+                err = OWNConnectionError(
+                    "Negotiation reset while opening session",
+                    reason="password_retry",
+                )
+                self._last_error = err
+                if raise_on_error:
+                    raise err from None
                 return {"Success": False, "Message": "password_retry"}
             except (
                 asyncio.IncompleteReadError,
@@ -310,6 +404,20 @@ class OWNSession:
                     self._type,
                     error,
                 )
+                err = (
+                    OWNTimeoutError(
+                        f"Negotiation timed out ({error})",
+                        reason="connection_error",
+                    )
+                    if isinstance(error, TimeoutError)
+                    else OWNConnectionError(
+                        f"Negotiation failed ({error})",
+                        reason="connection_error",
+                    )
+                )
+                self._last_error = err
+                if raise_on_error:
+                    raise err from error
                 return {"Success": False, "Message": "connection_error"}
         finally:
             # Test sessions are always temporary. Release the descriptor on
@@ -317,11 +425,18 @@ class OWNSession:
             with contextlib.suppress(Exception):
                 await self.close()
 
-    async def connect(self) -> dict[str, Any] | None:
+    async def connect(
+        self, *, raise_on_error: bool = False
+    ) -> dict[str, Any] | None:
         assert self._gateway is not None
         self._logger.debug("%s Opening %s session.", self._log_id, self._type)
+        self._last_error = None
 
+        max_attempts = self._connect_max_attempts_override or MAX_CONNECT_ATTEMPTS
         retry_count = 0
+        last_attempt_error: OWNError = OWNConnectionError(
+            "Session could not be established", reason="connection_error"
+        )
 
         while True:
             try:
@@ -336,36 +451,57 @@ class OWNSession:
                 self._apply_tcp_keepalive()
                 result = await self._negotiate()
                 if result.get("Success"):
+                    self._last_error = None
                     self._set_connected(True)
                     return result
                 # Negotiation completed but was rejected.
-                if result.get("Message") in _FATAL_NEGOTIATION_ERRORS:
+                msg = result.get("Message")
+                last_attempt_error = _negotiation_error_to_exception(msg)
+                if msg in _FATAL_NEGOTIATION_ERRORS:
                     self._logger.error(
                         "%s %s session negotiation failed (%s); giving up.",
                         self._log_id,
                         self._type.capitalize(),
-                        result.get("Message"),
+                        msg,
                     )
+                    self._last_error = last_attempt_error
+                    if isinstance(last_attempt_error, OWNAuthError):
+                        self._notify_auth_error(last_attempt_error)
                     self._set_connected(False)
                     # The TCP connection survived the rejected negotiation:
                     # release it, it will not be used.
                     with contextlib.suppress(Exception):
                         await self._close_streams()
+                    if raise_on_error:
+                        raise last_attempt_error
                     return result
-                reason = f"negotiation failed ({result.get('Message')})"
+                reason = f"negotiation failed ({msg})"
                 wait = max(1, retry_count * 2)
             except ConnectionResetError:
                 reason, wait = "connection reset", 60
+                last_attempt_error = OWNConnectionError(
+                    "Connection reset by peer", reason="connection_reset"
+                )
             except (ConnectionRefusedError, asyncio.IncompleteReadError):
                 reason, wait = "connection refused", max(1, retry_count * 2)
+                last_attempt_error = OWNConnectionError(
+                    "Connection refused", reason="connection_refused"
+                )
             except TimeoutError:
                 reason, wait = (
                     f"connect timed out ({CONNECT_TIMEOUT}s)",
                     max(1, retry_count * 2),
                 )
+                last_attempt_error = OWNTimeoutError(
+                    f"Connect timed out ({CONNECT_TIMEOUT}s)",
+                    reason="connect_timeout",
+                )
             except OSError as error:
                 # Host unreachable, no route, DNS failure, etc.
                 reason, wait = f"network error ({error})", max(1, retry_count * 2)
+                last_attempt_error = OWNConnectionError(
+                    f"Network error ({error})", reason="network_error"
+                )
 
             retry_count += 1
             # A failed attempt can leave a half-open socket behind (e.g. TCP
@@ -375,15 +511,19 @@ class OWNSession:
             # below, so a retry that succeeds never flaps the consumer.
             with contextlib.suppress(Exception):
                 await self._close_streams()
-            if retry_count >= MAX_CONNECT_ATTEMPTS:
-                self._logger.warning(
-                    "%s %s session could not be established after %d attempts; "
-                    "will retry.",
-                    self._log_id,
-                    self._type.capitalize(),
-                    MAX_CONNECT_ATTEMPTS,
-                )
+            if retry_count >= max_attempts:
+                self._last_error = last_attempt_error
+                if max_attempts > 1:
+                    self._logger.warning(
+                        "%s %s session could not be established after %d attempts; "
+                        "will retry.",
+                        self._log_id,
+                        self._type.capitalize(),
+                        max_attempts,
+                    )
                 self._set_connected(False)
+                if raise_on_error:
+                    raise last_attempt_error
                 return None
             self._logger.warning(
                 "%s %s session: %s. Retrying in %ss (attempt %d/%d).",
@@ -392,7 +532,7 @@ class OWNSession:
                 reason,
                 wait,
                 retry_count,
-                MAX_CONNECT_ATTEMPTS,
+                max_attempts,
             )
             await asyncio.sleep(wait)
 
@@ -428,13 +568,14 @@ class OWNSession:
 
         # May be invoked on an empty instance, or on an already-broken socket:
         # be robust against Nones and against wait_closed() re-raising.
-        if self._stream_writer is not None:
-            self._stream_writer.close()
-            # The peer may already be gone; we only need it marked closed.
-            with contextlib.suppress(OSError, asyncio.IncompleteReadError):
-                await self._stream_writer.wait_closed()
+        writer = self._stream_writer
         self._stream_reader = None
         self._stream_writer = None
+        if writer is not None:
+            writer.close()
+            # The peer may already be gone; we only need it marked closed.
+            with contextlib.suppress(OSError, asyncio.IncompleteReadError):
+                await writer.wait_closed()
         if self._gateway is not None:
             self._logger.debug(
                 "%s %s session closed.", self._log_id, self._type.capitalize()
