@@ -176,11 +176,68 @@ class OWNAutomationCommand(OWNCommand):
     @classmethod
     def set_shutter_level(cls, where: str | int, level: int = 30) -> OWNAutomationCommand:
         target = require_non_empty_where(where)
-        lvl = int(level)
-        if not 0 <= lvl <= 100:
+        if (
+            isinstance(level, bool)
+            or (isinstance(level, float) and level % 1 != 0)
+            or not 0 <= int(level) <= 100
+        ):
             raise ValueError("shutter level must be between 0 and 100")
+        lvl = int(level)
         message = cls(f"*#2*{target}*#11#001*{lvl}##")
         message._human_readable_log = f"Setting shutter {message._where}{message._interface_log_text} position to {lvl}%."
+        return message
+
+    @property
+    def is_status_query(self) -> bool:
+        """True if this message is a shutter status query (*#2*WHERE##)."""
+        return self.is_status_request and bool(self._where)
+
+    @property
+    def is_shutter_status_query(self) -> bool:
+        """True if this message is an advanced shutter status query (*#2*WHERE*10##)."""
+        return (
+            self.is_dimension_request
+            and self._dimension == 10
+            and bool(self._where)
+        )
+
+    @classmethod
+    def report_shutter_level(
+        cls,
+        where: str | int,
+        level: int,
+        state: int = 10,
+        priority: int | str = 0,
+        info: int = 0,
+    ) -> OWNAutomationCommand:
+        """Build a WHO 2 Dimension 10 advanced shutter status reply (*#2*WHERE*10*STATE*LEVEL*PRIORITY*INFO##)."""
+        target = require_non_empty_where(where)
+        if any(
+            isinstance(x, bool) or (isinstance(x, float) and x % 1 != 0)
+            for x in (level, state, priority, info)
+        ):
+            raise ValueError("shutter level, state, priority, and info must be integers")
+        lvl = int(level)
+        if not (0 <= lvl <= 100 or lvl == 255):
+            raise ValueError("shutter level must be between 0 and 100 or 255")
+        st = int(state)
+        if not 10 <= st <= 15:
+            raise ValueError("shutter state must be between 10 and 15")
+        pr = int(priority)
+        inf = int(info)
+        if not (0 <= pr <= 255 and 0 <= inf <= 255):
+            raise ValueError("priority and info must be between 0 and 255")
+        pr_str = (
+            priority.strip()
+            if isinstance(priority, str)
+            and priority.strip().isdigit()
+            and len(priority.strip()) <= 3
+            else str(pr)
+        )
+        message = cls(f"*#2*{target}*10*{st}*{lvl}*{pr_str}*{inf}##")
+        message._human_readable_log = (
+            f"Reporting shutter {message._where}{message._interface_log_text} position at {lvl}% (state {st})."
+        )
         return message
 
 

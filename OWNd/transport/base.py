@@ -44,7 +44,7 @@ class OWNTransport(ABC):
 
     @abstractmethod
     async def send(
-        self, message: str, is_status_request: bool = False
+        self, message: str | OWNMessage, is_status_request: bool = False
     ) -> list[OWNMessage | str] | bool | None:
         """Send one command and return its response."""
 

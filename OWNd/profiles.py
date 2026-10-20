@@ -86,6 +86,16 @@ class GatewayProfile:
     audio_measured: bool = True
     supports_native_transitions: bool = False
     supports_extended_frames: bool = False
+    # How the command session treats frames that inject state for a virtual
+    # device. None means unverified: no capture or published oracle verdict
+    # exists for this family. Only F461Profile sets them, from live captures.
+    # Reply-form frames *#1*W*1*..##, *#2*W*10*..##, *#4*W*0*T##, *#13**D*..##.
+    supports_dimension_response_injection: bool | None = None
+    # WHO 4 Dimension #0 temperature writes (*#4*W*#0*TTTT##).
+    supports_who4_command_injection: bool | None = None
+    # WHO 18 reply-form frames (*#18*W*DIM*VAL##). True means acknowledged on
+    # the command session, not that the value is shown to reach the bus.
+    supports_who18_response_injection: bool | None = None
     supported_who: tuple[int, ...] = DEFAULT_SUPPORTED_WHO
     extra_features: tuple[str, ...] = ()
     firmware_version: str | None = field(default=None, kw_only=True)
@@ -377,6 +387,17 @@ class F461Profile(GatewayProfile):
       (`020011`) does not package the ``bt_energia`` translator and strictly
       NACKs all WHO 3 requests without bus activity (`results/F461/020011/oracle/full/energy-ts10.tsv`).
       WHO 3 is therefore excluded from ``supported_who``.
+
+    Injection flags, from the live F461 2.0.11 capture of 2026-10-18
+    (MyHOME ``tests/fixtures/traces/f461_live_2026-10-18``) and the plant
+    check in MyHOME#750 (comment 6277050571):
+    - Reply-form frames are not injected. ``*#1*08*1*150*0##`` and
+      ``*#2*25*10*10*50*0*0##`` are NACKed; ``*#4*2*0*0999##`` and
+      ``*#13**0*22*51*00*999##`` are answered as reads with the real zone 2
+      temperature and the gateway's own time.
+    - ``*#4*50*#0*0215##`` is ACKed (0.155 s).
+    - ``*#18*51*113*450##``, ``*#18*51*51*12345##`` and ``*#18*51*54*320##``
+      are ACKed (1.27-1.40 s) with no event after the ACK.
     """
 
     def __init__(self) -> None:
@@ -390,6 +411,9 @@ class F461Profile(GatewayProfile):
             supports_hmac=True,
             supports_native_transitions=True,
             supports_extended_frames=True,
+            supports_dimension_response_injection=False,
+            supports_who4_command_injection=True,
+            supports_who18_response_injection=True,
             supported_who=tuple(
                 w for w in DEFAULT_SUPPORTED_WHO if w != WHO_LOAD_CONTROL
             ),

@@ -2,10 +2,11 @@
 
 OWNd ships ``py.typed``, so its annotations are the contract MyHOME and
 every other consumer type-check against. This module is the consumer's
-side of that contract for the command session: each function below is a
-call MyHOME really makes, and ``mypy --strict`` over this file (see the
-``quality`` job in CI, and ``tests/test_typing_consumer.py``) fails the
-build if a signature change would reject it.
+side of that contract for the command session and transport abstractions:
+each function below is a call MyHOME really makes, and ``mypy --strict``
+over this file (see the ``quality`` job in CI, and
+``tests/test_typing_consumer.py``) fails the build if a signature change
+would reject it.
 
 Keep it to public API and to calls that must keep working; a private
 name here would pin an implementation detail.
@@ -19,6 +20,7 @@ from OWNd.message import (
     OWNMessage,
     OWNSceneCommand,
 )
+from OWNd.transport import AsyncSerialTransport, AsyncTcpTransport, OWNTransport
 
 
 async def send_raw_frame(session: OWNCommandSession) -> None:
@@ -52,3 +54,19 @@ async def one_shot(gateway: OWNGateway) -> None:
     """The connect-send-close helper accepts the same two forms."""
     await OWNCommandSession.send_to_gateway("*1*0*11##", gateway)
     await OWNCommandSession.send_to_gateway(OWNLightingCommand.switch_off("11"), gateway)
+
+
+async def send_via_transport(
+    transport: OWNTransport,
+    tcp_transport: AsyncTcpTransport,
+    serial_transport: AsyncSerialTransport,
+    frame: str,
+) -> None:
+    """Transport implementations accept both raw frame strings and OWNMessage instances."""
+    await transport.send("*1*1*11##")
+    await transport.send(OWNLightingCommand.switch_on("11"))
+    await tcp_transport.send(OWNLightingCommand.status("11"), is_status_request=True)
+    await serial_transport.send(OWNSceneCommand.start("1"))
+    parsed = OWNMessage.parse(frame)
+    if parsed is not None:
+        await transport.send(parsed)

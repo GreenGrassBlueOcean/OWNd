@@ -23,6 +23,128 @@
   mcp_valid: true
   mcp_notes: "Gateway Management: Gateway reports internal datetime 2019-05-01 09:37:30-02:00"
   roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: report_datetime
+    args: ["2019-05-01T09:37:30-02:00"]
+
+- id: gateway.req.time
+  frame: "*#13**0##"
+  direction: dimension_request
+  who: 13
+  what: null
+  where: ""
+  dimension: 0
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Request gateway internal time on Dimension 0 (Legrand F455 FW 1.0.86 capture by @lionelser and BTicino MH202 FW 2.6.13 capture by @anotherjulien, MyHOME#466)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: request_time
+    args: []
+
+- id: gateway.resp.internal.time.mh202
+  frame: "*#13**0*20*54*00*002##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 0
+  dimension_values: ["20", "54", "00", "002"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: BTicino MH202 FW 2.6.13 reports internal time 20:54:00+02:00 on Dimension 0 (@anotherjulien, MyHOME#466 comment 5849027587)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: report_time
+    args: ["20:54:00+02:00"]
+
+- id: gateway.write.internal.time.f454
+  frame: "*#13**#0*11*30*00*002##"
+  direction: dimension_write
+  who: 13
+  what: null
+  where: ""
+  dimension: 0
+  dimension_values: ["11", "30", "00", "002"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Periodic Dimension 0 time sync write 11:30:00+02:00 on shared F454 FW 2.0.5 + MH202 bus (@anotherjulien, MyHOME#466 comment 6038376669)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: set_time
+    args: ["11:30:00+02:00"]
+
+- id: gateway.resp.internal.date.f461
+  frame: "*#13**1*04*15*10*2026##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 1
+  dimension_values: ["04", "15", "10", "2026"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: BTicino F461 FW 2.0.11 reports internal date Thursday (04) 2026-10-15 on Dimension 1 (@GreenGrassBlueOcean live plant capture, 2026-10-15)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: report_date
+    args: ["2026-10-15"]
+
+- id: gateway.write.internal.date.f454
+  frame: "*#13**#1*03*07*10*2026##"
+  direction: dimension_write
+  who: 13
+  what: null
+  where: ""
+  dimension: 1
+  dimension_values: ["03", "07", "10", "2026"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Periodic Dimension 1 date sync write Wednesday (03) 2026-10-07 on shared F454 FW 2.0.5 + MH202 bus (@anotherjulien, MyHOME#466 comment 6038376669)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: set_date
+    args: ["2026-10-07"]
+
+- id: gateway.resp.internal.datetime.mh200n
+  frame: "*#13**22*16*37*03*001*05*25*09*2026##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 22
+  dimension_values: ["16", "37", "03", "001", "05", "25", "09", "2026"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: BTicino MH200N FW 1.1.8 reports internal datetime Friday (05) 2026-09-25 16:37:03+01:00 on Dimension 22 (@caiosweet, MyHOME#466 comment 5834435606)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: report_datetime
+    args: ["2026-09-25T16:37:03+01:00"]
+
+- id: gateway.write.internal.datetime.2026
+  frame: "*#13**#22*17*33*54*002*05*11*09*2026##"
+  direction: dimension_write
+  who: 13
+  what: null
+  where: ""
+  dimension: 22
+  dimension_values: ["17", "33", "54", "002", "05", "11", "09", "2026"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Set gateway internal datetime to Friday (05) 2026-09-11 17:33:54+02:00 on Dimension 22 (MyHomeServer1 plant capture, MyHOME#247)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: set_datetime
+    args: ["2026-09-11T17:33:54+02:00"]
 
 - id: gateway.req.device_type
   frame: "*#13**15##"
@@ -35,6 +157,10 @@
   mcp_valid: true
   mcp_notes: "Gateway Management: Request gateway model / device type (physical MH200 check)"
   roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: request_device_type
+    args: []
 
 - id: gateway.resp.model.device_type.mh200
   frame: "*#13**15*4##"

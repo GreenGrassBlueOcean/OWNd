@@ -424,41 +424,161 @@ class OWNGatewayCommand(OWNCommand):
         """Return True if the gateway reported an unconfigured timezone (sentinel 999)."""
         return self._raw_timezone == "999"
 
-    @classmethod
-    def set_datetime_to_now(cls, time_zone: str) -> OWNGatewayCommand:
-        timezone = ZoneInfo(time_zone)
-        now = _dt.datetime.now(timezone)
-        timezone_offset = (
-            f"0{now.strftime('%z')[1:3]}"
-            if now.strftime("%z")[0] == "+"
-            else f"1{now.strftime('%z')[1:3]}"
+    @property
+    def is_clock_query(self) -> bool:
+        """True if this message is a gateway clock/date/datetime query (Dimensions 0, 1, 22)."""
+        return self.is_dimension_request and self._dimension in (0, 1, 22)
+
+    @staticmethod
+    def _resolve_tzinfo(time_zone: _dt.tzinfo | str) -> _dt.tzinfo:
+        if isinstance(time_zone, _dt.tzinfo):
+            return time_zone
+        if isinstance(time_zone, str):
+            return ZoneInfo(time_zone)
+        raise ValueError(
+            "time_zone must be a datetime.tzinfo instance or IANA timezone string"
         )
+
+    @classmethod
+    def _normalize_datetime(
+        cls, dt: _dt.datetime, time_zone: _dt.tzinfo | str | None = None
+    ) -> _dt.datetime:
+        if not isinstance(dt, _dt.datetime):
+            raise ValueError("dt must be a datetime.datetime instance")
+        is_naive = dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None
+        if time_zone is not None:
+            tz = cls._resolve_tzinfo(time_zone)
+            target = dt.replace(tzinfo=tz) if is_naive else dt.astimezone(tz)
+        else:
+            target = dt
+        if target.tzinfo is None or target.tzinfo.utcoffset(target) is None:
+            raise ValueError("Naive datetime/time requires an explicit time_zone")
+        if not 2000 <= target.year <= 2099:
+            raise ValueError("year must be between 2000 and 2099")
+        return target
+
+    @classmethod
+    def _normalize_date(
+        cls, d: _dt.date | _dt.datetime, time_zone: _dt.tzinfo | str | None = None
+    ) -> _dt.date:
+        if not isinstance(d, _dt.date):
+            raise ValueError("d must be a datetime.date or datetime.datetime instance")
+        if isinstance(d, _dt.datetime):
+            return cls._normalize_datetime(d, time_zone=time_zone).date()
+        if time_zone is not None:
+            cls._resolve_tzinfo(time_zone)
+        if not 2000 <= d.year <= 2099:
+            raise ValueError("year must be between 2000 and 2099")
+        return d
+
+    @classmethod
+    def _normalize_time(
+        cls, t: _dt.time | _dt.datetime, time_zone: _dt.tzinfo | str | None = None
+    ) -> tuple[_dt.datetime, str]:
+        if not isinstance(t, (_dt.time, _dt.datetime)):
+            raise ValueError("t must be a datetime.time or datetime.datetime instance")
+        dt_val = (
+            t
+            if isinstance(t, _dt.datetime)
+            else _dt.datetime.combine(_dt.datetime.now(_dt.timezone.utc).date(), t)
+        )
+        target = cls._normalize_datetime(dt_val, time_zone=time_zone)
+        return target, cls._encode_tz_offset(target)
+
+    @staticmethod
+    def _encode_tz_offset(dt: _dt.datetime) -> str:
+        z = dt.strftime("%z")
+        # The TZ field (0HH / 1HH) carries whole hours only.
+        if z[3:] != "00":
+            raise ValueError(
+                f"UTC offset {z[:3]}:{z[3:5]} is not a whole number of hours"
+            )
+        return f"0{z[1:3]}" if z[0] == "+" else f"1{z[1:3]}"
+
+    @classmethod
+    def set_datetime(
+        cls, dt: _dt.datetime, time_zone: _dt.tzinfo | str | None = None
+    ) -> OWNGatewayCommand:
+        """Build a WHO 13 Dimension 22 datetime write frame (*#13**#22*H*M*S*TZ*0W*D*M*Y##)."""
+        target = cls._normalize_datetime(dt, time_zone=time_zone)
+        tz_offset = cls._encode_tz_offset(target)
         message = cls(
-            f"*#13**#22*{now.strftime('%H*%M*%S')}*{timezone_offset}*0{now.strftime('%w*%d*%m*%Y##')}"  # pylint: disable=line-too-long
+            f"*#13**#22*{target.strftime('%H*%M*%S')}*{tz_offset}*0{target.strftime('%w*%d*%m*%Y')}##"
         )
         message._human_readable_log = f"Setting gateway time to: {message._datetime}."
         return message
 
     @classmethod
-    def set_date_to_today(cls, time_zone: str) -> OWNGatewayCommand:
-        timezone = ZoneInfo(time_zone)
-        now = _dt.datetime.now(timezone)
-        message = cls(f"*#13**#1*0{now.strftime('%w*%d*%m*%Y##')}")
+    def set_date(
+        cls, d: _dt.date | _dt.datetime, time_zone: _dt.tzinfo | str | None = None
+    ) -> OWNGatewayCommand:
+        """Build a WHO 13 Dimension 1 date write frame (*#13**#1*0W*D*M*Y##)."""
+        target = cls._normalize_date(d, time_zone=time_zone)
+        message = cls(f"*#13**#1*0{target.strftime('%w*%d*%m*%Y')}##")
         message._human_readable_log = f"Setting gateway date to: {message._date}."
         return message
 
     @classmethod
-    def set_time_to_now(cls, time_zone: str) -> OWNGatewayCommand:
-        timezone = ZoneInfo(time_zone)
-        now = _dt.datetime.now(timezone)
-        timezone_offset = (
-            f"0{now.strftime('%z')[1:3]}"
-            if now.strftime("%z")[0] == "+"
-            else f"1{now.strftime('%z')[1:3]}"
-        )
-        message = cls(f"*#13**#0*{now.strftime('%H*%M*%S')}*{timezone_offset}##")
+    def set_time(
+        cls, t: _dt.time | _dt.datetime, time_zone: _dt.tzinfo | str | None = None
+    ) -> OWNGatewayCommand:
+        """Build a WHO 13 Dimension 0 time write frame (*#13**#0*H*M*S*TZ##)."""
+        target, tz_offset = cls._normalize_time(t, time_zone=time_zone)
+        message = cls(f"*#13**#0*{target.strftime('%H*%M*%S')}*{tz_offset}##")
         message._human_readable_log = f"Setting gateway time to: {message._time}."
         return message
+
+    @classmethod
+    def report_datetime(
+        cls, dt: _dt.datetime, time_zone: _dt.tzinfo | str | None = None
+    ) -> OWNGatewayCommand:
+        """Build a WHO 13 Dimension 22 datetime reply frame (*#13**22*H*M*S*TZ*0W*D*M*Y##)."""
+        target = cls._normalize_datetime(dt, time_zone=time_zone)
+        tz_offset = cls._encode_tz_offset(target)
+        message = cls(
+            f"*#13**22*{target.strftime('%H*%M*%S')}*{tz_offset}*0{target.strftime('%w*%d*%m*%Y')}##"
+        )
+        return message
+
+    @classmethod
+    def report_date(
+        cls, d: _dt.date | _dt.datetime, time_zone: _dt.tzinfo | str | None = None
+    ) -> OWNGatewayCommand:
+        """Build a WHO 13 Dimension 1 date reply frame (*#13**1*0W*D*M*Y##)."""
+        target = cls._normalize_date(d, time_zone=time_zone)
+        return cls(f"*#13**1*0{target.strftime('%w*%d*%m*%Y')}##")
+
+    @classmethod
+    def report_time(
+        cls, t: _dt.time | _dt.datetime, time_zone: _dt.tzinfo | str | None = None
+    ) -> OWNGatewayCommand:
+        """Build a WHO 13 Dimension 0 time reply frame (*#13**0*H*M*S*TZ##)."""
+        target, tz_offset = cls._normalize_time(t, time_zone=time_zone)
+        return cls(f"*#13**0*{target.strftime('%H*%M*%S')}*{tz_offset}##")
+
+    @classmethod
+    def set_datetime_to_now(
+        cls, time_zone: _dt.tzinfo | str
+    ) -> OWNGatewayCommand:
+        timezone = cls._resolve_tzinfo(time_zone)
+        now = _dt.datetime.now(timezone)
+        return cls.set_datetime(now)
+
+    @classmethod
+    def set_date_to_today(
+        cls, time_zone: _dt.tzinfo | str
+    ) -> OWNGatewayCommand:
+        timezone = cls._resolve_tzinfo(time_zone)
+        now = _dt.datetime.now(timezone)
+        return cls.set_date(now)
+
+    @classmethod
+    def set_time_to_now(
+        cls, time_zone: _dt.tzinfo | str
+    ) -> OWNGatewayCommand:
+        timezone = cls._resolve_tzinfo(time_zone)
+        now = _dt.datetime.now(timezone)
+        return cls.set_time(now)
 
     @classmethod
     def request_time(cls) -> OWNGatewayCommand:

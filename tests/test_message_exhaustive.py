@@ -574,7 +574,11 @@ class TestMessageExhaustiveCoverage:
         # Gateway command dimension 22
         gw_cmd22 = OWNGatewayCommand("*#13**22*12*30*00*001*0*10*09*2026##")
         assert gw_cmd22._datetime is not None
+        assert str(OWNGatewayCommand.set_datetime_to_now(datetime.timezone.utc)).startswith("*#13**")
+        assert str(OWNGatewayCommand.set_date_to_today(datetime.timezone.utc)).startswith("*#13**")
+        assert str(OWNGatewayCommand.set_time_to_now(datetime.timezone.utc)).startswith("*#13**")
 
         # Sound command status
         assert str(OWNSoundCommand.status("21")) == "*#16*21*5##"
+
 

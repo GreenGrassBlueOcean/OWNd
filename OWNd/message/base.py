@@ -245,6 +245,31 @@ class OWNMessage:
         return self._family == "COMMAND_TRANSLATION"
 
     @property
+    def is_status_request(self) -> bool:
+        return getattr(self, "_message_type", None) == "STATUS_REQUEST"
+
+    @property
+    def is_dimension_request(self) -> bool:
+        return getattr(self, "_message_type", None) == "DIMENSION_REQUEST"
+
+    @property
+    def is_dimension_writing(self) -> bool:
+        return getattr(self, "_message_type", None) == "DIMENSION_WRITING"
+
+    @property
+    def is_dimension_reply(self) -> bool:
+        return getattr(self, "_message_type", None) == "DIMENSION_REQUEST_REPLY"
+
+    @property
+    def effective_what(self) -> int | None:
+        """The effective 'what' ID, unwrapping Command Translation (1000#WHAT) frames."""
+        what = getattr(self, "_what", None)
+        what_param = getattr(self, "_what_param", [])
+        if what == 1000 and what_param:
+            return int(what_param[0])
+        return what
+
+    @property
     def is_valid(self) -> bool:
         return self._is_valid_message
 

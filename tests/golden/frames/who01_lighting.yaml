@@ -351,3 +351,105 @@
   mcp_valid: true
   mcp_notes: "Lighting: Pushbutton command translation OFF at address 12 (MyHOME#466)"
   roundtrip: true
+
+- id: light.dim.reply.level.34.speed5.12
+  frame: "*#1*12*1*134*5##"
+  direction: dimension_response
+  who: 1
+  what: null
+  where: "12"
+  dimension: 1
+  dimension_values: ["134", "5"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: DIMENSION 1 reply reporting 34% brightness (LEVEL100 134) at transition speed 5 on dimmer 12 (Legrand F455 FW 1.0.86 capture by @lionelser, MyHOME#466 comment 5938596974)"
+  roundtrip: true
+  builder:
+    class: OWNLightingCommand
+    method: report_brightness
+    args: ["12", 34, 5]
+
+- id: light.dim.reply.off.speed0.dim1.mh202.32
+  frame: "*#1*32*1*100*0##"
+  direction: dimension_response
+  who: 1
+  what: null
+  where: "32"
+  dimension: 1
+  dimension_values: ["100", "0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: DIMENSION 1 status response reporting OFF (LEVEL100 100 = 0% at transition speed 0) on BTicino MH202 FW 2.6.13 + F418U2 dimmer 32 (@anotherjulien, MyHOME#466 comments 5849027587 & 5854805415)"
+  roundtrip: true
+  builder:
+    class: OWNLightingCommand
+    method: report_brightness
+    args: ["32", 0, 0]
+
+- id: light.dim.reply.level.30.speed5.dim1.32
+  frame: "*#1*32*1*130*5##"
+  direction: dimension_response
+  who: 1
+  what: null
+  where: "32"
+  dimension: 1
+  dimension_values: ["130", "5"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: DIMENSION 1 report after 30% write/ON command to BTicino F418U2 dimmer 32 on F454 FW 2.0.5 and MH202 FW 2.6.13: reports 30% (LEVEL100 130) with active transition speed 5 (@anotherjulien, MyHOME#466 comments 5849027587 & 5854469497)"
+  roundtrip: true
+  builder:
+    class: OWNLightingCommand
+    method: report_brightness
+    args: ["32", 30, 5]
+
+- id: light.dim.req.level.99
+  frame: "*#1*99*1##"
+  direction: dimension_request
+  who: 1
+  what: null
+  where: "99"
+  dimension: 1
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: DIMENSION 1 request to BTicino F414 classic dimmer 99 on MH200 FW 2.1.0 (@GreenGrassBlueOcean, MyHOME#466 comment 5849245960)"
+  roundtrip: true
+  builder:
+    class: OWNLightingCommand
+    method: get_brightness
+    args: ["99"]
+
+- id: light.dim.write.level.50.99
+  frame: "*#1*99*#1*150*0##"
+  direction: dimension_write
+  who: 1
+  what: null
+  where: "99"
+  dimension: 1
+  dimension_values: ["150", "0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: DIMENSION 1 write setting 50% (LEVEL100 150) with speed 0 on BTicino F414 classic dimmer 99 on MH200 FW 2.1.0 (@GreenGrassBlueOcean, MyHOME#466 comment 5849245960)"
+  roundtrip: true
+  builder:
+    class: OWNLightingCommand
+    method: set_brightness
+    args: ["99", 50]
+
+- id: light.dim.reply.level.50.speed5.99
+  frame: "*#1*99*1*150*5##"
+  direction: dimension_response
+  who: 1
+  what: null
+  where: "99"
+  dimension: 1
+  dimension_values: ["150", "5"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: DIMENSION 1 report after 50% write to BTicino F414 dimmer 99 on MH200 FW 2.1.0: reports 50% (LEVEL100 150) with active transition speed 5 (@GreenGrassBlueOcean, MyHOME#466 comment 5849245960)"
+  roundtrip: true
+  builder:
+    class: OWNLightingCommand
+    method: report_brightness
+    args: ["99", 50, 5]
+

@@ -618,3 +618,36 @@ def test_h4684_profile(name: str) -> None:
     assert not profile.supports_who(WHO_SCENARIO)
     assert not profile.supports_who(WHO_SOUND_DIFFUSION)
     assert not profile.supports_who(WHO_CEN_PLUS)
+
+
+def test_profile_injection_capability_flags() -> None:
+    """Only the F461 has injection evidence; every other family is unverified."""
+    f461 = get_gateway_profile("F461")
+    assert f461.supports_dimension_response_injection is False
+    assert f461.supports_who4_command_injection is True
+    assert f461.supports_who18_response_injection is True
+
+    for model in (
+        "F452",
+        "F452V",
+        "F453",
+        "F453AV",
+        "F454",
+        "F455",
+        "F459",
+        "F460",
+        "MH200",
+        "MH200N",
+        "MH201",
+        "MH202",
+        "H4890",
+        "H4684",
+        "MyHomeServer1",
+        "unknown-model",
+    ):
+        p = get_gateway_profile(model)
+        assert p.supports_dimension_response_injection is None
+        assert p.supports_who4_command_injection is None
+        assert p.supports_who18_response_injection is None
+
+

@@ -9,6 +9,10 @@
   mcp_valid: true
   mcp_notes: "Request measured temperature for Zone 1"
   roundtrip: true
+  builder:
+    class: OWNHeatingCommand
+    method: get_temperature
+    args: ["1"]
 
 - id: thermo.resp.temp.zone1.215
   frame: "*#4*1*0*0215##"
@@ -22,6 +26,10 @@
   mcp_valid: true
   mcp_notes: "Temperature response: Zone 1 is at 21.5°C"
   roundtrip: true
+  builder:
+    class: OWNHeatingCommand
+    method: report_temperature
+    args: ["1", 21.5]
 
 - id: thermo.cmd.setpoint.zone1.205
   frame: "*#4*1*#14*0205*1##"
@@ -361,3 +369,73 @@
   mcp_valid: true
   mcp_notes: "Zone 2 target 7.0 °C, the antifreeze value, 47 ms after *4*102*2## (xtimmy86x capture 23:39:43.838, MyHOME#429)"
   roundtrip: true
+
+- id: thermo.capture.temp.probe105.296
+  frame: "*#4*105*0*0296##"
+  direction: dimension_response
+  who: 4
+  what: null
+  where: "105"
+  dimension: 0
+  dimension_values: ["0296"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "External 3-digit probe 105 (sensor 1 on zone 5) reporting measured temperature 29.6 °C on MH200N FW 1.1.8 (@caiosweet, MyHOME#466 comment 5834435606)"
+  roundtrip: true
+  builder:
+    class: OWNHeatingCommand
+    method: report_temperature
+    args: ["105", 29.6]
+
+- id: thermo.capture.temp.zone2.271
+  frame: "*#4*2*0*0271##"
+  direction: dimension_response
+  who: 4
+  what: null
+  where: "2"
+  dimension: 0
+  dimension_values: ["0271"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Zone 2 reporting measured temperature 27.1 °C on MyHomeServer1 FW 2.38.9 (@TheDarkWizard, MyHOME#466 comment 5855690408)"
+  roundtrip: true
+  builder:
+    class: OWNHeatingCommand
+    method: report_temperature
+    args: ["2", 27.1]
+
+- id: thermo.capture.temp.zone2.249.f461
+  frame: "*#4*2*0*0249##"
+  direction: dimension_response
+  who: 4
+  what: null
+  where: "2"
+  dimension: 0
+  dimension_values: ["0249"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Zone 2 standalone KW4691 thermostat reporting measured temperature 24.9 °C on physical BTicino F461 FW 2.0.11 (@gdluck & @GreenGrassBlueOcean, MyHOME#753)"
+  roundtrip: true
+  builder:
+    class: OWNHeatingCommand
+    method: report_temperature
+    args: ["2", 24.9]
+
+- id: thermo.capture.write_temp.probe50.215.f461
+  frame: "*#4*50*#0*0215##"
+  direction: dimension_write
+  who: 4
+  what: null
+  where: "50"
+  dimension: 0
+  dimension_values: ["0215"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "WHO=4 Dimension #0 temperature write (21.5 °C on virtual probe 50) ACKed in 155 ms by bt_termo on physical BTicino F461 FW 2.0.11, whereas *#4*W*0*TTTT## without #0 is parsed by F461 bt_termo as a Dimension 0 read request (@gdluck & @GreenGrassBlueOcean, MyHOME#753)"
+  roundtrip: true
+  builder:
+    class: OWNHeatingCommand
+    method: write_temperature
+    args: ["50", 21.5]
+
+
