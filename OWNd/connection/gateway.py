@@ -4,22 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import logging
-import sys
 from typing import Any
 from urllib.parse import urlparse
 
 from ..discovery import find_gateways, get_gateway, get_port
 from ..profiles import GatewayProfile, get_gateway_profile
-
-_ORIG_FIND_GATEWAYS = find_gateways
-_ORIG_GET_GATEWAY = get_gateway
-_ORIG_GET_PORT = get_port
-
-
-def _resolve_discovery_fn(name: str, local_fn: Any, orig_fn: Any) -> Any:
-    """Resolve discovery helper, honoring overrides on either gateway or connection."""
-    pkg = sys.modules.get(__package__ or "")
-    return getattr(pkg, name, local_fn) if local_fn is orig_fn else local_fn
 
 
 def _first_scalar(value: Any, default: Any = None) -> Any:
@@ -128,8 +117,7 @@ class OWNGateway:
     async def get_first_available_gateway(
         cls, password: str | None = None
     ) -> OWNGateway | None:
-        finder = _resolve_discovery_fn("find_gateways", find_gateways, _ORIG_FIND_GATEWAYS)
-        local_gateways = await finder()
+        local_gateways = await find_gateways()
         if not local_gateways:
             return None
         local_gateways[0]["password"] = password
@@ -138,8 +126,7 @@ class OWNGateway:
     @classmethod
     async def find_from_address(cls, address: str | None) -> OWNGateway | None:
         if address is not None:
-            getter = _resolve_discovery_fn("get_gateway", get_gateway, _ORIG_GET_GATEWAY)
-            gateway = await getter(address)
+            gateway = await get_gateway(address)
             return cls(gateway) if gateway is not None else None
         return await cls.get_first_available_gateway()
 
@@ -163,8 +150,7 @@ class OWNGateway:
                 "ssdp_location" in discovery_info
                 and discovery_info["ssdp_location"] is not None
             ):
-                port_getter = _resolve_discovery_fn("get_port", get_port, _ORIG_GET_PORT)
-                discovery_info["port"] = await port_getter(discovery_info["ssdp_location"])
+                discovery_info["port"] = await get_port(discovery_info["ssdp_location"])
             elif "address" in discovery_info and discovery_info["address"] is not None:
                 return await cls.find_from_address(discovery_info["address"])
             else:

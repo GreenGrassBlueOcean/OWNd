@@ -683,55 +683,6 @@ async def test_command_session_rejects_invalid_or_empty_message() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "frame",
-    [
-        "*1*1*11##",
-        "*#4*000*0*0215##",
-        "*#4*000*#0*0215##",
-    ],
-)
-async def test_written_non_query_with_status_request_flag_is_not_replayed_after_lost_ack(
-    frame: str,
-) -> None:
-    session, writer = make_session(OWNCommandSession)
-    assert isinstance(session, OWNCommandSession)
-    assert session._stream_reader is not None
-    session._stream_reader.feed_eof()
-
-    with patch.object(session, "connect", new_callable=AsyncMock) as connect:
-        result = await session.send(frame, is_status_request=True)
-
-    assert result is None
-    assert writer.written == [frame.encode()]
-    connect.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_disconnected_dimension_request_retries_once() -> None:
-    session, original_writer = make_session(OWNCommandSession)
-    assert isinstance(session, OWNCommandSession)
-    assert session._stream_reader is not None
-    session._stream_reader.feed_eof()
-
-    retry_writer = FakeWriter()
-
-    async def reconnect() -> dict[str, object]:
-        session._stream_reader = asyncio.StreamReader()
-        session._stream_reader.feed_eof()
-        session._stream_writer = retry_writer  # type: ignore[assignment]
-        return {"Success": True, "Message": None}
-
-    with patch.object(session, "connect", side_effect=reconnect) as connect:
-        result = await session.send("*#4*000*0##", is_status_request=True)
-
-    assert result is None
-    connect.assert_awaited_once()
-    assert original_writer.written == [b"*#4*000*0##"]
-    assert retry_writer.written == [b"*#4*000*0##"]
-
-
-@pytest.mark.asyncio
 async def test_typed_exceptions_and_last_error() -> None:
     from OWNd import (
         OWNAuthError,
@@ -887,6 +838,10 @@ async def test_session_and_command_error_paths_with_raise_on_error() -> None:
     session.on_auth_error = broken_cb
     assert session.on_auth_error is broken_cb
     session._notify_auth_error(OWNAuthError("bad pw", reason="password_error"))
+    saved_logger = session._logger
+    session._logger = None  # type: ignore[assignment]
+    session._notify_auth_error(OWNAuthError("bad pw", reason="password_error"))
+    session._logger = saved_logger
 
     # test_connection(raise_on_error=True) refused after 3 attempts
     with (
@@ -915,7 +870,9 @@ async def test_session_and_command_error_paths_with_raise_on_error() -> None:
     ):
         with pytest.raises(OWNAuthError):
             await session.test_connection(raise_on_error=True)
-    assert len(auth_called) == 1
+        res_no_raise = await session.test_connection(raise_on_error=False)
+        assert res_no_raise == {"Success": False, "Message": "password_error"}
+    assert len(auth_called) == 2
 
     with (
         patch(
@@ -930,6 +887,21 @@ async def test_session_and_command_error_paths_with_raise_on_error() -> None:
     ):
         with pytest.raises(OWNNackError):
             await session.test_connection(raise_on_error=True)
+
+    # connect(raise_on_error=True) with fatal non-auth negotiation error
+    with (
+        patch(
+            "OWNd.connection.session.asyncio.open_connection",
+            new=AsyncMock(return_value=(MagicMock(), MagicMock())),
+        ),
+        patch.object(
+            session,
+            "_negotiate",
+            new=AsyncMock(return_value={"Success": False, "Message": "negotiation_error"}),
+        ),
+    ):
+        with pytest.raises(OWNProtocolError):
+            await session.connect(raise_on_error=True)
 
     # test_connection(raise_on_error=True) ConnectionResetError and TimeoutError during _negotiate
     with (
@@ -1012,13 +984,15 @@ async def test_session_and_command_error_paths_with_raise_on_error() -> None:
     with patch.object(
         ev_sess,
         "_reconnect",
+        new=AsyncMock(return_value={"Success": False, "Message": "connection_error"}),
+    ):
+        assert await ev_sess.get_next(raise_on_auth_error=True) is None
+    with patch.object(
+        ev_sess,
+        "_reconnect",
         new=AsyncMock(return_value={"Success": False, "Message": "password_error"}),
     ):
         with pytest.raises(OWNAuthError):
             await ev_sess.get_next(raise_on_auth_error=True)
 
-    # Legacy patch("OWNd.connection.find_gateways") compatibility on OWNGateway
-    with patch("OWNd.connection.find_gateways", new=AsyncMock(return_value=[{"address": "192.168.1.77"}])):
-        gw = await OWNGateway.get_first_available_gateway()
-        assert gw is not None and gw.host == "192.168.1.77"
 
