@@ -431,3 +431,188 @@
     class: OWNAutomationCommand
     method: lower_shutter
     args: ["#1"]
+
+- id: cover.status.dimension10.level40.31
+  frame: "*#2*31*10*10*40*001*0##"
+  direction: dimension_response
+  who: 2
+  what: null
+  where: "31"
+  dimension: 10
+  dimension_values: ["10", "40", "001", "0"]
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Dimension 10 report with state 10 (stopped) at position 40%, priority bitfield 001, info 0 for shutter 31 on MH202 FW 2.6.13 and F454 FW 2.0.5 (@anotherjulien, MyHOME#466 comment 5849027587)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: report_shutter_level
+    args: ["31", 40, 10, "001", 0]
+
+- id: cover.status.dimension10.closing66.31
+  frame: "*#2*31*10*12*66*001*0##"
+  direction: dimension_response
+  who: 2
+  what: null
+  where: "31"
+  dimension: 10
+  dimension_values: ["12", "66", "001", "0"]
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Dimension 10 report with state 12 (closing) from position 66%, priority bitfield 001, info 0 for shutter 31 on F454 FW 2.0.5 and MH202 FW 2.6.13 (@anotherjulien, MyHOME#466 comments 5849027587 & 6038376669)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: report_shutter_level
+    args: ["31", 66, 12, "001", 0]
+
+- id: cover.status.dimension10.transitional.closing.02
+  frame: "*#2*02*10*12*100*001*0##"
+  direction: dimension_response
+  who: 2
+  what: null
+  where: "02"
+  dimension: 10
+  dimension_values: ["12", "100", "001", "0"]
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Dimension 10 report with state 12 (closing from initial position 100%) on LN-4660M2 advanced shutter actuator 02 captured on MyHomeServer1 (@f18m, MyHOME#445 comment 5868017035)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: report_shutter_level
+    args: ["02", 100, 12, "001", 0]
+
+- id: cover.status.dimension10.level26.0010
+  frame: "*#2*0010*10*10*26*001*0##"
+  direction: dimension_response
+  who: 2
+  what: null
+  where: "0010"
+  dimension: 10
+  dimension_values: ["10", "26", "001", "0"]
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Dimension 10 position 26% report for 4-digit address 0010 from MyHomeServer1 + LN-4660M2 plant after centralized stop (@f18m, MyHOME#445 & MyHOME#466)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: report_shutter_level
+    args: ["0010", 26, 10, "001", 0]
+
+- id: cover.status.dimension10.level83.03
+  frame: "*#2*03*10*10*83*001*0##"
+  direction: dimension_response
+  who: 2
+  what: null
+  where: "03"
+  dimension: 10
+  dimension_values: ["10", "83", "001", "0"]
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Dimension 10 position 83% report for bistable cover 03 on MyHomeServer1 FW 2.38.9 (@TheDarkWizard, MyHOME#466 comment 5855690408)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: report_shutter_level
+    args: ["03", 83, 10, "001", 0]
+
+- id: cover.evt.translation.stop.91
+  frame: "*2*1000#0*91##"
+  direction: event
+  who: 2
+  what: "1000#0"
+  where: "91"
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Leading-idle pushbutton command translation STOP (*2*1000#0*91## followed by *2*0*91## and *2*1000#1*91##) on MyHomeServer1 (@Interstellar0verdrive, MyHOME#466 comment 5927373969 & MyHOME#645 comment 6111193057)"
+  roundtrip: true
+
+- id: cover.evt.translation.up.91
+  frame: "*2*1000#1*91##"
+  direction: event
+  who: 2
+  what: "1000#1"
+  where: "91"
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Pushbutton command translation UP (*2*1000#1*91## followed by *2*1*91##) on MyHomeServer1 (@Interstellar0verdrive, MyHOME#466 comment 5927373969 & MyHOME#645 comment 6111193057)"
+  roundtrip: true
+
+- id: cover.evt.translation.stop.05.f461
+  frame: "*2*1000#0*05##"
+  direction: event
+  who: 2
+  what: "1000#0"
+  where: "05"
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Pre-move STOP command translation (*2*1000#0*05## -> *2*0*05## -> *2*1000#1/2*05## -> *2*1/2*05##) emitted by physical BTicino F461 FW 2.0.11 for BT-F411/2 5s timed shutter at WHERE 05 (@gdluck & @GreenGrassBlueOcean, MyHOME#753)"
+  roundtrip: true
+
+- id: cover.evt.translation.down.05.f461
+  frame: "*2*1000#2*05##"
+  direction: event
+  who: 2
+  what: "1000#2"
+  where: "05"
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Mid-flight reversal DOWN command translation (*2*1000#2*05## followed by *2*2*05## and 5.0 s hardware auto-stop *2*0*05##) on BTicino F461 FW 2.0.11 (@gdluck & @GreenGrassBlueOcean, MyHOME#753)"
+  roundtrip: true
+
+- id: cover.evt.translation.stop.virtual.25.f461
+  frame: "*2*1000#0*25##"
+  direction: event
+  who: 2
+  what: "1000#0"
+  where: "25"
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Pre-move STOP command translation (*2*1000#0*25## -> *2*1000#1/2*25##) broadcast on the event monitor session by physical BTicino F461 FW 2.0.11 for unpopulated virtual cover 25 before returning NACK on cmd (@gdluck & @GreenGrassBlueOcean, MyHOME#753)"
+  roundtrip: true
+
+- id: cover.cmd.level.50.virtual.25.f461
+  frame: "*#2*25*#11#001*50##"
+  direction: dimension_write
+  who: 2
+  what: null
+  where: "25"
+  dimension: 11
+  dimension_values: ["50"]
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Dimension #11#001 shutter position write (50%) on virtual cover 25 ACKed in 83 ms by physical BTicino F461 FW 2.0.11 and echoed on evt as *#2*25*#11#001#1*50## (@gdluck, MyHOME#750 comment 6277050571)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: set_shutter_level
+    args: ["25", 50]
+
+- id: cover.evt.level.50.virtual.25.f461
+  frame: "*#2*25*#11#001#1*50##"
+  direction: dimension_write
+  who: 2
+  what: null
+  where: "25"
+  dimension: 11
+  dimension_values: ["50"]
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Gateway event-session echo (*#2*25*#11#001#1*50##) emitted by physical BTicino F461 FW 2.0.11 (and F454/F459/F460/MH202/MyHomeServer1 in trace-corpus) when *#2*25*#11#001*50## is sent on cmd (@gdluck, MyHOME#750 comment 6277050571)"
+  roundtrip: true
+
+
+

@@ -86,6 +86,9 @@ class GatewayProfile:
     audio_measured: bool = True
     supports_native_transitions: bool = False
     supports_extended_frames: bool = False
+    supports_dimension_response_injection: bool = False
+    supports_who4_command_injection: bool = True
+    supports_who18_response_injection: bool = True
     supported_who: tuple[int, ...] = DEFAULT_SUPPORTED_WHO
     extra_features: tuple[str, ...] = ()
     firmware_version: str | None = field(default=None, kw_only=True)
@@ -254,6 +257,7 @@ class F453Profile(GatewayProfile):
         super().__init__(
             model_name="F453",
             command_queue_delay=0.15,
+            supports_who4_command_injection=False,
         )
 
 
@@ -431,6 +435,7 @@ class MH200Profile(GatewayProfile):
             max_queue_size=100,
             event_keepalive_interval=90,
             supports_energy_instant_power=False,
+            supports_who18_response_injection=False,
             supported_who=(
                 WHO_LIGHTING,
                 WHO_AUTOMATION,
@@ -472,6 +477,8 @@ class MH200NProfile(GatewayProfile):
             event_keepalive_interval=90,
             supports_energy_instant_power=False,
             supports_audio=True,
+            supports_who4_command_injection=False,
+            supports_who18_response_injection=False,
             supported_who=(
                 WHO_LIGHTING,
                 WHO_AUTOMATION,

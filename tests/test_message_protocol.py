@@ -511,3 +511,347 @@ def test_flash_accepts_bundled_v2_keyword_alias() -> None:
     message = OWNLightingCommand.flash("21", _freqency=1.0)
 
     assert str(message) == "*1*21*21##"
+
+
+def test_own_message_helper_properties_and_effective_what() -> None:
+    from OWNd.message import (
+        OWNAutomationCommand,
+        OWNEnergyCommand,
+        OWNGatewayCommand,
+        OWNHeatingCommand,
+        OWNMessage,
+    )
+    import datetime as dt
+
+    status_req = OWNMessage.parse("*#1*99##")
+    assert status_req is not None
+    assert status_req.is_status_request is True
+    assert status_req.is_dimension_request is False
+    assert status_req.is_dimension_writing is False
+    assert status_req.is_dimension_reply is False
+    assert status_req.effective_what is None
+    assert isinstance(status_req, OWNLightingCommand)
+    assert status_req.is_status_query is True
+    assert status_req.is_brightness_query is False
+
+    dim_req = OWNMessage.parse("*#1*99*1##")
+    assert dim_req is not None
+    assert dim_req.is_dimension_request is True
+    assert isinstance(dim_req, OWNLightingCommand)
+    assert dim_req.is_brightness_query is True
+    assert dim_req.is_status_query is False
+
+    dim_write = OWNMessage.parse("*#1*99*#1*150*0##")
+    assert dim_write is not None
+    assert dim_write.is_dimension_writing is True
+
+    dim_reply = OWNMessage.parse("*#1*99*1*150*0##")
+    assert dim_reply is not None
+    assert dim_reply.is_dimension_reply is True
+
+    trans_on = OWNMessage.parse("*1*1000#1*99##")
+    assert trans_on is not None
+    assert trans_on.is_translation is True
+    assert trans_on.what == 1000
+    assert trans_on.effective_what == 1
+
+    direct_on = OWNMessage.parse("*1*1*99##")
+    assert direct_on is not None
+    assert direct_on.is_translation is False
+    assert direct_on.effective_what == 1
+
+    # Lighting report_brightness
+    rep_b = OWNLightingCommand.report_brightness("99", 75, 0)
+    assert str(rep_b) == "*#1*99*1*175*0##"
+    assert "75%" in rep_b.human_readable_log
+
+    # Automation queries & report_shutter_level
+    shutter_q = OWNAutomationCommand("*#2*98##")
+    assert shutter_q.is_status_query is True
+    assert shutter_q.is_shutter_status_query is False
+    shutter_dim_q = OWNAutomationCommand("*#2*98*10##")
+    assert shutter_dim_q.is_shutter_status_query is True
+    rep_shutter = OWNAutomationCommand.report_shutter_level("98", 60, state=10)
+    assert str(rep_shutter) == "*#2*98*10*10*60*0*0##"
+    rep_shutter_bitfield = OWNAutomationCommand.report_shutter_level(
+        "31", 40, state=10, priority="001"
+    )
+    assert str(rep_shutter_bitfield) == "*#2*31*10*10*40*001*0##"
+    rep_shutter_unk = OWNAutomationCommand.report_shutter_level("98", 255)
+    assert str(rep_shutter_unk) == "*#2*98*10*10*255*0*0##"
+
+    # Heating encode_temperature, report_temperature, write_temperature
+    assert OWNHeatingCommand.encode_temperature(18.5) == "0185"
+    assert OWNHeatingCommand.encode_temperature(-3.2) == "1032"
+    assert OWNHeatingCommand.encode_temperature(0.0) == "0000"
+    assert OWNHeatingCommand.encode_temperature(-0.02) == "0000"
+    rep_temp = OWNHeatingCommand.report_temperature("000", -3.2)
+    assert str(rep_temp) == "*#4*000*0*1032##"
+    wr_temp = OWNHeatingCommand.write_temperature("000", -3.2)
+    assert str(wr_temp) == "*#4*000*#0*1032##"
+    assert "-3.2°C" in wr_temp.human_readable_log
+    ev_temp_000 = OWNHeatingEvent("*#4*000*0*1032##")
+    assert ev_temp_000.unique_id == "4-#0"
+    assert ev_temp_000.main_temperature == -3.2
+    ev_temp_101 = OWNHeatingEvent("*#4*101*0*1032##")
+    assert ev_temp_101.unique_id == "4-101"
+    assert ev_temp_101.probe_temperature == -3.2
+    assert ev_temp_101.secondary_temperature == [1, -3.2]
+    temp_q = OWNHeatingCommand("*#4*000*0##")
+    assert temp_q.is_temperature_query is True
+
+    # Energy report builders & queries
+    en_q = OWNEnergyCommand("*#18*51*113##")
+    assert en_q.is_dimension_query is True
+    assert en_q.is_auto_update_command is False
+    assert en_q.stream_duration is None
+    en_stream = OWNEnergyCommand.start_sending_instant_power("51", duration=65)
+    assert en_stream.is_auto_update_command is True
+    assert en_stream.stream_duration == 65
+    assert str(OWNEnergyCommand.report_active_power("51", 640)) == "*#18*51*113*640##"
+    assert str(OWNEnergyCommand.report_total_energy("51", 12345)) == "*#18*51*51*12345##"
+    assert str(OWNEnergyCommand.report_current_month_energy("51", 500)) == "*#18*51*52*500##"
+    assert str(OWNEnergyCommand.report_current_month_energy("51", 500, 2026, 10)) == "*#18*51*52#26#10*500##"
+    assert str(OWNEnergyCommand.report_partial_month_energy("51", 300)) == "*#18*51*53*300##"
+    assert str(OWNEnergyCommand.report_partial_month_energy("51", 300, 10)) == "*#18*51*53#10*300##"
+    assert str(OWNEnergyCommand.report_partial_day_energy("51", 120)) == "*#18*51*54*120##"
+    assert str(OWNEnergyCommand.report_partial_day_energy("51", 120, 18)) == "*#18*51*54#18*120##"
+    assert str(OWNEnergyCommand.report_streaming_state("51", 65, 1)) == "*#18*51*1200#1*65##"
+
+    # Gateway clock builders & queries
+    clk_q = OWNGatewayCommand("*#13**22##")
+    assert clk_q.is_clock_query is True
+    sample_dt = dt.datetime(2026, 10, 18, 14, 30, 0, tzinfo=dt.timezone.utc)
+    assert str(OWNGatewayCommand.set_datetime(sample_dt, "Europe/Brussels")) == "*#13**#22*16*30*00*002*00*18*10*2026##"
+    assert str(OWNGatewayCommand.report_datetime(sample_dt, "Europe/Brussels")) == "*#13**22*16*30*00*002*00*18*10*2026##"
+    assert str(OWNGatewayCommand.set_date(sample_dt, "Europe/Brussels")) == "*#13**#1*00*18*10*2026##"
+    assert str(OWNGatewayCommand.report_date(sample_dt, "Europe/Brussels")) == "*#13**1*00*18*10*2026##"
+    assert str(OWNGatewayCommand.set_time(sample_dt, "Europe/Brussels")) == "*#13**#0*16*30*00*002##"
+    assert str(OWNGatewayCommand.report_time(sample_dt, "Europe/Brussels")) == "*#13**0*16*30*00*002##"
+    # Naive time with explicit time_zone (string or tzinfo) and aware time with/without time_zone
+    from zoneinfo import ZoneInfo
+
+    naive_t = dt.time(12, 0, 0)
+    aware_t = dt.time(12, 0, 0, tzinfo=dt.timezone.utc)
+    zone_t = dt.time(12, 0, 0, tzinfo=ZoneInfo("Europe/Brussels"))
+    assert str(OWNGatewayCommand.set_time(aware_t)) == "*#13**#0*12*00*00*000##"
+    assert (
+        str(OWNGatewayCommand.set_time(aware_t, dt.timezone(dt.timedelta(hours=2))))
+        == "*#13**#0*14*00*00*002##"
+    )
+    assert str(OWNGatewayCommand.set_time(zone_t)).startswith("*#13**#0*12*00*00*00")
+    assert str(OWNGatewayCommand.set_time(naive_t, dt.timezone.utc)) == "*#13**#0*12*00*00*000##"
+    assert str(OWNGatewayCommand.report_time(naive_t, "America/New_York")).startswith("*#13**0*12*00*00*10")
+
+
+def test_expose_builders_infeasible_inputs() -> None:
+    import datetime as dt
+
+    from OWNd.message import (
+        OWNAutomationCommand,
+        OWNEnergyCommand,
+        OWNGatewayCommand,
+        OWNHeatingCommand,
+        OWNLightingCommand,
+    )
+
+    # 1. WHO 1 report_brightness
+    for bad_where in ("", "   ", "11*1"):
+        with pytest.raises(ValueError, match="non-empty address"):
+            OWNLightingCommand.report_brightness(bad_where, 50)
+    for bad_int in (True, False, 50.9, 0.5, float("inf"), float("-inf"), float("nan")):
+        with pytest.raises(ValueError, match="must be integers"):
+            OWNLightingCommand.report_brightness("11", bad_int)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="must be integers"):
+            OWNLightingCommand.report_brightness("11", 50, bad_int)  # type: ignore[arg-type]
+    for bad_lvl in (-1, 101):
+        with pytest.raises(ValueError, match="brightness level must be between 0 and 100"):
+            OWNLightingCommand.report_brightness("11", bad_lvl)
+    for bad_trans in (-1, 256):
+        with pytest.raises(ValueError, match="transition must be between 0 and 255"):
+            OWNLightingCommand.report_brightness("11", 50, bad_trans)
+
+    # 2. WHO 2 set_shutter_level & report_shutter_level
+    for bad_set_lvl in (True, 50.9, float("inf"), -1, 101):
+        with pytest.raises(ValueError, match="shutter level must be between 0 and 100"):
+            OWNAutomationCommand.set_shutter_level("21", bad_set_lvl)  # type: ignore[arg-type]
+    for bad_where in ("", "21*1"):
+        with pytest.raises(ValueError, match="non-empty address"):
+            OWNAutomationCommand.report_shutter_level(bad_where, 50)
+    for bool_args in (
+        (True, 10, 0, 0),
+        (50, True, 0, 0),
+        (50, 10, True, 0),
+        (50, 10, 0, True),
+        (50.9, 10, 0, 0),
+        (50, 10.5, 0, 0),
+        (50, 10, 0.5, 0),
+        (50, 10, 0, 1.5),
+        (float("inf"), 10, 0, 0),
+        (50, float("inf"), 0, 0),
+        (50, 10, float("inf"), 0),
+        (50, 10, 0, float("inf")),
+    ):
+        with pytest.raises(ValueError, match="must be integers"):
+            OWNAutomationCommand.report_shutter_level("21", *bool_args)  # type: ignore[arg-type]
+    for bad_lvl in (-1, 101, 254, 256):
+        with pytest.raises(ValueError, match="shutter level must be between 0 and 100 or 255"):
+            OWNAutomationCommand.report_shutter_level("21", bad_lvl)
+    for bad_state in (9, 16):
+        with pytest.raises(ValueError, match="shutter state must be between 10 and 15"):
+            OWNAutomationCommand.report_shutter_level("21", 50, state=bad_state)
+    for bad_pr, bad_inf in ((-1, 0), (256, 0), (0, -1), (0, 256)):
+        with pytest.raises(ValueError, match="priority and info must be between 0 and 255"):
+            OWNAutomationCommand.report_shutter_level(
+                "21", 50, state=10, priority=bad_pr, info=bad_inf
+            )
+    assert (
+        str(OWNAutomationCommand.report_shutter_level("31", 40, state=10, priority="00001"))
+        == "*#2*31*10*10*40*1*0##"
+    )
+
+    # 3. WHO 4 encode_temperature, report_temperature, write_temperature
+    assert OWNHeatingCommand.encode_temperature(20.25) == "0203"
+    assert OWNHeatingCommand.encode_temperature(20.35) == "0204"
+    assert OWNHeatingCommand.encode_temperature(-20.25) == "1203"
+    for non_finite in (True, False, float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError, match="temperature must be finite"):
+            OWNHeatingCommand.encode_temperature(non_finite)
+    for out_of_range in (-100.0, -150.0, 100.0, 150.0):
+        with pytest.raises(ValueError, match="temperature must be between -99.9 and 99.9"):
+            OWNHeatingCommand.encode_temperature(out_of_range)
+    for bad_where in ("", "000*1"):
+        with pytest.raises(ValueError, match="non-empty address"):
+            OWNHeatingCommand.report_temperature(bad_where, 20.0)
+        with pytest.raises(ValueError, match="non-empty address"):
+            OWNHeatingCommand.write_temperature(bad_where, 20.0)
+
+    # 4. WHO 18 energy report builders
+    for bad_val in (True, False, -1, -0.1, float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError, match="must be a finite non-negative number"):
+            OWNEnergyCommand.report_active_power("51", bad_val)
+        with pytest.raises(ValueError, match="must be a finite non-negative number"):
+            OWNEnergyCommand.report_total_energy("51", bad_val)
+        with pytest.raises(ValueError, match="must be a finite non-negative number"):
+            OWNEnergyCommand.report_current_month_energy("51", bad_val)
+        with pytest.raises(ValueError, match="must be a finite non-negative number"):
+            OWNEnergyCommand.report_partial_month_energy("51", bad_val)
+        with pytest.raises(ValueError, match="must be a finite non-negative number"):
+            OWNEnergyCommand.report_partial_day_energy("51", bad_val)
+
+    with pytest.raises(ValueError, match="both be provided or both omitted"):
+        OWNEnergyCommand.report_current_month_energy("51", 100, year=2026, month=None)
+    with pytest.raises(ValueError, match="both be provided or both omitted"):
+        OWNEnergyCommand.report_current_month_energy("51", 100, year=None, month=10)
+    for bad_ym in (
+        (True, 10),
+        (2026, False),
+        (2026.5, 10),
+        (2026, 10.5),
+        (float("inf"), 10),
+        (2026, float("inf")),
+    ):
+        with pytest.raises(ValueError, match="year and month must be integers"):
+            OWNEnergyCommand.report_current_month_energy("51", 100, year=bad_ym[0], month=bad_ym[1])  # type: ignore[arg-type]
+    for bad_year in (1999, 2100):
+        with pytest.raises(ValueError, match="year must be between 2000 and 2099"):
+            OWNEnergyCommand.report_current_month_energy("51", 100, year=bad_year, month=10)
+    for bad_month in (0, 13):
+        with pytest.raises(ValueError, match="month must be between 1 and 12"):
+            OWNEnergyCommand.report_current_month_energy("51", 100, year=2026, month=bad_month)
+        with pytest.raises(ValueError, match="month must be between 1 and 12"):
+            OWNEnergyCommand.report_partial_month_energy("51", 100, month=bad_month)
+    for bad_pm in (True, 10.5, float("inf")):
+        with pytest.raises(ValueError, match="month must be between 1 and 12"):
+            OWNEnergyCommand.report_partial_month_energy("51", 100, month=bad_pm)  # type: ignore[arg-type]
+    for bad_day in (0, 32, True, 18.5, float("inf")):
+        with pytest.raises(ValueError, match="day must be between 1 and 31"):
+            OWNEnergyCommand.report_partial_day_energy("51", 100, day=bad_day)  # type: ignore[arg-type]
+
+    for bad_de in (
+        (True, 1),
+        (60, False),
+        (60.5, 1),
+        (60, 1.5),
+        (float("inf"), 1),
+        (60, float("inf")),
+    ):
+        with pytest.raises(ValueError, match="duration and energy_type must be integers"):
+            OWNEnergyCommand.report_streaming_state("51", bad_de[0], bad_de[1])  # type: ignore[arg-type]
+    for bad_et in (0, 5):
+        with pytest.raises(ValueError, match="energy_type must be between 1 and 4"):
+            OWNEnergyCommand.report_streaming_state("51", 60, energy_type=bad_et)
+    for bad_dur in (-1, 256):
+        with pytest.raises(ValueError, match="duration must be between 0 and 255"):
+            OWNEnergyCommand.report_streaming_state("51", bad_dur, energy_type=1)
+
+    # 5. WHO 13 gateway clock builders
+    for bad_dt in ("2026-01-01", dt.date(2026, 1, 1), dt.time(12, 0)):
+        with pytest.raises(ValueError, match="dt must be a datetime.datetime instance"):
+            OWNGatewayCommand.set_datetime(bad_dt)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="dt must be a datetime.datetime instance"):
+            OWNGatewayCommand.report_datetime(bad_dt)  # type: ignore[arg-type]
+    naive_dt = dt.datetime(2026, 10, 18, 12, 0, 0)
+    with pytest.raises(ValueError, match="Naive datetime/time requires an explicit time_zone"):
+        OWNGatewayCommand.set_datetime(naive_dt)
+    with pytest.raises(ValueError, match="Naive datetime/time requires an explicit time_zone"):
+        OWNGatewayCommand.report_datetime(naive_dt)
+    with pytest.raises(ValueError, match="Naive datetime/time requires an explicit time_zone"):
+        OWNGatewayCommand.set_date(naive_dt)
+    with pytest.raises(ValueError, match="Naive datetime/time requires an explicit time_zone"):
+        OWNGatewayCommand.report_date(naive_dt)
+    with pytest.raises(ValueError, match="Naive datetime/time requires an explicit time_zone"):
+        OWNGatewayCommand.set_time(naive_dt)
+    with pytest.raises(ValueError, match="Naive datetime/time requires an explicit time_zone"):
+        OWNGatewayCommand.report_time(naive_dt)
+    with pytest.raises(ValueError, match="Naive datetime/time requires an explicit time_zone"):
+        OWNGatewayCommand.set_time(dt.time(12, 0, 0))
+    with pytest.raises(ValueError, match="Naive datetime/time requires an explicit time_zone"):
+        OWNGatewayCommand.report_time(dt.time(12, 0, 0))
+    with pytest.raises(ValueError, match="time_zone must be a datetime.tzinfo"):
+        OWNGatewayCommand.set_datetime(naive_dt, 123)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="time_zone must be a datetime.tzinfo"):
+        OWNGatewayCommand.set_date(dt.date(2026, 10, 18), 123)  # type: ignore[arg-type]
+    assert (
+        str(OWNGatewayCommand.set_datetime(naive_dt, dt.timezone.utc))
+        == "*#13**#22*12*00*00*000*00*18*10*2026##"
+    )
+    assert (
+        str(OWNGatewayCommand.set_date(naive_dt, dt.timezone.utc))
+        == "*#13**#1*00*18*10*2026##"
+    )
+    assert (
+        str(OWNGatewayCommand.set_date(dt.date(2026, 10, 18), dt.timezone.utc))
+        == "*#13**#1*00*18*10*2026##"
+    )
+    assert (
+        str(OWNGatewayCommand.set_time(naive_dt, dt.timezone.utc))
+        == "*#13**#0*12*00*00*000##"
+    )
+    for bad_year_dt in (
+        dt.datetime(1999, 12, 31, 12, 0, tzinfo=dt.timezone.utc),
+        dt.datetime(2100, 1, 1, 12, 0, tzinfo=dt.timezone.utc),
+    ):
+        with pytest.raises(ValueError, match="year must be between 2000 and 2099"):
+            OWNGatewayCommand.set_datetime(bad_year_dt)
+        with pytest.raises(ValueError, match="year must be between 2000 and 2099"):
+            OWNGatewayCommand.report_datetime(bad_year_dt)
+
+    for bad_d in ("2026-01-01", dt.time(12, 0), 12345):
+        with pytest.raises(ValueError, match="d must be a datetime.date"):
+            OWNGatewayCommand.set_date(bad_d)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="d must be a datetime.date"):
+            OWNGatewayCommand.report_date(bad_d)  # type: ignore[arg-type]
+    for bad_year_d in (dt.date(1999, 12, 31), dt.date(2100, 1, 1)):
+        with pytest.raises(ValueError, match="year must be between 2000 and 2099"):
+            OWNGatewayCommand.set_date(bad_year_d)
+        with pytest.raises(ValueError, match="year must be between 2000 and 2099"):
+            OWNGatewayCommand.report_date(bad_year_d)
+
+    for bad_t in ("12:00:00", dt.date(2026, 1, 1), 12345):
+        with pytest.raises(ValueError, match="t must be a datetime.time"):
+            OWNGatewayCommand.set_time(bad_t)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="t must be a datetime.time"):
+            OWNGatewayCommand.report_time(bad_t)  # type: ignore[arg-type]
+
+

@@ -618,3 +618,41 @@ def test_h4684_profile(name: str) -> None:
     assert not profile.supports_who(WHO_SCENARIO)
     assert not profile.supports_who(WHO_SOUND_DIFFUSION)
     assert not profile.supports_who(WHO_CEN_PLUS)
+
+
+def test_profile_injection_capability_flags() -> None:
+    """Verify dimension/command injection capability flags across gateway profiles."""
+    for model in (
+        "F452",
+        "F452V",
+        "F453AV",
+        "F454",
+        "F455",
+        "F459",
+        "F460",
+        "F461",
+        "MH200",
+        "MH201",
+        "MH202",
+        "H4890",
+        "H4684",
+        "MyHomeServer1",
+    ):
+        p = get_gateway_profile(model)
+        assert p.supports_who4_command_injection is True
+        assert p.supports_dimension_response_injection is False
+
+    for model in ("MH200N", "F453"):
+        p = get_gateway_profile(model)
+        assert p.supports_who4_command_injection is False
+        assert p.supports_dimension_response_injection is False
+
+    for model in ("F454", "F455", "F461", "MH202", "MyHomeServer1"):
+        p = get_gateway_profile(model)
+        assert p.supports_who18_response_injection is True
+
+    for model in ("MH200", "MH200N"):
+        p = get_gateway_profile(model)
+        assert p.supports_who18_response_injection is False
+
+

@@ -7,7 +7,13 @@ import datetime
 import re
 from typing import Any
 
-from .base import OWNCommand, OWNEvent, register_command_parser, register_event_parser
+from .base import (
+    OWNCommand,
+    OWNEvent,
+    register_command_parser,
+    register_event_parser,
+    require_non_empty_where,
+)
 
 MESSAGE_TYPE_ACTION = "hvac_action"
 MESSAGE_TYPE_MOTION = "motion_detected"
@@ -646,6 +652,44 @@ class OWNLightingCommand(OWNCommand):
             f"Setting light {message._where}{message._interface_log_text} brightness to {level}%{capped} with transition speed {transition_speed}."  # pylint: disable=line-too-long
             if transition_speed > 0
             else f"Setting light {message._where}{message._interface_log_text} brightness to {level}%{capped}."
+        )
+        return message
+
+    @property
+    def is_status_query(self) -> bool:
+        """True if this message is a point/group/area lighting status query (*#1*WHERE##)."""
+        return self.is_status_request and bool(self._where)
+
+    @property
+    def is_brightness_query(self) -> bool:
+        """True if this message is a brightness dimension query (*#1*WHERE*1## or *#1*WHERE*4##)."""
+        return (
+            self.is_dimension_request
+            and self._dimension in (1, 4)
+            and bool(self._where)
+        )
+
+    @classmethod
+    def report_brightness(
+        cls, where: str | int, level: int, transition: int = 0
+    ) -> OWNLightingCommand:
+        """Build a WHO 1 Dimension 1 brightness reply frame (*#1*WHERE*1*LEVEL*SPEED##)."""
+        target = require_non_empty_where(where)
+        if any(
+            isinstance(x, bool) or (isinstance(x, float) and x % 1 != 0)
+            for x in (level, transition)
+        ):
+            raise ValueError("brightness level and transition must be integers")
+        lvl = int(level)
+        if not 0 <= lvl <= 100:
+            raise ValueError("brightness level must be between 0 and 100")
+        trans = int(transition)
+        if not 0 <= trans <= 255:
+            raise ValueError("transition must be between 0 and 255")
+        own_level = lvl + 100
+        message = cls(f"*#1*{target}*1*{own_level}*{trans}##")
+        message._human_readable_log = (
+            f"Reporting light {message._where}{message._interface_log_text} brightness at {lvl}%."
         )
         return message
 
