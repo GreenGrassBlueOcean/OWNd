@@ -642,6 +642,14 @@ def test_own_message_helper_properties_and_effective_what() -> None:
     assert str(OWNGatewayCommand.set_time(zone_t)).startswith("*#13**#0*12*00*00*00")
     assert str(OWNGatewayCommand.set_time(naive_t, dt.timezone.utc)) == "*#13**#0*12*00*00*000##"
     assert str(OWNGatewayCommand.report_time(naive_t, "America/New_York")).startswith("*#13**0*12*00*00*10")
+    # The TZ field carries whole hours only: half- and quarter-hour offsets raise
+    for tz_name in ("Asia/Kolkata", "Asia/Kathmandu", "America/St_Johns"):
+        with pytest.raises(ValueError, match="whole number of hours"):
+            OWNGatewayCommand.set_datetime(sample_dt, tz_name)
+        with pytest.raises(ValueError, match="whole number of hours"):
+            OWNGatewayCommand.report_time(naive_t, tz_name)
+        with pytest.raises(ValueError, match="whole number of hours"):
+            OWNGatewayCommand.set_time_to_now(tz_name)
 
 
 def test_expose_builders_infeasible_inputs() -> None:

@@ -490,6 +490,11 @@ class OWNGatewayCommand(OWNCommand):
     @staticmethod
     def _encode_tz_offset(dt: _dt.datetime) -> str:
         z = dt.strftime("%z")
+        # The TZ field (0HH / 1HH) carries whole hours only.
+        if z[3:] != "00":
+            raise ValueError(
+                f"UTC offset {z[:3]}:{z[3:5]} is not a whole number of hours"
+            )
         return f"0{z[1:3]}" if z[0] == "+" else f"1{z[1:3]}"
 
     @classmethod
