@@ -10,7 +10,7 @@ All notable changes to `OWNd` are documented in this file.
   - Presets, step dimming, fixed timers, and variable timer builders (`#93`).
   - `WHAT 19` anomaly / fault state modeling (`#115`).
   - Public APL normalization (`normalize_where`) and DALI / RGB / HSV / XY / colour-temperature accessors (`#123`).
-- **WHO 3 (`OWNLoadControlEvent`, `OWNLoadControlCommand`)**: Load control parser, command builders, typed measurement properties for dimensions 1–4 (`voltage`, `current`, `power`, `energy`), and gateway profile gating (`#104`, `#124`).
+- **WHO 3 (`OWNLoadEvent`, `OWNLoadCommand`)**: Load control parser, command builders, typed measurement properties for dimensions 1–4 (`voltage`, `current`, `power`, `energy`), and gateway profile gating (`#104`, `#124`).
 - **WHO 4 (`OWNHeatingEvent`, `OWNHeatingCommand`)**: Consolidated firmware-validated heating support including season frames (`WHAT 0` / `WHAT 1`), central unit status (`WHAT 22–24`, `30–31`), holiday/vacation program handling (`WHAT 115#P`, `13DDD#P`, `3101–3103`), and F453AV / F461 live-plant conformance (`#83`, `#97`, `#116`, `#119`, `#120`).
 - **WHO 6 & WHO 8 (`OWNDoorEntryEvent`, `OWNDoorEntryCommand`)**: Door entry, lock, camera, and intercom call dialects (`#100`).
 - **WHO 13 & WHO 1013 (`OWNGatewayEvent`, `OWNGatewayCommand`)**:

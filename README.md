@@ -291,7 +291,7 @@ Clone the repository and install development dependencies:
 ```bash
 git clone https://github.com/OpenWebNet-HA/OWNd.git
 cd OWNd
-pip install -e ".[test,serial]" ruff mypy types-python-dateutil types-pytz
+pip install -e ".[test,serial]" ruff mypy
 ```
 
 ### Running Tests
