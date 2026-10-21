@@ -6,8 +6,6 @@ import datetime as _dt
 import re
 from zoneinfo import ZoneInfo
 
-from dateutil.relativedelta import relativedelta
-
 from .base import OWNCommand, OWNEvent, register_command_parser, register_event_parser
 
 

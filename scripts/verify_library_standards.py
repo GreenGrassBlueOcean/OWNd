@@ -77,13 +77,19 @@ def check_pep561_typing(validator: StandardsValidator) -> None:
     else:
         validator.ok("PEP 561 typing marker verified: OWNd/py.typed present.")
 
+    pyproject_file = ROOT_DIR / "pyproject.toml"
     setup_file = ROOT_DIR / "setup.py"
-    if setup_file.is_file():
-        text = setup_file.read_text(encoding="utf-8")
-        if "py.typed" not in text:
-            validator.error("RULE_PEP561", setup_file, 1, "setup.py must declare package_data for py.typed")
-        else:
-            validator.ok("PEP 561 package data verified in setup.py.")
+    texts = [
+        p.read_text(encoding="utf-8")
+        for p in (pyproject_file, setup_file)
+        if p.is_file()
+    ]
+    if texts and not any("py.typed" in t for t in texts):
+        target = pyproject_file if pyproject_file.is_file() else setup_file
+        validator.error("RULE_PEP561", target, 1, "pyproject.toml or setup.py must declare package_data for py.typed")
+    elif texts:
+        validator.ok("PEP 561 package data verified in packaging metadata.")
+
 
 
 def check_version_sync(validator: StandardsValidator) -> None:

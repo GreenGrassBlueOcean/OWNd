@@ -520,7 +520,7 @@ def test_sync_documentation_missing_coverage_graceful(tmp_path: Path) -> None:
 {COVERAGE_END_MARKER}
 """
     readme_file = tmp_path / "README.md"
-    readme_file.write_text(readme_content, encoding="utf-8")
+    readme_file.write_text(readme_content, encoding="utf-8", newline="\n")
 
     in_sync, diff, msgs = sync_documentation(
         readme_path=readme_file,

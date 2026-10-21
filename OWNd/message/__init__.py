@@ -8,8 +8,6 @@ import re
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from dateutil.relativedelta import relativedelta
-
 from .actuator_lock import (
     ACTUATOR_LOCK_STATE_NAMES,
     ACTUATOR_STATE_LOCKED,
