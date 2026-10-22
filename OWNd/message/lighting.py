@@ -10,6 +10,7 @@ from typing import Any
 from .base import (
     OWNCommand,
     OWNEvent,
+    get_parse_gateway,
     register_command_parser,
     register_event_parser,
     require_non_empty_where,
@@ -43,7 +44,10 @@ COARSE_PRESET_TO_PERCENT: dict[int, int] = {
     10: 100,
 }
 
-_COARSE_DIMMER_WHERES: set[str] = set()
+# Per-(gateway_key, normalized_where) coarse-only dimmer registry.
+# ``gateway_key`` is ``None`` for unscoped parse/command calls, or a normalized
+# gateway identifier (serial/MAC or host) when scoped to a specific plant.
+_COARSE_DIMMER_BY_GATEWAY: dict[tuple[str | None, str], bool] = {}
 
 PIR_SENSITIVITY_MAPPING = ["low", "medium", "high", "very high"]
 
@@ -162,28 +166,67 @@ def normalize_where(where: str | int | None) -> str:
     return f"{norm_base}#{parts[1]}" if len(parts) > 1 else norm_base
 
 
-def is_coarse_dimmer_where(where: str | int | None) -> bool:
+def _normalize_gateway_key(gateway: Any = None) -> str | None:
+    """Resolve an optional gateway identifier or ``OWNGateway`` object to a lowercase key."""
+    target = get_parse_gateway() if gateway is None else gateway
+    if target is None:
+        return None
+    if isinstance(target, str):
+        stripped = target.strip().lower()
+        return stripped if stripped else None
+    for attr in ("serial", "unique_id", "host", "address"):
+        val = getattr(target, attr, None)
+        if isinstance(val, str) and val.strip():
+            return val.strip().lower()
+    return None
+
+
+def is_coarse_dimmer_where(
+    where: str | int | None, *, gateway: Any = None
+) -> bool:
     """Return True if ``where`` reported the 240 (0xF0) coarse-only dimmer speed."""
     norm = normalize_where(where)
-    return bool(norm) and norm in _COARSE_DIMMER_WHERES
+    if not norm:
+        return False
+    gw_key = _normalize_gateway_key(gateway)
+    if gw_key is not None:
+        if (gw_key, norm) in _COARSE_DIMMER_BY_GATEWAY:
+            return _COARSE_DIMMER_BY_GATEWAY[(gw_key, norm)]
+        return _COARSE_DIMMER_BY_GATEWAY.get((None, norm), False)
+    if (None, norm) in _COARSE_DIMMER_BY_GATEWAY:
+        return _COARSE_DIMMER_BY_GATEWAY[(None, norm)]
+    scoped = [
+        v
+        for (g, w), v in _COARSE_DIMMER_BY_GATEWAY.items()
+        if g is not None and w == norm
+    ]
+    return bool(scoped) and all(scoped)
 
 
 def register_coarse_dimmer_where(
-    where: str | int | None, is_coarse: bool = True
+    where: str | int | None,
+    is_coarse: bool = True,
+    *,
+    gateway: Any = None,
 ) -> None:
     """Record or clear ``where`` as a coarse-only dimmer (speed 240 / 0xF0)."""
     norm = normalize_where(where)
     if not norm:
         return
-    if is_coarse:
-        _COARSE_DIMMER_WHERES.add(norm)
-    else:
-        _COARSE_DIMMER_WHERES.discard(norm)
+    gw_key = _normalize_gateway_key(gateway)
+    _COARSE_DIMMER_BY_GATEWAY[(gw_key, norm)] = bool(is_coarse)
 
 
-def clear_coarse_dimmer_wheres() -> None:
-    """Clear all learned coarse-only dimmer WHERE addresses."""
-    _COARSE_DIMMER_WHERES.clear()
+def clear_coarse_dimmer_wheres(gateway: Any = None) -> None:
+    """Clear learned coarse-only dimmer WHERE addresses (all gateways, or one gateway)."""
+    if gateway is None:
+        _COARSE_DIMMER_BY_GATEWAY.clear()
+        return
+    gw_key = _normalize_gateway_key(gateway)
+    if gw_key is None:
+        return
+    for key in [k for k in _COARSE_DIMMER_BY_GATEWAY if k[0] == gw_key]:
+        del _COARSE_DIMMER_BY_GATEWAY[key]
 
 
 class OWNLightingEvent(OWNEvent):
@@ -759,9 +802,12 @@ class OWNLightingCommand(OWNCommand):
         _transition: int = 0,
         *,
         coarse: bool | None = None,
+        gateway: Any = None,
     ) -> OWNLightingCommand:
         use_coarse = (
-            is_coarse_dimmer_where(where) if coarse is None else bool(coarse)
+            is_coarse_dimmer_where(where, gateway=gateway)
+            if coarse is None
+            else bool(coarse)
         )
         transition_speed = _transition if 0 <= _transition <= 255 else 0
         if int(_level) <= 0:

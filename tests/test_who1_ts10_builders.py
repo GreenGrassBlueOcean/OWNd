@@ -144,6 +144,7 @@ def test_coarse_dimmer_conversion_and_detection():
         DIMMER_SPEED_COARSE_ONLY,
         OWNEvent,
         OWNLightingEvent,
+        OWNMessage,
         brightness_preset_to_percent,
         clear_coarse_dimmer_wheres,
         is_coarse_dimmer_where,
@@ -251,6 +252,62 @@ def test_coarse_dimmer_conversion_and_detection():
     assert ev_f418u2.is_coarse_dimmer is False
     assert is_coarse_dimmer_where("61") is False
     assert str(OWNLightingCommand.set_brightness("61", 50, 0)) == "*#1*61*#1*150*0##"
+
+    # Multi-gateway / multi-plant isolation: identical WHERE=61 on two different gateways
+    from OWNd.connection import OWNGateway
+
+    clear_coarse_dimmer_wheres()
+    gw_a = OWNGateway({"address": "192.168.1.40", "serialNumber": "00:03:50:AA:BB:01"})
+    gw_b = OWNGateway({"address": "192.168.1.41"})  # falls back to host when serial is None
+
+    # Blank/unidentifiable gateway objects fall back to unscoped (None)
+    assert is_coarse_dimmer_where("61", gateway="   ") is False
+    assert is_coarse_dimmer_where("61", gateway=object()) is False
+    clear_coarse_dimmer_wheres(gateway="   ")
+
+    # Plant A learns WHERE=61 is coarse (speed 240)
+    ev_gw_a = OWNMessage.parse("*#1*61*1*130*240##", gateway=gw_a)
+    assert isinstance(ev_gw_a, OWNLightingEvent)
+    assert ev_gw_a.is_coarse_dimmer is True
+    assert is_coarse_dimmer_where("61", gateway=gw_a) is True
+    assert is_coarse_dimmer_where("61", gateway="00:03:50:aa:bb:01") is True
+    # Before Plant B sees WHERE=61, Plant B falls back to (None, "61") -> False,
+    # while unscoped lookup sees all known gateways for "61" are coarse -> True
+    assert is_coarse_dimmer_where("61", gateway=gw_b) is False
+    assert is_coarse_dimmer_where("61") is True
+
+    # Plant B learns its own WHERE=61 is a modern fine dimmer (speed 2)
+    ev_gw_b = OWNEvent.parse("*#1*61*1*200*2##", gateway=gw_b)
+    assert isinstance(ev_gw_b, OWNLightingEvent)
+    assert ev_gw_b.is_coarse_dimmer is False
+    # Plant A's coarse state is preserved; Plant B is fine; unscoped ambiguous query is False
+    assert is_coarse_dimmer_where("61", gateway=gw_a) is True
+    assert is_coarse_dimmer_where("61", gateway=gw_b) is False
+    assert is_coarse_dimmer_where("61") is False
+
+    ev_preset_a = OWNMessage.parse("*1*7*61##", gateway=gw_a)
+    assert isinstance(ev_preset_a, OWNLightingEvent)
+    assert ev_preset_a.is_coarse_dimmer is True
+    assert ev_preset_a.brightness == 50
+
+    ev_preset_b = OWNMessage.parse("*1*7*61##", gateway=gw_b)
+    assert isinstance(ev_preset_b, OWNLightingEvent)
+    assert ev_preset_b.is_coarse_dimmer is False
+    assert ev_preset_b.brightness is None
+
+    assert (
+        str(OWNLightingCommand.set_brightness("61", 50, 0, gateway=gw_a))
+        == "*1*7*61##"
+    )
+    assert (
+        str(OWNLightingCommand.set_brightness("61", 50, 0, gateway=gw_b))
+        == "*#1*61*#1*150*0##"
+    )
+
+    # Clearing Plant A only removes Plant A's entries
+    clear_coarse_dimmer_wheres(gateway=gw_a)
+    assert is_coarse_dimmer_where("61", gateway=gw_a) is False
+    assert is_coarse_dimmer_where("61", gateway=gw_b) is False
 
     clear_coarse_dimmer_wheres()
 
