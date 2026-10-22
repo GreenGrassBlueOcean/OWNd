@@ -221,9 +221,11 @@ def test_coarse_dimmer_conversion_and_detection():
     # Explicit coarse=True override works even on unlearned addresses
     cmd_coarse_21 = OWNLightingCommand.set_brightness("21", 50, 5, coarse=True)
     assert str(cmd_coarse_21) == "*1*7*21##"
+    assert cmd_coarse_21.is_coarse_dimmer is True
     assert cmd_coarse_21.brightness_preset == 7
     assert cmd_coarse_21.brightness == 50
     cmd_preset_21 = OWNLightingCommand.set_brightness_preset("21", 7)
+    assert cmd_preset_21.is_coarse_dimmer is False
     assert cmd_preset_21.brightness_preset == 7
     assert cmd_preset_21.brightness is None
     cmd_off_21 = OWNLightingCommand.set_brightness("21", 0, 5, coarse=True)
