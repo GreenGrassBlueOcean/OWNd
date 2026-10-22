@@ -129,6 +129,7 @@ class OWNMessage:
         self._dimension: int | None = None
         self._dimension_param: list[str] = []
         self._dimension_value: list[str] = []
+        self._gateway: Any = get_parse_gateway()
 
         if match := self._STATUS.match(self._raw):
             self._is_valid_message = True

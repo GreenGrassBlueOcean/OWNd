@@ -58,7 +58,7 @@ def brightness_preset_to_percent(preset: int) -> int:
     Matches ``libqtdevices`` ``dimmerLevelTo100`` (``2->1, 3->10, 4->20, 5->30,
     6->40, 7->50, 8->60, 9->75, 10->100``).
     """
-    if isinstance(preset, bool):
+    if isinstance(preset, bool) or (isinstance(preset, float) and preset % 1 != 0):
         raise ValueError("preset must be an integer between 2 and 10")
     preset_int = int(preset)
     if preset_int not in COARSE_PRESET_TO_PERCENT:
@@ -73,7 +73,7 @@ def percent_to_brightness_preset(level: int) -> int:
     ``<=0 -> 0``, ``1..4 -> 2``, ``5..15 -> 3``, ``16..25 -> 4``, ``26..35 -> 5``,
     ``36..45 -> 6``, ``46..53 -> 7``, ``54..67 -> 8``, ``68..85 -> 9``, ``>=86 -> 10``.
     """
-    if isinstance(level, bool):
+    if isinstance(level, bool) or (isinstance(level, float) and level % 1 != 0):
         raise ValueError("level must be an integer")
     lvl = int(level)
     if lvl <= 0:
@@ -557,8 +557,15 @@ class OWNLightingEvent(OWNEvent):
 
 class OWNLightingCommand(OWNCommand):
     @property
+    def brightness_preset(self) -> int | None:
+        """Coarse WHO 1 preset (2..10) for WHAT 2..10 commands, else None."""
+        if self._what is not None and 2 <= self._what <= 10:
+            return self._what
+        return None
+
+    @property
     def brightness(self) -> int | None:
-        """Decoded brightness percentage (0..100) for Dimension 1/4 write commands."""
+        """Decoded brightness percentage (0..100) for Dimension 1/4 writes or coarse WHAT 2..10 commands."""
         if self._dimension in (1, 4) and self._dimension_value:
             try:
                 raw = int(self._dimension_value[0])
@@ -566,6 +573,16 @@ class OWNLightingCommand(OWNCommand):
                 return None
             if 100 <= raw <= 200:
                 return raw - 100
+        if self._what is not None and 2 <= self._what <= 10:
+            full_where = (
+                f"{self._where}#{'#'.join(self._where_param)}"
+                if self._where and self._where_param
+                else self._where
+            )
+            if getattr(self, "_is_coarse_dimmer", False) or is_coarse_dimmer_where(
+                full_where, gateway=getattr(self, "_gateway", None)
+            ):
+                return brightness_preset_to_percent(self._what)
         return None
 
     @property
@@ -721,6 +738,8 @@ class OWNLightingCommand(OWNCommand):
     def set_brightness_preset(cls, where: str | int, preset: int) -> OWNLightingCommand:
         """Dimmer preset WHAT 2..10 (20 %..100 %), the frame libqtdevices
         DimmerDevice::setLevel100 sends (lighting_device.cpp:240-245)."""
+        if isinstance(preset, bool) or (isinstance(preset, float) and preset % 1 != 0):
+            raise ValueError("preset must be an integer between 2 and 10")
         preset = int(preset)
         if not 2 <= preset <= 10:
             raise ValueError("preset must be between 2 and 10")
@@ -804,12 +823,18 @@ class OWNLightingCommand(OWNCommand):
         coarse: bool | None = None,
         gateway: Any = None,
     ) -> OWNLightingCommand:
+        if any(
+            isinstance(x, bool) or (isinstance(x, float) and x % 1 != 0)
+            for x in (_level, _transition)
+        ):
+            raise ValueError("brightness level and transition must be integers")
         use_coarse = (
             is_coarse_dimmer_where(where, gateway=gateway)
             if coarse is None
             else bool(coarse)
         )
-        transition_speed = _transition if 0 <= _transition <= 255 else 0
+        trans_int = int(_transition)
+        transition_speed = trans_int if 0 <= trans_int <= 255 else 0
         if int(_level) <= 0:
             return cls.switch_off(
                 where,
@@ -818,9 +843,12 @@ class OWNLightingCommand(OWNCommand):
                 else (transition_speed if transition_speed > 0 else None),
             )
         if use_coarse:
-            return cls.set_brightness_preset(
+            cmd = cls.set_brightness_preset(
                 where, percent_to_brightness_preset(int(_level))
             )
+            cmd._is_coarse_dimmer = True  # type: ignore[attr-defined]
+            cmd._gateway = gateway
+            return cmd
         level = min(int(_level), 100)
         command_level = level + 100
         message = cls(f"*#1*{where}*#1*{command_level}*{transition_speed}##")

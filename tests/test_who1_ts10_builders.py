@@ -142,6 +142,7 @@ def test_coarse_dimmer_conversion_and_detection():
     from OWNd.message import (
         COARSE_PRESET_TO_PERCENT,
         DIMMER_SPEED_COARSE_ONLY,
+        OWNCommand,
         OWNEvent,
         OWNLightingEvent,
         OWNMessage,
@@ -156,15 +157,23 @@ def test_coarse_dimmer_conversion_and_detection():
     for preset, expected_pct in COARSE_PRESET_TO_PERCENT.items():
         assert brightness_preset_to_percent(preset) == expected_pct
 
-    with pytest.raises(ValueError):
-        brightness_preset_to_percent(True)
+    for bad_preset in (True, False, 7.9, float("inf"), float("-inf"), float("nan")):
+        with pytest.raises(ValueError, match="integer between 2 and 10"):
+            brightness_preset_to_percent(bad_preset)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="integer between 2 and 10"):
+            OWNLightingCommand.set_brightness_preset("61", bad_preset)  # type: ignore[arg-type]
     with pytest.raises(ValueError):
         brightness_preset_to_percent(1)
     with pytest.raises(ValueError):
         brightness_preset_to_percent(11)
 
-    with pytest.raises(ValueError):
-        percent_to_brightness_preset(False)
+    for bad_level in (True, False, 50.9, float("inf"), float("-inf"), float("nan")):
+        with pytest.raises(ValueError, match="level must be an integer"):
+            percent_to_brightness_preset(bad_level)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="must be integers"):
+            OWNLightingCommand.set_brightness("61", bad_level, 0)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="must be integers"):
+            OWNLightingCommand.set_brightness("61", 50, bad_level)  # type: ignore[arg-type]
 
     assert percent_to_brightness_preset(-5) == 0
     assert percent_to_brightness_preset(0) == 0
@@ -210,8 +219,16 @@ def test_coarse_dimmer_conversion_and_detection():
     assert str(OWNLightingCommand.set_brightness("21", 50, 0)) == "*#1*21*#1*150*0##"
 
     # Explicit coarse=True override works even on unlearned addresses
-    assert str(OWNLightingCommand.set_brightness("21", 50, 5, coarse=True)) == "*1*7*21##"
-    assert str(OWNLightingCommand.set_brightness("21", 0, 5, coarse=True)) == "*1*0*21##"
+    cmd_coarse_21 = OWNLightingCommand.set_brightness("21", 50, 5, coarse=True)
+    assert str(cmd_coarse_21) == "*1*7*21##"
+    assert cmd_coarse_21.brightness_preset == 7
+    assert cmd_coarse_21.brightness == 50
+    cmd_preset_21 = OWNLightingCommand.set_brightness_preset("21", 7)
+    assert cmd_preset_21.brightness_preset == 7
+    assert cmd_preset_21.brightness is None
+    cmd_off_21 = OWNLightingCommand.set_brightness("21", 0, 5, coarse=True)
+    assert str(cmd_off_21) == "*1*0*21##"
+    assert cmd_off_21.brightness_preset is None
 
     # Legacy pre-09W29 F414 reports speed 240 (0xF0) in Dimension 1 (MyHOME#767)
     ev_f414_old = OWNEvent.parse("*#1*61*1*130*240##")
@@ -244,7 +261,12 @@ def test_coarse_dimmer_conversion_and_detection():
     assert isinstance(ev_riser, OWNLightingEvent)
     assert ev_riser.is_coarse_dimmer is True
     assert is_coarse_dimmer_where("61#4#01") is True
-    assert str(OWNLightingCommand.set_brightness("61#4#01", 30)) == "*1*5*61#4#01##"
+    cmd_riser = OWNLightingCommand.set_brightness("61#4#01", 30)
+    assert str(cmd_riser) == "*1*5*61#4#01##"
+    assert cmd_riser.brightness == 30
+    parsed_cmd_riser = OWNCommand.parse("*1*5*61#4#01##")
+    assert isinstance(parsed_cmd_riser, OWNLightingCommand)
+    assert parsed_cmd_riser.brightness == 30
 
     # Replacing dimmer at 61 with a modern F418U2 / post-09W29 F414 (speed 2) clears coarse flag
     ev_f418u2 = OWNEvent.parse("*#1*61*1*200*2##")
@@ -298,6 +320,15 @@ def test_coarse_dimmer_conversion_and_detection():
     assert (
         str(OWNLightingCommand.set_brightness("61", 50, 0, gateway=gw_a))
         == "*1*7*61##"
+    )
+    assert (
+        OWNLightingCommand.set_brightness("61", 50, 0, gateway=gw_a).brightness == 50
+    )
+    assert (
+        OWNCommand.parse("*1*7*61##", gateway=gw_a).brightness == 50  # type: ignore[union-attr]
+    )
+    assert (
+        OWNCommand.parse("*1*7*61##", gateway=gw_b).brightness is None  # type: ignore[union-attr]
     )
     assert (
         str(OWNLightingCommand.set_brightness("61", 50, 0, gateway=gw_b))
