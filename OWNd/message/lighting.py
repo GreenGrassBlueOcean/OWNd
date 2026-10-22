@@ -24,7 +24,73 @@ MESSAGE_TYPE_MOTION_TIMEOUT = "motion_timeout"
 # WHAT 19 anomaly status per MH200N bt_luci binary disassembly (findings/MH200N/what19.md)
 LIGHTING_STATE_ANOMALY = 19
 
+# Legacy coarse-only dimmer transition-speed byte (0xF0 = 240) reported in WHO 1
+# DIMENSION 1 (*#1*WHERE*1*LEVEL100*240##) by pre-09W29 BTicino F414 dimmers
+# that only actuate live output on coarse WHAT 2..10 commands (MyHOME#767).
+DIMMER_SPEED_COARSE_ONLY = 240
+
+# Canonical BTicino libqtdevices (TS10_1_0_23, lighting_device.cpp) mapping
+# between coarse WHO 1 WHAT 2..10 presets and fine 1..100 % levels.
+COARSE_PRESET_TO_PERCENT: dict[int, int] = {
+    2: 1,
+    3: 10,
+    4: 20,
+    5: 30,
+    6: 40,
+    7: 50,
+    8: 60,
+    9: 75,
+    10: 100,
+}
+
+_COARSE_DIMMER_WHERES: set[str] = set()
+
 PIR_SENSITIVITY_MAPPING = ["low", "medium", "high", "very high"]
+
+
+def brightness_preset_to_percent(preset: int) -> int:
+    """Convert a coarse WHO 1 WHAT 2..10 preset to its canonical 1..100 % level.
+
+    Matches ``libqtdevices`` ``dimmerLevelTo100`` (``2->1, 3->10, 4->20, 5->30,
+    6->40, 7->50, 8->60, 9->75, 10->100``).
+    """
+    if isinstance(preset, bool):
+        raise ValueError("preset must be an integer between 2 and 10")
+    preset_int = int(preset)
+    if preset_int not in COARSE_PRESET_TO_PERCENT:
+        raise ValueError("preset must be between 2 and 10")
+    return COARSE_PRESET_TO_PERCENT[preset_int]
+
+
+def percent_to_brightness_preset(level: int) -> int:
+    """Convert a 0..100 % level to the coarse WHO 1 WHAT value (0 or 2..10).
+
+    Matches ``libqtdevices`` ``dimmer100LevelTo10`` (``lighting_device.cpp:240-245``):
+    ``<=0 -> 0``, ``1..4 -> 2``, ``5..15 -> 3``, ``16..25 -> 4``, ``26..35 -> 5``,
+    ``36..45 -> 6``, ``46..53 -> 7``, ``54..67 -> 8``, ``68..85 -> 9``, ``>=86 -> 10``.
+    """
+    if isinstance(level, bool):
+        raise ValueError("level must be an integer")
+    lvl = int(level)
+    if lvl <= 0:
+        return 0
+    if lvl <= 4:
+        return 2
+    if lvl <= 15:
+        return 3
+    if lvl <= 25:
+        return 4
+    if lvl <= 35:
+        return 5
+    if lvl <= 45:
+        return 6
+    if lvl <= 53:
+        return 7
+    if lvl <= 67:
+        return 8
+    if lvl <= 85:
+        return 9
+    return 10
 
 
 def is_apl_address(base: str) -> bool:
@@ -96,6 +162,30 @@ def normalize_where(where: str | int | None) -> str:
     return f"{norm_base}#{parts[1]}" if len(parts) > 1 else norm_base
 
 
+def is_coarse_dimmer_where(where: str | int | None) -> bool:
+    """Return True if ``where`` reported the 240 (0xF0) coarse-only dimmer speed."""
+    norm = normalize_where(where)
+    return bool(norm) and norm in _COARSE_DIMMER_WHERES
+
+
+def register_coarse_dimmer_where(
+    where: str | int | None, is_coarse: bool = True
+) -> None:
+    """Record or clear ``where`` as a coarse-only dimmer (speed 240 / 0xF0)."""
+    norm = normalize_where(where)
+    if not norm:
+        return
+    if is_coarse:
+        _COARSE_DIMMER_WHERES.add(norm)
+    else:
+        _COARSE_DIMMER_WHERES.discard(norm)
+
+
+def clear_coarse_dimmer_wheres() -> None:
+    """Clear all learned coarse-only dimmer WHERE addresses."""
+    _COARSE_DIMMER_WHERES.clear()
+
+
 class OWNLightingEvent(OWNEvent):
     def __init__(self, data: str) -> None:
         super().__init__(data)
@@ -106,6 +196,7 @@ class OWNLightingEvent(OWNEvent):
         self._brightness: int | None = None
         self._brightness_preset: int | None = None
         self._transition: int | None = None
+        self._is_coarse_dimmer: bool = False
         self._timer: float | None = None
         self._blinker: float | None = None
         self._illuminance: int | None = None
@@ -124,6 +215,12 @@ class OWNLightingEvent(OWNEvent):
         self._rgb: tuple[int, int, int] | None = None
         self._supports_rgb: bool | None = None
 
+        full_where = (
+            f"{self._where}#{'#'.join(self._where_param)}"
+            if self._where and self._where_param
+            else self._where
+        )
+
         if self._what is not None and self._what != 1000:
             self._state = self._what
 
@@ -137,7 +234,9 @@ class OWNLightingEvent(OWNEvent):
                 )
             elif self._state > 1 and self._state < 11:  # Light dimmed to preset value
                 self._brightness_preset = self._state
-                # self._brightness = self._state * 10
+                if is_coarse_dimmer_where(full_where):
+                    self._is_coarse_dimmer = True
+                    self._brightness = brightness_preset_to_percent(self._state)
                 self._human_readable_log = f"Light {self._where}{self._interface_log_text} is switched on at brightness level {self._state}."  # pylint: disable=line-too-long
             elif self._state == 11:  # Timer at 1m
                 self._timer = 60
@@ -196,6 +295,11 @@ class OWNLightingEvent(OWNEvent):
                     if len(self._dimension_value) > 1
                     else None
                 )
+                if self._transition is not None:
+                    self._is_coarse_dimmer = (
+                        self._transition == DIMMER_SPEED_COARSE_ONLY
+                    )
+                    register_coarse_dimmer_where(full_where, self._is_coarse_dimmer)
                 if self._brightness == 0:
                     self._state = 0
                     self._human_readable_log = f"Light {self._where}{self._interface_log_text} is switched off."
@@ -274,12 +378,24 @@ class OWNLightingEvent(OWNEvent):
         return self._brightness_preset
 
     @property
+    def brightness_preset_percent(self) -> int | None:
+        """Fine 1..100 % equivalent for a coarse WHAT 2..10 preset, else None."""
+        if self._brightness_preset is None:
+            return None
+        return COARSE_PRESET_TO_PERCENT.get(self._brightness_preset)
+
+    @property
     def brightness(self) -> int | None:
         return self._brightness
 
     @property
     def transition(self) -> int | None:
         return self._transition
+
+    @property
+    def is_coarse_dimmer(self) -> bool:
+        """True if this event indicates a coarse-only dimmer (speed 240 / 0xF0)."""
+        return self._is_coarse_dimmer
 
     @property
     def is_on(self) -> bool | None:
@@ -637,12 +753,27 @@ class OWNLightingCommand(OWNCommand):
 
     @classmethod
     def set_brightness(
-        cls, where: str | int, _level: int = 30, _transition: int = 0
+        cls,
+        where: str | int,
+        _level: int = 30,
+        _transition: int = 0,
+        *,
+        coarse: bool | None = None,
     ) -> OWNLightingCommand:
+        use_coarse = (
+            is_coarse_dimmer_where(where) if coarse is None else bool(coarse)
+        )
         transition_speed = _transition if 0 <= _transition <= 255 else 0
         if int(_level) <= 0:
             return cls.switch_off(
-                where, transition_speed if transition_speed > 0 else None
+                where,
+                None
+                if use_coarse
+                else (transition_speed if transition_speed > 0 else None),
+            )
+        if use_coarse:
+            return cls.set_brightness_preset(
+                where, percent_to_brightness_preset(int(_level))
             )
         level = min(int(_level), 100)
         command_level = level + 100

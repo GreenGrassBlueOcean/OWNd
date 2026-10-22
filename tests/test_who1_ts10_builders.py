@@ -135,4 +135,123 @@ def test_lighting_dimension_properties():
     assert isinstance(ev_hs, OWNLightingEvent)
     assert ev_hs.hs_color == (120, 50)
     assert ev_hs.color_temp_kelvin is None
+    assert ev_hs.brightness_preset_percent is None
+
+
+def test_coarse_dimmer_conversion_and_detection():
+    from OWNd.message import (
+        COARSE_PRESET_TO_PERCENT,
+        DIMMER_SPEED_COARSE_ONLY,
+        OWNEvent,
+        OWNLightingEvent,
+        brightness_preset_to_percent,
+        clear_coarse_dimmer_wheres,
+        is_coarse_dimmer_where,
+        percent_to_brightness_preset,
+        register_coarse_dimmer_where,
+    )
+
+    assert DIMMER_SPEED_COARSE_ONLY == 240
+    for preset, expected_pct in COARSE_PRESET_TO_PERCENT.items():
+        assert brightness_preset_to_percent(preset) == expected_pct
+
+    with pytest.raises(ValueError):
+        brightness_preset_to_percent(True)
+    with pytest.raises(ValueError):
+        brightness_preset_to_percent(1)
+    with pytest.raises(ValueError):
+        brightness_preset_to_percent(11)
+
+    with pytest.raises(ValueError):
+        percent_to_brightness_preset(False)
+
+    assert percent_to_brightness_preset(-5) == 0
+    assert percent_to_brightness_preset(0) == 0
+    for pct, expected_preset in [
+        (1, 2),
+        (4, 2),
+        (5, 3),
+        (15, 3),
+        (16, 4),
+        (25, 4),
+        (26, 5),
+        (35, 5),
+        (36, 6),
+        (45, 6),
+        (46, 7),
+        (50, 7),
+        (53, 7),
+        (54, 8),
+        (67, 8),
+        (68, 9),
+        (75, 9),
+        (85, 9),
+        (86, 10),
+        (100, 10),
+        (120, 10),
+    ]:
+        assert percent_to_brightness_preset(pct) == expected_preset
+
+    clear_coarse_dimmer_wheres()
+    register_coarse_dimmer_where(None, True)
+    register_coarse_dimmer_where("", True)
+    assert is_coarse_dimmer_where(None) is False
+    assert is_coarse_dimmer_where("") is False
+    assert is_coarse_dimmer_where("61") is False
+
+    # Unlearned address keeps brightness=None on preset events and uses Dimension 1
+    ev_unlearned = OWNEvent.parse("*1*5*21##")
+    assert isinstance(ev_unlearned, OWNLightingEvent)
+    assert ev_unlearned.is_coarse_dimmer is False
+    assert ev_unlearned.brightness_preset == 5
+    assert ev_unlearned.brightness_preset_percent == 30
+    assert ev_unlearned.brightness is None
+    assert str(OWNLightingCommand.set_brightness("21", 50, 0)) == "*#1*21*#1*150*0##"
+
+    # Explicit coarse=True override works even on unlearned addresses
+    assert str(OWNLightingCommand.set_brightness("21", 50, 5, coarse=True)) == "*1*7*21##"
+    assert str(OWNLightingCommand.set_brightness("21", 0, 5, coarse=True)) == "*1*0*21##"
+
+    # Legacy pre-09W29 F414 reports speed 240 (0xF0) in Dimension 1 (MyHOME#767)
+    ev_f414_old = OWNEvent.parse("*#1*61*1*130*240##")
+    assert isinstance(ev_f414_old, OWNLightingEvent)
+    assert ev_f414_old.brightness == 30
+    assert ev_f414_old.transition == 240
+    assert ev_f414_old.is_coarse_dimmer is True
+    assert is_coarse_dimmer_where("61") is True
+
+    # Subsequent set_brightness on 61 automatically emits coarse WHAT 2..10 frames
+    assert str(OWNLightingCommand.set_brightness("61", 50, 0)) == "*1*7*61##"
+    assert str(OWNLightingCommand.set_brightness("61", 75, 5)) == "*1*9*61##"
+    assert str(OWNLightingCommand.set_brightness("61", 0, 5)) == "*1*0*61##"
+    # Explicit coarse=False can still force Dimension 1 if desired
+    assert (
+        str(OWNLightingCommand.set_brightness("61", 50, 0, coarse=False))
+        == "*#1*61*#1*150*0##"
+    )
+
+    # Preset event on learned coarse dimmer populates canonical fine brightness %
+    ev_preset_61 = OWNEvent.parse("*1*7*61##")
+    assert isinstance(ev_preset_61, OWNLightingEvent)
+    assert ev_preset_61.is_coarse_dimmer is True
+    assert ev_preset_61.brightness_preset == 7
+    assert ev_preset_61.brightness_preset_percent == 50
+    assert ev_preset_61.brightness == 50
+
+    # Private riser address (61#4#01) is tracked independently
+    ev_riser = OWNEvent.parse("*#1*61#4#01*1*130*240##")
+    assert isinstance(ev_riser, OWNLightingEvent)
+    assert ev_riser.is_coarse_dimmer is True
+    assert is_coarse_dimmer_where("61#4#01") is True
+    assert str(OWNLightingCommand.set_brightness("61#4#01", 30)) == "*1*5*61#4#01##"
+
+    # Replacing dimmer at 61 with a modern F418U2 / post-09W29 F414 (speed 2) clears coarse flag
+    ev_f418u2 = OWNEvent.parse("*#1*61*1*200*2##")
+    assert isinstance(ev_f418u2, OWNLightingEvent)
+    assert ev_f418u2.is_coarse_dimmer is False
+    assert is_coarse_dimmer_where("61") is False
+    assert str(OWNLightingCommand.set_brightness("61", 50, 0)) == "*#1*61*#1*150*0##"
+
+    clear_coarse_dimmer_wheres()
+
 
